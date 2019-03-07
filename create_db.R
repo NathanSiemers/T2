@@ -3,9 +3,9 @@ library(sqldf)
 
 ## set finite my.limit for testing, set to Inf for production
 my.limit = Inf
-
-
 db = 'tcga.db'
+
+
 query = paste0('attach "', db, '" as new')
 sqldf(query)
 
@@ -13,38 +13,87 @@ sqldf(query)
 ################################################################
 ## create core tables
 
-try(sqldf('drop table if exists tcgai', db = db))
-sqldf( 'create table tcgai (sample integer, probe integer, value numeric, type character)', db = db )
-try(sqldf('drop table if exists tcgacati', db = db))
-sqldf( 'create table tcgacati (sample integer, probe integer, value character, type character)', db = db )
-try(sqldf( 'drop table if exists probes', db = db ))
+sqldf('drop table if exists tcgai', db = db)
+sqldf( 'create table tcgai (samplekey integer, probekey integer, value numeric, type character)', db = db )
+sqldf('drop table if exists tcgacati', db = db)
+sqldf( 'create table tcgacati (samplekey integer, probekey integer, value character, type character)', db = db )
+sqldf( 'drop table if exists probes', db = db )
 sqldf( 'create table probes (key integer primary key, probe character unique not null) ' , db = db )
-try(sqldf( 'drop table if exists samples', db = db ))
+sqldf( 'drop table if exists allprobes', db = db )
+sqldf( 'create table allprobes (key integer primary key, probe character unique not null) ' , db = db )
+sqldf( 'drop table if exists samples', db = db )
 sqldf( 'create table samples (key integer primary key, sample character unique not null) ' , db = db )
 
 ################################################################
 ## create views
 ## it's ok that everything is empty right now...
 
-try( sqldf( 'drop view if exists tcga', db = db ) )
+
+################################################################
+## core tcga view
+sqldf( 'drop view if exists tcga_old', db = db ) 
 sqldf('
-create view tcga as
+create view tcga_old as
 select samples.sample, probes.probe, tcgai.value, tcgai.type
 from tcgai, samples, probes
 where tcgai.sample = samples.key and
 tcgai.probe = probes.key
 ', db = db )
-try( sqldf( 'drop view if exists tcgacat', db = db ) )
+
+
+################################################################
+## semi-tidy TCGA - numerics plus added categorical columns.
+
+sqldf( 'drop view if exists tcga', db = db ) 
+sqldf('
+create view tcga as
+select samples.sample, probes.probe, tcgai.value, tcgai.type,
+clinpheno."cancer type abbreviation" as tumtype,
+clinpheno.age_at_initial_pathologic_diagnosis,
+clinpheno.gender,
+clinpheno.race,
+clinpheno.sample_type,
+clinpheno.clinical_stage,
+clinpheno.histological_type,
+clinpheno.histological_grade,
+clinpheno.ajcc_pathologic_tumor_stage,
+clinpheno.gender,
+clinpheno.race,
+clinpheno.OS,
+clinpheno."OS.time" as OStime,
+clinpheno.DFI,
+clinpheno."DFI.time" as DFItime,
+clinpheno.PFI,
+clinpheno."PFI.time" as PFItime,
+clinpheno.Subtype_CNA,
+clinpheno.Subtype_DNAmeth,
+clinpheno.Subtype_Immune_Model_Based,
+clinpheno.Subtype_Selected as subtype,
+clinpheno.Subtype_Integrative,
+clinpheno.Subtype_miRNA,
+clinpheno.Subtype_mRNA,
+clinpheno.Subtype_protein
+from tcgai, samples, probes, clinpheno
+where tcgai.samplekey = samples.key 
+and tcgai.probekey = probes.key
+and samples.sample = clinpheno.sample
+', db = db )
+
+
+
+################################################################
+## spread view  of categorical tcga data
+sqldf( 'drop view if exists tcgacat', db = db ) 
 sqldf('
 create view tcgacat as
 select samples.sample, probes.probe, tcgacati.value, tcgacati.type
 from tcgacati, samples, probes
-where tcgacati.sample = samples.key and
-tcgacati.probe = probes.key
+where tcgacati.samplekey = samples.key and
+tcgacati.probekey = probes.key
 ', db = db )
 
 
-tablemaker = function( data, db = 'tcga.db', suffix = FALSE, type = 'numeric' ) {
+tablemaker = function( data, db = 'tcga.db', categorical = FALSE, suffix = TRUE ) {
     ## input: a tidy of sample, probe, value, type
     ## convert sample and probe into integer keys while updating:
     ##      sampleykeys and probes tables
@@ -54,44 +103,69 @@ tablemaker = function( data, db = 'tcga.db', suffix = FALSE, type = 'numeric' ) 
     ## guessing 'bad'
     ##
     print(db)
-    if( type == 'numeric' ) {
-        dest_table = 'tcgai'
-    } else {
+    print(data)
+    if( categorical ) {
         dest_table = 'tcgacati'
+        print("destination table tcgacati")
+    } else {
+        dest_table = 'tcgai'
+        print("destination table tcgai")
     }
     ## add any new sample keys to samples
     usample = data %>% select( sample ) %>%
         distinct %>%
             mutate( key = NA ) %>%
                 select( key, sample )
-    print( head( usample ) )
+    print(usample)
     sqldf('insert or ignore into samples select key, sample from usample', db = db )
     print( sqldf( 'select * from samples limit 5', db = db ) )
     ## add any new probe keys to probes
-    uprobe = data %>% distinct(probe)
+    uprobe = data %>%
+        mutate( key = NA ) %>%
+            select( key, probe ) %>%
+                distinct
+    print('uprobe'); print(uprobe)
     if ( suffix ) {
-        uprobe = uprobe %>%
+        print('with suffix')
+        allprobe = data %>%
             mutate( newprobe = paste( probe, type, sep = '.' ) ) %>%
                 mutate( key = NA, probe = newprobe ) %>%
-                    select( key, probe )
-    } else {
-        uprobe = uprobe %>%
-            mutate( key = NA ) %>%
-                select( key, probe )
+                    select( key, probe ) %>%
+                        distinct
+        print('allprobe')
+        print(allprobe)
+    } 
+    else {
+        print('without suffix')
+        allprobe = uprobe
+        print('allprobe')
+        print(allprobe)
     }
-    print( head( uprobe ) )
+    mytype = data %>% distinct(type); mytype = mytype[[1]]
+    print('mytype')
+    print(mytype)
     sqldf('insert or ignore into probes select key, probe from uprobe', db = db )
+    print('probes')
     print( sqldf( 'select * from probes limit 5', db = db ) )
+    sqldf('insert or ignore into allprobes select key, probe from allprobe', db = db )
+    print('allprobes')
+    print( sqldf( 'select * from allprobes limit 5', db = db ) )
     ## Do the joins in the database
-    sql_string =  paste(
-        'insert into',
-        dest_table, '
-select samples.key as sample, probes.key as probe, data.value, data.type
+    print('Data')
+    print(data)
+    sql_select = paste('
+select samples.key as samplekey, probes.key as probekey, data.value, data.type
 from data
 inner join samples on samples.sample = data.sample
 inner join probes on probes.probe = data.probe
 ' )
+    sql_string =  paste(
+        'insert into',
+        dest_table,
+        sql_select )
     print(sql_string)
+    ##print('select:')
+    ##print(sqldf(sql_select, db = db) %>% head)
     sqldf(sql_string, db = db)
 }
 
@@ -104,7 +178,7 @@ my_rna = read_tsv('Data/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.xena.gz'
                     select( sample, probe, value, type )
 my_rna
 
-tablemaker(my_rna)
+tablemaker(my_rna, suffix = FALSE)
 my_rna = NULL; gc()
 
 
@@ -120,17 +194,28 @@ tablemaker(my_cnv)
 my_cnv = NULL; gc()
 
 
-
+################################################################
+## note
+## this is non-standard
+## we will remove non-mutants from table
+################################################################
 my_mut = read_tsv('Data/mc3.v0.2.8.PUBLIC.nonsilentGene.xena.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(probe = sample) %>%
             gather( sample, value, -probe ) %>%
                 mutate(type = 'mut') %>%
-                    select( sample, probe, value, type )
+                    select( sample, probe, value, type ) %>%
+                        ## ok now but generally risky in R (see Inferno)
+                        filter( value != 0 )
 my_mut
 
 tablemaker(my_mut)
+
 my_mut = NULL; gc()
+
+################################################################
+## micro (u) RNA
+################################################################
 
 my_urna = read_tsv('Data/pancanMiRs_EBadjOnProtocolPlatformWithoutRepsWithUnCorrectMiRs_08_04_16.xena.gz', 
     trim_ws = TRUE, n_max = my.limit ) %>%
@@ -172,13 +257,11 @@ my_immune_score = read_tsv('Data/TCGA_pancancer_10852whitelistsamples_68ImmuneSi
                     select( sample, probe, value, type )
 my_immune_score
 
+unique(my_immune_score$probe)
+
 tablemaker(my_immune_score)
 my_hrd = NULL; gc()
 
-
-
-################################################################
-## tidy categorical variables
 
 
 my_pheno = read_tsv('Data/TCGA_phenotype_denseDataOnlyDownload.tsv.gz',
@@ -188,18 +271,20 @@ my_pheno = read_tsv('Data/TCGA_phenotype_denseDataOnlyDownload.tsv.gz',
                 select( sample, probe, value, type )
 my_pheno
 
-tablemaker(my_pheno, type = 'cat')
+tablemaker(my_pheno, categorical = TRUE, suffix = FALSE)
 my_pheno = NULL; gc()
 
 my_molec_subtype = read_tsv('Data/TCGASubtype.20170308.tsv.gz',
+    col_types = cols( .default=col_character() ),
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(sample = sampleID) %>%
-            gather( probe, value, -sample ) %>%
+            gather( probe, value, -sample )%>%
                 mutate( type = 'molec_subtype' ) %>%
                     select( sample, probe, value, type )
 my_molec_subtype
 
-tablemaker(my_molec_subtype, type = 'cat')
+tablemaker(my_molec_subtype, categorical = TRUE, suffix = FALSE)
+
 my_molec_subtype = NULL; gc()
 
 my_immune = read_tsv('Data/Subtype_Immune_Model_Based.txt.gz',
@@ -209,7 +294,7 @@ my_immune = read_tsv('Data/Subtype_Immune_Model_Based.txt.gz',
                 select( sample, probe, value, type )
 my_immune
 
-tablemaker(my_immune, type = 'cat')
+tablemaker(my_immune, categorical = TRUE, suffix = FALSE)
 my_immune = NULL; gc()
 
 
@@ -232,7 +317,7 @@ my_clin = read_tsv('Data/Survival_SupplementalTable_S1_20171025_xena_sp.gz',
     trim_ws = TRUE, n_max = my.limit ) 
 my_clin
 
-try( sqldf( 'drop table if exists clin', db = db ) )
+sqldf( 'drop table if exists clin', db = db ) 
 sqldf( 'create table clin as select * from my_clin', db = db )
 str( sqldf( 'select * from clin limit 1', db = db ) )
 my_clin = NULL; gc()
@@ -246,24 +331,69 @@ my_clin = NULL; gc()
 my_mutation = read_tsv('Data/mc3.v0.2.8.PUBLIC.xena.gz',
     trim_ws = TRUE, n_max = my.limit )
 my_mutation
-try( sqldf( 'drop table if exists mutation', db = db ) )
+
+## make 'gene' names that add some information about mutation
+my_mutation$shortgene = with( my_mutation, paste0(gene, '_', Amino_Acid_Change) )
+my_mutation$shortgene = gsub( "\\*", 's', my_mutation$shortgene)
+my_mutation$longgene = with( my_mutation, paste0(gene, '_', Amino_Acid_Change, '_', effect, '_', DNA_VAF  ) )
+my_mutation$longgene = gsub( "\\'", 'p', my_mutation$longgene)
+my_mutation$longgene = gsub( "\\*", 's', my_mutation$longgene)
+
+head(my_mutation$longgene)
+
+unique(my_mutation$effect)
+
+sqldf( 'drop table if exists mutation', db = db ) 
 sqldf('create table mutation as select * from my_mutation', db = db)
 
-try( sqldf( 'drop index if exists mutidx', db = db ) )
+sqldf( 'drop index if exists mutidx', db = db ) 
 sqldf('create index mutidx on mutation (gene)', db = db)
+
+## create table of all samples with mutations called
+## hopefully this is all samples exome sequenced
+
+sqldf('drop table if exists mutationsamples', db = db)
+sqldf('create table mutationsamples as select distinct sample from my_mutation', db = db)
+sqldf('drop index if exists mutationsamplesidx', db = db)
+sqldf('create index mutationsamplesidx on mutationsamples(sample)', db = db)
+sqldf('select * from mutationsamples limit 10', db = db)
+dim(sqldf('select * from mutationsamples', db = db))
 
 ## 2. add abbreviated data to tcga
 
-my_mutation$gene = with( my_mutation, paste0(gene, '.', Amino_Acid_Change) )
-
 my_fmut = my_mutation %>%
-    select( sample, probe = gene ) %>%
+    select( sample, probe = shortgene ) %>%
+        ## need to keep this numeric, as it's going into a numeric table
+        ## perhaps gitr() can change it to 'mutant' later
         mutate( value = 1 ) %>%
             mutate( type = 'fmut' )
 my_fmut
 
 tablemaker( my_fmut )
-my_fmut = NULL; my_mutation = NULL ; gc()
+my_fmut = NULL; gc()
+
+################################################################
+## experimental - numeric VAF 'fmutn'
+
+my_fmutvaf = my_mutation %>%
+    select( sample, probe = shortgene, value = DNA_VAF ) %>%
+            mutate( type = 'fmutvaf' )
+my_fmutvaf
+
+tablemaker( my_fmutvaf )
+my_fmutvaf = NULL; my_mutation = NULL ; gc()
+
+
+## (see above)
+## if we are going to spend disk space to make queries easy
+## I need to add 0 in samples tested and without mutation.
+## hmmm.  that's a lot of 0's for little return
+## should this be in the database or built into a gitr query?
+## should we also do this for gene-level mutation?
+## if we expand 'wt' in the gitr query we can save some space in db
+## I think we should make the tables sparse and note which were tested and wt.
+## This could eventually also work for lossy RNA data :)
+
 
 ################################################################
 ## copy number segments - make a dedicated table
@@ -271,9 +401,21 @@ my_fmut = NULL; my_mutation = NULL ; gc()
 my_cnv = read_tsv('Data/broad.mit.edu_PANCAN_Genome_Wide_SNP_6_whitelisted.xena.gz',
     trim_ws = TRUE, n_max = my.limit )
 my_cnv
-try( sqldf( 'drop table if exists cnv', db = db ) )
+sqldf( 'drop table if exists cnv', db = db ) 
 sqldf('create table cnv as select * from my_cnv', db = db)
 my_cnv = NULL; gc()
+
+################################################################
+## geography
+
+my_geo = read_tsv('hugo_gencode_good_hg19_V24lift37_probemap',
+    trim_ws = TRUE, n_max = my.limit )
+my_geo
+sqldf( 'drop table if exists geo', db = db ) 
+sqldf('create table geo as select * from my_geo', db = db)
+my_geo = NULL; gc()
+
+
 
 ################################################################
 ## Q.? what are we going to do with ginormous methylaton data?
@@ -317,104 +459,193 @@ my_cnv = NULL; gc()
 ##              db = db
 ##              )
 
-
-
-
 ################################################################
 ## indices
 
-try( sqldf( 'drop index if exists tcgaidxprobe', db = db ) )
-sqldf('create index tcgaidxprobe on tcgai ( probe, type )', db = db)
+sqldf( 'drop index if exists tcgaidxprobe', db = db ) 
+sqldf('create index tcgaidxprobe on tcgai ( probekey, type )', db = db)
 
-try(sqldf( 'drop index if exists tcgaidxsample', db = db ))
-sqldf('create index tcgaidxsample on tcgai( sample, probe, type )', db = db)
+sqldf( 'drop index if exists tcgaidxsample', db = db )
+sqldf('create index tcgaidxsample on tcgai( samplekey, probekey, type )', db = db)
 
-try( sqldf( 'drop index if exists tcgacatidxprobe', db = db ) )
-sqldf('create index tcgacatidxprobe on tcgacati ( probe, type )', db = db)
+sqldf( 'drop index if exists tcgacatidxprobe', db = db ) 
+sqldf('create index tcgacatidxprobe on tcgacati ( probekey, typekey )', db = db)
 
-try(sqldf( 'drop index if exists tcgacatidxsample', db = db ))
-sqldf('create index tcgacatidxsample on tcgacati( sample, probe, type )', db = db)
+sqldf( 'drop index if exists tcgacatidxsample', db = db )
+sqldf('create index tcgacatidxsample on tcgacati( samplekey, probekey, type )', db = db)
 
-
+sqldf( 'drop index if exists tcgaidxtype', db = db )
+sqldf('create index tcgaidxtype on tcgai( type )', db = db)
 
 ################################################################
 ## convenience tables
 
+## don't be stupid, you already have the probe tables from your indexing
+## however, you need probes x type
+
+## this is glacially slow
+##query1 = sqldf('select distinct probe, type from tcga', db = db)
+
+##sqldf('explain query plan select probe, type from tcga', db = db)
+##query1 = sqldf('select probe, type from tcga', db = db)
+## dim(query1)
+## pasted_probes =  paste(query1$probe, query1$type, sep = '.' )
+
+## rna_no_suffix = sqldf('select distinct probe from tcga where type = "rna"', db = db)
+
+## all_probes_list = data.frame(
+##     probe = c(rna_no_suffix, pasted_probes)
+##     )
+
+## sqldf('drop table if exists allprobes', db = db)
+
+## sqldf('create table allprobes as select * from all_probes_list', db = db)
+
+
+sqldf('drop table if exists types', db = db)
+sqldf('create table types as select distinct type from tcgai', db = db)
+
+##phenos  = sqldf('select sample, probe, value, type from tcgacat', db = db) %>%
+##    spread(probe, value)
 
 ## spread sample categorical values out into dedicated table
 ## that's joined with patient-level information
 ## "clinpheno"
 
-phenos  = sqldf('select sample, probe, value from tcgacat', db = db) %>%
-    spread(probe, value)
+
+phenos  = sqldf('
+select * from tcgacati, probes, samples
+where tcgacati.probekey = probes.key
+and tcgacati.samplekey = samples.key
+', db = db) %>%
+    select(sample, probe, value)
+
+unique(phenos$probe)
+unique(phenos$value)
+head(phenos)
+
+phenos %>% filter( sample == 'TCGA-Z2-AA3S-06' )
+
+phenos = phenos %>% spread(probe, value)
+tail(phenos)
+which(duplicated(phenos$sample))
+
+
 
 sqldf('drop table if exists clinpheno', db = db)
-
 sqldf('
 create table clinpheno as
-select * from phenos
-left outer join clin
+select * from clin
+left outer join phenos
 on clin.sample = phenos.sample
 ', db = db)
 
+sqldf('select * from clinpheno limit 5', db = db)
 
 
+sqldf('drop index if exists clinphenoidx', db = db)
+sqldf('
+create index clinphenoidx on clinpheno(sample)
+', db = db)
 
-
-
-
-################################################################
-## test queries
-
-
-Sys.time()
-nothing = sqldf('select * from tcga where probe = "10357" and type = "rna"', db = db)
-Sys.time()
-
-sqldf('explain query plan select * from tcga where probe = "10357" and type = "rna"', db = db)
-
-sqldf('explain query plan select * from tcga where sample = "TCGA-CG-4440-01" and probe = "10357" and type = "rna"', db = db)
-
-
-sqldf('explain query plan select * from tcga where sample = "TCGA-CG-4440-01"', db = db)
-
-sqldf('explain query plan select * from tcga where sample in ( "TCGA-CG-4440-01" )', db = db)
-
-sqldf('explain query plan select * from tcga where sample = "TCGA-CG-4440-01" and probe = "10357" ', db = db)
-
-sqldf('explain query plan select * from tcga where sample = "TCGA-CG-4440-01" and type = "rna"', db = db)
-
-
-Sys.time()
-nothing = sqldf('select * from tcga where probe = "CDKN2A" and type = "cnv"', db = db)
-Sys.time()
-nothing = sqldf('select * from tcga where probe = "CDKN2A"', db = db)
-
-
-sqldf('explain query plan select * from tcga where probe = "FOXP3"', db = db)
-Sys.time()
-nothing = sqldf('select * from tcga where probe = "FOXP3"', db = db)
-Sys.time()
-
-sqldf('explain query plan select * from tcga where probe in ( "FOXP3", "CCR8", "CD8A") ', db = db)
-
-Sys.time()
-nothing = sqldf('select * from tcga where probe in ( "FOXP3", "CCR8", "CD8A") ', db = db)
-Sys.time()
-
-
-Sys.time()
-nothing = sqldf('select * from tcga where probe in ( "ABCA1", "CD8B", "CD19") ', db = db)
-Sys.time()
+sqldf('select * from clinpheno limit 5', db = db)
 
 ################################################################
-## dplyr versions of queries
+## test queries, in sql and dplyr
+################################################################
 
-con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db, flags = SQLITE_RO )
-tcga = tbl(con, 'tcga') 
+if( FALSE ) {
+    Sys.time()
+    nothing = sqldf('select * from tcga where probe = "10357" and type = "rna"', db = db)
+    Sys.time()
 
-nothing = tcga %>%
-    filter( ( probe %in% c('CDKN2A', 'MTAP', 'FOXP3', 'ABCA1', 'KIR2DL1') & type == 'rna')   | 
-               ( probe %in% c('CDKN2A', 'MTAP', 'FOXP3', 'ABCA1', 'KIR2DL1') & type == 'cnv')   ) %>%
-                   data.frame
+    sqldf('explain query plan select * from tcga where probe = "10357" and type = "rna"', db = db)
 
+    sqldf('explain query plan select * from tcga where sample = "TCGA-CG-4440-01" and probe = "10357" and type = "rna"', db = db)
+
+
+    sqldf('explain query plan select * from tcga where sample = "TCGA-CG-4440-01"', db = db)
+
+    sqldf('explain query plan select * from tcga where sample in ( "TCGA-CG-4440-01" )', db = db)
+
+    sqldf('explain query plan select * from tcga where sample = "TCGA-CG-4440-01" and probe = "10357" ', db = db)
+
+    sqldf('explain query plan select * from tcga where sample = "TCGA-CG-4440-01" and type = "rna"', db = db)
+
+    sqldf('explain query plan select distinct type from tcga', db = db)
+
+
+    Sys.time()
+    nothing = sqldf('select * from tcga where probe = "CDKN2A" and type = "cnv"', db = db)
+    Sys.time()
+    nothing = sqldf('select * from tcga where probe = "CDKN2A"', db = db)
+
+
+    sqldf('explain query plan select * from tcga where probe = "FOXP3"', db = db)
+    Sys.time()
+    nothing = sqldf('select * from tcga where probe = "FOXP3"', db = db)
+    Sys.time()
+
+    sqldf('explain query plan select * from tcga where probe in ( "FOXP3", "CCR8", "CD8A") ', db = db)
+
+    Sys.time()
+    nothing = sqldf('select * from tcga where probe in ( "FOXP3", "CCR8", "CD8A") ', db = db)
+    Sys.time()
+
+
+    Sys.time()
+    nothing = sqldf('select * from tcga where probe in ( "ABCA1", "CD8B", "CD19") ', db = db)
+    Sys.time()
+
+################################################################
+    ## dplyr versions of queries
+
+    con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db, flags = SQLITE_RO )
+    tcga = tbl(con, 'tcga') 
+    tcgai = tbl(con, 'tcgacati') 
+
+    nothing = tcga %>%
+        filter( ( probe %in% c('CDKN2A', 'MTAP', 'FOXP3', 'ABCA1', 'KIR2DL1') & type == 'rna')   | 
+                   ( probe %in% c('CDKN2A', 'MTAP', 'FOXP3', 'ABCA1', 'KIR2DL1') & type == 'cnv')   ) %>%
+                       data.frame
+
+
+    gitrs = function(probelist, mytype = 'rna') {
+        tcga %>%
+            filter(  probe %in% probelist & type == mytype)  %>%
+                data.frame %>% spread( probe, value )
+    }
+
+
+
+
+    list1 = c('FOXP3', 'CCR8', 'CD8A', 'CCR4')
+
+    str(gitr(list1))
+
+    ## ggplot on tidy data
+    library(ggplot2)
+
+    somestuff = tcga %>%  filter(
+        ( probe == 'CD8A'  & type == 'rna')   |
+            ( probe == 'CD19'  & type == 'rna')   |
+                ( probe == 'CDKN2A' & type == 'cnv' ) |
+                    ( probe == 'MYC' & type == 'cnv' )
+        )
+
+
+
+
+    sp = somestuff %>% select(sample,  probe, value) %>% data.frame  %>% spread( key = probe, value = value) 
+    dim(sp)
+
+    ggplot(aes(x = CDKN2A, y = CD8A), data = sp)  + geom_point() + geom_smooth(method = 'lm')
+    ggplot(aes(x = 2 ** CDKN2A, y = CD8A), data = sp)  + geom_point() + geom_smooth(method = 'lm')
+
+    qplot(CDKN2A, data = sp)
+
+    ggplot(aes(x = MYC, y = CD8A), data = sp)  + geom_point() + geom_smooth(method = 'lm')
+
+    ggplot(aes(x = 2**MYC, y = CD8A), data = sp)  + geom_point() + geom_smooth(method = 'lm')
+
+}

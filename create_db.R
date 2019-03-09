@@ -5,10 +5,9 @@ library(sqldf)
 my.limit = Inf
 db = 'tcga.db'
 
-
+tsep = '.'
 query = paste0('attach "', db, '" as new')
 sqldf(query)
-
 
 ################################################################
 ## create core tables
@@ -47,32 +46,7 @@ tcgai.probe = probes.key
 sqldf( 'drop view if exists tcga', db = db ) 
 sqldf('
 create view tcga as
-select samples.sample, probes.probe, tcgai.value, tcgai.type,
-clinpheno."cancer type abbreviation" as tumtype,
-clinpheno.age_at_initial_pathologic_diagnosis,
-clinpheno.gender,
-clinpheno.race,
-clinpheno.sample_type,
-clinpheno.clinical_stage,
-clinpheno.histological_type,
-clinpheno.histological_grade,
-clinpheno.ajcc_pathologic_tumor_stage,
-clinpheno.gender,
-clinpheno.race,
-clinpheno.OS,
-clinpheno."OS.time" as OStime,
-clinpheno.DFI,
-clinpheno."DFI.time" as DFItime,
-clinpheno.PFI,
-clinpheno."PFI.time" as PFItime,
-clinpheno.Subtype_CNA,
-clinpheno.Subtype_DNAmeth,
-clinpheno.Subtype_Immune_Model_Based,
-clinpheno.Subtype_Selected as subtype,
-clinpheno.Subtype_Integrative,
-clinpheno.Subtype_miRNA,
-clinpheno.Subtype_mRNA,
-clinpheno.Subtype_protein
+select clinpheno.*, probe, value, type
 from tcgai, samples, probes, clinpheno
 where tcgai.samplekey = samples.key 
 and tcgai.probekey = probes.key
@@ -81,16 +55,63 @@ and samples.sample = clinpheno.sample
 
 
 
+## sqldf('
+## create view tcga as
+## select samples.sample, probes.probe, tcgai.value, tcgai.type,
+## clinpheno.tumtype
+## clinpheno.age_at_initial_pathologic_diagnosis,
+## clinpheno.gender,
+## clinpheno.race,
+## clinpheno.sample_type,
+## clinpheno.clinical_stage,
+## clinpheno.histological_type,
+## clinpheno.histological_grade,
+## clinpheno.ajcc_pathologic_tumor_stage,
+## clinpheno.gender,
+## clinpheno.race,
+## clinpheno.OS,
+## clinpheno."OS.time" as OStime,
+## clinpheno.DFI,
+## clinpheno."DFI.time" as DFItime,
+## clinpheno.PFI,
+## clinpheno."PFI.time" as PFItime,
+## clinpheno.Subtype_CNA,
+## clinpheno.Subtype_DNAmeth,
+## clinpheno.Subtype_Immune_Model_Based,
+## clinpheno.Subtype_Selected as subtype,
+## clinpheno.Subtype_Integrative,
+## clinpheno.Subtype_miRNA,
+## clinpheno.Subtype_mRNA,
+## clinpheno.Subtype_protein
+## from tcgai, samples, probes, clinpheno
+## where tcgai.samplekey = samples.key 
+## and tcgai.probekey = probes.key
+## and samples.sample = clinpheno.sample
+## ', db = db )
+
+
+
+
 ################################################################
 ## spread view  of categorical tcga data
 sqldf( 'drop view if exists tcgacat', db = db ) 
 sqldf('
 create view tcgacat as
-select samples.sample, probes.probe, tcgacati.value, tcgacati.type
-from tcgacati, samples, probes
-where tcgacati.samplekey = samples.key and
-tcgacati.probekey = probes.key
-', db = db )
+select clinpheno.*, probe, value, type
+from tcgacati, samples, probes, clinpheno
+where tcgacati.samplekey = samples.key 
+and tcgacati.probekey = probes.key
+and samples.sample = clinpheno.sample
+',
+      db = db )
+
+
+## create view tcgacat as
+## select samples.sample, probes.probe, tcgacati.value, tcgacati.type
+## from tcgacati, samples, probes
+## where tcgacati.samplekey = samples.key and
+## tcgacati.probekey = probes.key
+
 
 
 tablemaker = function( data, db = 'tcga.db', categorical = FALSE, suffix = TRUE ) {
@@ -128,7 +149,7 @@ tablemaker = function( data, db = 'tcga.db', categorical = FALSE, suffix = TRUE 
     if ( suffix ) {
         print('with suffix')
         allprobe = data %>%
-            mutate( newprobe = paste( probe, type, sep = '.' ) ) %>%
+            mutate( newprobe = paste( probe, type, sep = tsep ) ) %>%
                 mutate( key = NA, probe = newprobe ) %>%
                     select( key, probe ) %>%
                         distinct
@@ -264,15 +285,6 @@ my_hrd = NULL; gc()
 
 
 
-my_pheno = read_tsv('Data/TCGA_phenotype_denseDataOnlyDownload.tsv.gz',
-    trim_ws = TRUE, n_max = my.limit ) %>%
-        gather( probe, value, -sample ) %>%
-            mutate( type = 'pheno' ) %>%
-                select( sample, probe, value, type )
-my_pheno
-
-tablemaker(my_pheno, categorical = TRUE, suffix = FALSE)
-my_pheno = NULL; gc()
 
 my_molec_subtype = read_tsv('Data/TCGASubtype.20170308.tsv.gz',
     col_types = cols( .default=col_character() ),
@@ -282,7 +294,6 @@ my_molec_subtype = read_tsv('Data/TCGASubtype.20170308.tsv.gz',
                 mutate( type = 'molec_subtype' ) %>%
                     select( sample, probe, value, type )
 my_molec_subtype
-
 tablemaker(my_molec_subtype, categorical = TRUE, suffix = FALSE)
 
 my_molec_subtype = NULL; gc()
@@ -293,7 +304,6 @@ my_immune = read_tsv('Data/Subtype_Immune_Model_Based.txt.gz',
             mutate( type = 'immune_subtype' ) %>%
                 select( sample, probe, value, type )
 my_immune
-
 tablemaker(my_immune, categorical = TRUE, suffix = FALSE)
 my_immune = NULL; gc()
 
@@ -314,12 +324,56 @@ my_immune = NULL; gc()
 ##my_clin = read_tsv('Data/CuratedClinicalSurvival_SupplementalTable_S1_20171025_xena_sp.gz',
 
 my_clin = read_tsv('Data/Survival_SupplementalTable_S1_20171025_xena_sp.gz',
-    trim_ws = TRUE, n_max = my.limit ) 
+    col_types = cols(
+        .default = col_character(),
+        age_at_initial_pathologic_diagnosis = col_double(),
+        clinical_stage = col_character(),
+        initial_pathologic_dx_year = col_double(),
+        birth_days_to = col_double(),
+        last_contact_days_to = col_double(),
+        death_days_to = col_double(),
+        cause_of_death = col_character(),
+        new_tumor_event_dx_days_to = col_double(),
+        residual_tumor = col_character(),
+        OS = col_double(),
+        OS.time = col_double(),
+        DSS = col_double(),
+        DSS.time = col_double(),
+        DFI = col_double(),
+        DFI.time = col_double(),
+        PFI = col_double(),
+        PFI.time = col_double()
+    ),
+    trim_ws = TRUE, n_max = my.limit )  %>%
+        rename(Patient = '_PATIENT',
+               tumtype = "cancer type abbreviation"  )
+colnames(my_clin)
+
+################################################################
+## phenos table is small, add to clin before joining
+my_pheno = read_tsv('Data/TCGA_phenotype_denseDataOnlyDownload.tsv.gz',
+    trim_ws = TRUE, n_max = my.limit ) %>% rename ( cohort = "_primary_disease" )
+my_pheno
+
+dim(my_clin)
+dim(my_pheno)
+### oops my_pheno is bigger
+which(! my_pheno$sample %in% my_clin$sample )
+which(! my_clin$sample %in% my_pheno$sample )
+
+my_clin = my_pheno %>% left_join(my_clin, b = 'sample')
+dim(my_clin)
 my_clin
 
 sqldf( 'drop table if exists clin', db = db ) 
 sqldf( 'create table clin as select * from my_clin', db = db )
+sqldf( 'drop index if exists clintumtypeidx', db = db)
+sqldf( 'create index clintumtypeidx on clin ( tumtype )', db = db)
+sqldf( 'drop index if exists clincohortidx', db = db)
+sqldf( 'create index clincohortidx on clin ( cohort )', db = db )
 str( sqldf( 'select * from clin limit 1', db = db ) )
+
+
 my_clin = NULL; gc()
 
 
@@ -335,7 +389,7 @@ my_mutation
 ## make 'gene' names that add some information about mutation
 my_mutation$shortgene = with( my_mutation, paste0(gene, '_', Amino_Acid_Change) )
 my_mutation$shortgene = gsub( "\\*", 's', my_mutation$shortgene)
-my_mutation$longgene = with( my_mutation, paste0(gene, '_', Amino_Acid_Change, '_', effect, '_', DNA_VAF  ) )
+my_mutation$longgene = with( my_mutation, paste0(gene, '_', Amino_Acid_Change, '_', effect) )
 my_mutation$longgene = gsub( "\\'", 'p', my_mutation$longgene)
 my_mutation$longgene = gsub( "\\*", 's', my_mutation$longgene)
 
@@ -362,26 +416,23 @@ dim(sqldf('select * from mutationsamples', db = db))
 ## 2. add abbreviated data to tcga
 
 my_fmut = my_mutation %>%
-    select( sample, probe = shortgene ) %>%
-        ## need to keep this numeric, as it's going into a numeric table
-        ## perhaps gitr() can change it to 'mutant' later
-        mutate( value = 1 ) %>%
+    select( sample, probe = gene, value = longgene ) %>%
             mutate( type = 'fmut' )
-my_fmut
 
-tablemaker( my_fmut )
+my_fmut
+tablemaker( my_fmut, categorical = TRUE )
 my_fmut = NULL; gc()
 
 ################################################################
 ## experimental - numeric VAF 'fmutn'
 
-my_fmutvaf = my_mutation %>%
-    select( sample, probe = shortgene, value = DNA_VAF ) %>%
-            mutate( type = 'fmutvaf' )
-my_fmutvaf
+## my_fmutvaf = my_mutation %>%
+##     select( sample, probe = shortgene, value = DNA_VAF ) %>%
+##             mutate( type = 'fmutvaf' )
+## my_fmutvaf
 
-tablemaker( my_fmutvaf )
-my_fmutvaf = NULL; my_mutation = NULL ; gc()
+## tablemaker( my_fmutvaf )
+## my_fmutvaf = NULL; my_mutation = NULL ; gc()
 
 
 ## (see above)
@@ -464,18 +515,17 @@ my_geo = NULL; gc()
 
 sqldf( 'drop index if exists tcgaidxprobe', db = db ) 
 sqldf('create index tcgaidxprobe on tcgai ( probekey, type )', db = db)
-
 sqldf( 'drop index if exists tcgaidxsample', db = db )
 sqldf('create index tcgaidxsample on tcgai( samplekey, probekey, type )', db = db)
-
+##sqldf( 'drop index if exists tcgaidxtype', db = db )
+##sqldf('create index tcgaidxtype on tcgai( type )', db = db)
 sqldf( 'drop index if exists tcgacatidxprobe', db = db ) 
-sqldf('create index tcgacatidxprobe on tcgacati ( probekey, typekey )', db = db)
-
+sqldf('create index tcgacatidxprobe on tcgacati ( probekey, type )', db = db)
+sqldf( 'drop index if exists tcgacatidxtype', db = db ) 
+sqldf('create index tcgacatidxtype on tcgacati ( type )', db = db)
 sqldf( 'drop index if exists tcgacatidxsample', db = db )
 sqldf('create index tcgacatidxsample on tcgacati( samplekey, probekey, type )', db = db)
 
-sqldf( 'drop index if exists tcgaidxtype', db = db )
-sqldf('create index tcgaidxtype on tcgai( type )', db = db)
 
 ################################################################
 ## convenience tables
@@ -489,7 +539,7 @@ sqldf('create index tcgaidxtype on tcgai( type )', db = db)
 ##sqldf('explain query plan select probe, type from tcga', db = db)
 ##query1 = sqldf('select probe, type from tcga', db = db)
 ## dim(query1)
-## pasted_probes =  paste(query1$probe, query1$type, sep = '.' )
+## pasted_probes =  paste(query1$probe, query1$type, sep = tsep )
 
 ## rna_no_suffix = sqldf('select distinct probe from tcga where type = "rna"', db = db)
 
@@ -502,23 +552,13 @@ sqldf('create index tcgaidxtype on tcgai( type )', db = db)
 ## sqldf('create table allprobes as select * from all_probes_list', db = db)
 
 
-sqldf('drop table if exists types', db = db)
-sqldf('create table types as select distinct type from tcgai', db = db)
-
-##phenos  = sqldf('select sample, probe, value, type from tcgacat', db = db) %>%
-##    spread(probe, value)
-
-## spread sample categorical values out into dedicated table
-## that's joined with patient-level information
-## "clinpheno"
-
 
 phenos  = sqldf('
-select * from tcgacati, probes, samples
+select sample, probe, value  from tcgacati, probes, samples
 where tcgacati.probekey = probes.key
 and tcgacati.samplekey = samples.key
-', db = db) %>%
-    select(sample, probe, value)
+and tcgacati.type <> "fmut"
+', db = db)
 
 unique(phenos$probe)
 unique(phenos$value)
@@ -527,8 +567,10 @@ head(phenos)
 phenos %>% filter( sample == 'TCGA-Z2-AA3S-06' )
 
 phenos = phenos %>% spread(probe, value)
+unique(phenos$'_primary_disease')
 tail(phenos)
 which(duplicated(phenos$sample))
+
 
 
 
@@ -548,7 +590,28 @@ sqldf('
 create index clinphenoidx on clinpheno(sample)
 ', db = db)
 
-sqldf('select * from clinpheno limit 5', db = db)
+
+
+sqldf('drop table if exists types', db = db)
+sqldf('create table types as select distinct type from tcgai', db = db)
+
+sqldf('drop table if exists cohorts', db = db)
+sqldf('create table cohorts as select distinct [cancer type abbreviation]  as cohort from clin', db = db)
+
+sqldf('drop table if exists subtypes', db = db)
+sqldf('create table subtypes as select distinct Subtype_Selected as subtype from clinpheno', db = db)
+
+##phenos  = sqldf('select sample, probe, value, type from tcgacat', db = db) %>%
+##    spread(probe, value)
+
+## spread sample categorical values out into dedicated table
+## that's joined with patient-level information
+## "clinpheno"
+
+
+
+
+
 
 ################################################################
 ## test queries, in sql and dplyr
@@ -610,7 +673,7 @@ if( FALSE ) {
                        data.frame
 
 
-    gitrs = function(probelist, mytype = 'rna') {
+
         tcga %>%
             filter(  probe %in% probelist & type == mytype)  %>%
                 data.frame %>% spread( probe, value )

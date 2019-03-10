@@ -5,6 +5,7 @@ library(sqldf)
 library(ggplot2); library(ggthemes)
 theme_set(theme_gdocs())
 library(tidyverse)
+library(viridis)
 
 db = 'tcga.db'
 con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db, flags = SQLITE_RO )
@@ -129,9 +130,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     static.titles = as.numeric(static.titles) / 10
     ## set some geom defaults
     ## is this really worth the ugliness?
-    update_geom_defaults("point", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]] ) )
-    update_geom_defaults("ribbon", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]], fill = ggthemes::ggthemes_data$gdocs$colors$value[[1]]))
-    update_geom_defaults("smooth", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]], fill = ggthemes::ggthemes_data$gdocs$colors$value[[1]], alpha = 0.25))
+##    update_geom_defaults("point", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]] ) )
+##    update_geom_defaults("ribbon", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]], fill = ggthemes::ggthemes_data$gdocs$colors$value[[1]]))
+    ##    update_geom_defaults("smooth", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]], fill = ggthemes::ggthemes_data$gdocs$colors$value[[1]], alpha = 0.25))
+    update_geom_defaults("point", list( color = 'black') )
+    update_geom_defaults("ribbon", list( color = 'grey', fill = 'grey' ) )
+    update_geom_defaults("smooth", list( color = 'grey', fill = 'grey',  alpha = 0.25) )
     ## SET VARIABLES - INTERACTIVE TESTING ONLY
     if(FALSE){ # for testing
         x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = NULL; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
@@ -269,8 +273,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {
             p = p +
             geom_smooth(aes_string(x = x, y = y, color = color, fill = color), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
-                geom_quantile(aes_string(x = x, y = y), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE) +
-                    scale_fill_gdocs(na.value = 'grey')
+                geom_quantile(aes_string(x = x, y = y), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
+            if( ! is.numeric(  data[, color] ) ) {
+                ##p = p + scale_fill_gdocs(na.value = 'grey')
+                p = p + scale_fill_viridis(discrete = TRUE, option = 'plasma')
+            }
         }
     }
     p = p + ggtitle(  pstring, subtitle = paste(" ", pstring2, '\n ', psub) ) +
@@ -280,9 +287,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                               plot.subtitle = element_text(size = 13 * static.titles)
                               )
     if ( is.factor(data[ , color] ) ) {
-        p = p + scale_colour_gdocs(na.value = 'grey')
+        p = p + viridis::scale_colour_viridis(discrete = TRUE, option = 'plasma')
+        ##p = p + scale_colour_gdocs(na.value = 'grey')
     } else {
-        p = p + scale_color_gradient2(low = 'blue', mid = 'grey', high = 'red', midpoint = color.midpoint, na.value = 'steelblue'  )
+        ##p = p + scale_color_gradient2(low = 'blue', mid = 'grey', high = 'red', midpoint = color.midpoint, na.value = 'steelblue'  )
+        ##p = p + viridis::scale_color_viridis(discrete = FALSE, option = 'plasma')
+        p = p + viridis::scale_color_viridis(discrete = FALSE, option = 'plasma')
     }
     if( coordflip ) {
         p = p + coord_flip()

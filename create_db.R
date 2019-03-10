@@ -54,44 +54,6 @@ and samples.sample = clinpheno.sample
 ', db = db )
 
 
-
-## sqldf('
-## create view tcga as
-## select samples.sample, probes.probe, tcgai.value, tcgai.type,
-## clinpheno.tumtype
-## clinpheno.age_at_initial_pathologic_diagnosis,
-## clinpheno.gender,
-## clinpheno.race,
-## clinpheno.sample_type,
-## clinpheno.clinical_stage,
-## clinpheno.histological_type,
-## clinpheno.histological_grade,
-## clinpheno.ajcc_pathologic_tumor_stage,
-## clinpheno.gender,
-## clinpheno.race,
-## clinpheno.OS,
-## clinpheno."OS.time" as OStime,
-## clinpheno.DFI,
-## clinpheno."DFI.time" as DFItime,
-## clinpheno.PFI,
-## clinpheno."PFI.time" as PFItime,
-## clinpheno.Subtype_CNA,
-## clinpheno.Subtype_DNAmeth,
-## clinpheno.Subtype_Immune_Model_Based,
-## clinpheno.Subtype_Selected as subtype,
-## clinpheno.Subtype_Integrative,
-## clinpheno.Subtype_miRNA,
-## clinpheno.Subtype_mRNA,
-## clinpheno.Subtype_protein
-## from tcgai, samples, probes, clinpheno
-## where tcgai.samplekey = samples.key 
-## and tcgai.probekey = probes.key
-## and samples.sample = clinpheno.sample
-## ', db = db )
-
-
-
-
 ################################################################
 ## spread view  of categorical tcga data
 sqldf( 'drop view if exists tcgacat', db = db ) 
@@ -104,14 +66,6 @@ and tcgacati.probekey = probes.key
 and samples.sample = clinpheno.sample
 ',
       db = db )
-
-
-## create view tcgacat as
-## select samples.sample, probes.probe, tcgacati.value, tcgacati.type
-## from tcgacati, samples, probes
-## where tcgacati.samplekey = samples.key and
-## tcgacati.probekey = probes.key
-
 
 
 tablemaker = function( data, db = 'tcga.db', categorical = FALSE, suffix = TRUE ) {
@@ -283,9 +237,6 @@ unique(my_immune_score$probe)
 tablemaker(my_immune_score)
 my_hrd = NULL; gc()
 
-
-
-
 my_molec_subtype = read_tsv('Data/TCGASubtype.20170308.tsv.gz',
     col_types = cols( .default=col_character() ),
     trim_ws = TRUE, n_max = my.limit ) %>%
@@ -344,10 +295,11 @@ my_clin = read_tsv('Data/Survival_SupplementalTable_S1_20171025_xena_sp.gz',
         PFI = col_double(),
         PFI.time = col_double()
     ),
-    trim_ws = TRUE, n_max = my.limit )  %>%
-        rename(Patient = '_PATIENT',
-               tumtype = "cancer type abbreviation"  )
+    trim_ws = TRUE, n_max = my.limit )  
 colnames(my_clin)
+
+my_clin = my_clin %>% rename(Patient = '_PATIENT',
+               tumtype = "cancer type abbreviation"  )
 
 ################################################################
 ## phenos table is small, add to clin before joining
@@ -517,8 +469,8 @@ sqldf( 'drop index if exists tcgaidxprobe', db = db )
 sqldf('create index tcgaidxprobe on tcgai ( probekey, type )', db = db)
 sqldf( 'drop index if exists tcgaidxsample', db = db )
 sqldf('create index tcgaidxsample on tcgai( samplekey, probekey, type )', db = db)
-##sqldf( 'drop index if exists tcgaidxtype', db = db )
-##sqldf('create index tcgaidxtype on tcgai( type )', db = db)
+sqldf( 'drop index if exists tcgaidxtype', db = db )
+sqldf('create index tcgaidxtype on tcgai( type )', db = db)
 sqldf( 'drop index if exists tcgacatidxprobe', db = db ) 
 sqldf('create index tcgacatidxprobe on tcgacati ( probekey, type )', db = db)
 sqldf( 'drop index if exists tcgacatidxtype', db = db ) 
@@ -582,7 +534,15 @@ left outer join phenos
 on clin.sample = phenos.sample
 ', db = db)
 
-sqldf('select * from clinpheno limit 5', db = db)
+str(sqldf('select * from clinpheno limit 5', db = db))
+
+## clinical columns can be used as probes, need to be registered into allprobes
+allprobe = data.frame(
+    key = NA,
+    probe = colnames(sqldf('select * from clin limit 1', db = db) )
+)
+sqldf('insert or ignore into allprobes select key, probe from allprobe', db = db )
+
 
 
 sqldf('drop index if exists clinphenoidx', db = db)
@@ -596,7 +556,7 @@ sqldf('drop table if exists types', db = db)
 sqldf('create table types as select distinct type from tcgai', db = db)
 
 sqldf('drop table if exists cohorts', db = db)
-sqldf('create table cohorts as select distinct [cancer type abbreviation]  as cohort from clin', db = db)
+sqldf('create table cohorts as select distinct tumtype as cohort, cohort as lcohort from clin', db = db)
 
 sqldf('drop table if exists subtypes', db = db)
 sqldf('create table subtypes as select distinct Subtype_Selected as subtype from clinpheno', db = db)
@@ -674,10 +634,9 @@ if( FALSE ) {
 
 
 
-        tcga %>%
-            filter(  probe %in% probelist & type == mytype)  %>%
-                data.frame %>% spread( probe, value )
-    }
+    tcga %>%
+        filter(  probe %in% probelist & type == mytype)  %>%
+            data.frame %>% spread( probe, value )
 
 
 

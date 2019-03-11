@@ -22,7 +22,9 @@ shinyUI(
         div(style="display:inline-block;", checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
         submitButton(text = "Plot", icon = NULL, width = NULL),
         tags$br(),
-        withSpinner(plotOutput( "main_plot", height = '900px', width = '100%' )),
+        withSpinner( plotOutput( "main_plot", height = '900px', width = '100%' ),
+                    proxy.height = "200px", color = viridis::plasma(1)
+                    ),
         ##put a.PI and a.credits in global.R
         h5(  paste( 'PI:', a.PI )  ),
         h5(  paste('Contributors:', a.credits)  ),

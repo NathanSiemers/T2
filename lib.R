@@ -6,9 +6,8 @@ library(ggplot2); library(ggthemes)
 library(viridis)
 ##theme_set(theme_economist()+ theme(
 theme_set(theme_gdocs() + theme(
-##    panel.background = element_rect(fill = '#dddddd'),
     legend.text = element_text(colour="black", size=8 )
-                               ) )
+    ) )
 ## set some geom defaults
 ## is this really worth the ugliness?
 update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
@@ -136,23 +135,24 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     list.of.markers = c( x, y, color, shape, size, facet, c(extra) )
     print(list.of.markers)
     data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = TRUE)
+    if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
+    if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
     cat(file = stderr(), "gitr finished")
     cat(file = stderr(), paste(colnames(data), collapse = ';'))
     ## will need to remove NAs from X and possibly Y.....
     data = droplevels(data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,shape,facet,size)] ), ])
+    if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {
+        return( ggplot() + ggtitle("Sorry, there seems to be no data associated with your query", subtitle = "Hint: some of the subtype classifications are only applied across some tumor sample, some mutations aren't present, etc" ) )
+    }
+    if ( nrow(data) != 0 & is.factor( data[ , x] ) & length(levels( data[ , x] )) < 2 )  {
+        return( ggplot() + ggtitle("Sorry, your x variable seems to be categorical and there seems to be less than two categories to plot") )
+    }
     ## I really need to deal with formulae generally
     list.of.markersxy = unlist(strsplit( c(x,y), split = " " ))
     print(list.of.markersxy)
     list.of.markersxy = list.of.markersxy[! list.of.markersxy  %in% c('+', '-')]
     print(list.of.markersxy)
     ##data = data %>% filter( complete.cases( data[ , list.of.markersxy] ) )
-    if ( !is.null(color) ){
-        if( is.numeric(data[ , color ] )  ) {
-            color.midpoint = median( data[ , color], na.rm = TRUE )
-        }
-     } else {
-         color.midpoint = 0
-     }
     print( head(data) )
     data = droplevels(data)
     ## convert mutations to factors
@@ -278,8 +278,6 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         p = p + viridis::scale_colour_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
         ##p = p + scale_colour_gdocs(na.value = 'grey')
     } else {
-        ##p = p + scale_color_gradient2(low = 'blue', mid = 'grey', high = 'red', midpoint = color.midpoint, na.value = 'steelblue'  )
-        ##p = p + viridis::scale_color_viridis(discrete = FALSE, option = 'plasma')
         p = p + viridis::scale_color_viridis(end = 0.8, discrete = FALSE, option = 'plasma')
     }
     if( coordflip ) {

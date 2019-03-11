@@ -3,57 +3,56 @@
 
 library(sqldf)
 library(ggplot2); library(ggthemes)
-theme_set(theme_gdocs())
-library(tidyverse)
 library(viridis)
+##theme_set(theme_economist()+ theme(
+theme_set(theme_gdocs() + theme(
+##    panel.background = element_rect(fill = '#dddddd'),
+    legend.text = element_text(colour="black", size=8 )
+                               ) )
+## set some geom defaults
+## is this really worth the ugliness?
+update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
+update_geom_defaults("ribbon", list( color = plasma(1), fill = plasma(1)  ) )
+update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 05) )
+library(tidyverse)
 
+
+################################################################
+## database connections and convenience lists
 db = 'tcga.db'
 con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db, flags = SQLITE_RO )
-
 tcga = tbl(con, 'tcga')
 tcgacat = tbl(con, 'tcgacat')
-
-##mut = tbl(con, 'mut'); fmut = tbl(con, 'fmut') ; genes = tbl(con, 'genes')
 samples = pull(tbl(con, 'samples'), sample)
 mutationsamples = pull( tbl(con, 'mutationsamples'), sample )
 mygenes = pull( tbl(con, 'allprobes') , probe )
-##mygenes = c( "none", allprobes )
-##probes = pull( tbl(con, 'probes') , probe )
+probes = pull( tbl(con, 'probes') , probe )
 cohorts = tbl(con, 'cohorts')
-subtypes = tbl(con, 'subtypes')
-clin = tbl(con, 'clin')
-
-mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 mycohorts = c( cohorts %>% as_tibble %>% drop_na %>% pull(cohort) )
+subtypes = tbl(con, 'subtypes')
 mysubtypes = c( "none", subtypes %>% pull(subtype) )
+clin = tbl(con, 'clin')
+mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
+
+
 ################################################################
-
-
+## gitr - data retriever
 gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     cohort = 'all',
     makefactors = TRUE,
     db = db  ) {
     probes_orig = probes
     ## a catch-all to retrieve more data than possibly requested
-    ## sloppy to deal with probe.type relationships
     #probes = unique( c(probes, gsub('\\.[^.]*$', '', probes) ) )
     probes = unique( gsub('\\.[^.]*$', '', probes) ) 
     print(probes)
     out = tcga %>%
         filter(  probe %in% probes ) %>%
             as_tibble %>%
-                ## some immune scores are not unique in pancan tables, need to clean this up
+                ## some immune scores are not unique in pancan tables
                 ## seems to only be the immune scores
                 distinct( sample, probe, type, .keep_all = TRUE ) %>%
                     mutate(subtype = Subtype_Selected, lcohort = cohort, cohort = tumtype)
-    
-    print(dim(out))
-    ##mutate( probe = gsub('\\.', '_', probe) )
-    ## need to add some data to mut and fmut
-    ## mutate all character columns to factor (for plotting sake)
-    if( makefactors ) {
-        out = out %>% mutate_if(is.character, as.factor)
-    }
     ## filter out normals if desired
     if( nonormal )  {
         out = out %>% filter( sample_type != "Solid Tissue Normal" )
@@ -64,8 +63,6 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
             print("filtering by cohort")
             print(dim(out))
             print(paste('Cohort', cohort))
-            print(paste(unique( out$tumtype)))
-### wtf this doesn't work!!!  out = out %>% filter( as.character(tumtype)  %in% cohort )
             out = out[ out$cohort %in% cohort, ]
             print(paste(unique( out$tumtype)))
             print(dim(out))
@@ -104,9 +101,10 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
             is.na(.) & sample %in% mutationsamples ~ 0,
             TRUE ~ .  ) )
         )
-    ## make mutant calls into factors
+    ## make factors
     if( makefactors ) {
-        out = out %>% mutate_at( dplyr::vars( ends_with('mut') ) , funs(as.factor) ) 
+        out = out %>% mutate_if(is.character, as.factor)
+        out = out %>% mutate_at( dplyr::vars( ends_with('mut') ) , funs(as.factor) )
     }
     print(out)
     out %>% droplevels %>% data.frame(check.names = FALSE)
@@ -122,20 +120,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     static.labels = 10, static.strip = 10, static.titles = 10, coordflip = FALSE, ...
                    ) {
     myargs = as.list(sys.call())
-    cat(file = stderr(), 'plotter args\n')
     cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
-    ##print(paste('cohort', cohort))
     static.labels = as.numeric(static.labels) / 10
     static.strip = as.numeric(static.strip) / 10
     static.titles = as.numeric(static.titles) / 10
-    ## set some geom defaults
-    ## is this really worth the ugliness?
-##    update_geom_defaults("point", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]] ) )
-##    update_geom_defaults("ribbon", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]], fill = ggthemes::ggthemes_data$gdocs$colors$value[[1]]))
-    ##    update_geom_defaults("smooth", list( color = ggthemes::ggthemes_data$gdocs$colors$value[[1]], fill = ggthemes::ggthemes_data$gdocs$colors$value[[1]], alpha = 0.25))
-    update_geom_defaults("point", list( color = 'black') )
-    update_geom_defaults("ribbon", list( color = 'grey', fill = 'grey' ) )
-    update_geom_defaults("smooth", list( color = 'grey', fill = 'grey',  alpha = 0.25) )
     ## SET VARIABLES - INTERACTIVE TESTING ONLY
     if(FALSE){ # for testing
         x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = NULL; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
@@ -151,7 +139,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     cat(file = stderr(), "gitr finished")
     cat(file = stderr(), paste(colnames(data), collapse = ';'))
     ## will need to remove NAs from X and possibly Y.....
-    ##data = data[ complete.cases( data[ , c(x,y)] ), ]
+    data = droplevels(data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,shape,facet,size)] ), ])
     ## I really need to deal with formulae generally
     list.of.markersxy = unlist(strsplit( c(x,y), split = " " ))
     print(list.of.markersxy)
@@ -276,7 +264,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                 geom_quantile(aes_string(x = x, y = y), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
             if( ! is.numeric(  data[, color] ) ) {
                 ##p = p + scale_fill_gdocs(na.value = 'grey')
-                p = p + scale_fill_viridis(discrete = TRUE, option = 'plasma')
+                p = p + scale_fill_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
             }
         }
     }
@@ -287,12 +275,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                               plot.subtitle = element_text(size = 13 * static.titles)
                               )
     if ( is.factor(data[ , color] ) ) {
-        p = p + viridis::scale_colour_viridis(discrete = TRUE, option = 'plasma')
+        p = p + viridis::scale_colour_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
         ##p = p + scale_colour_gdocs(na.value = 'grey')
     } else {
         ##p = p + scale_color_gradient2(low = 'blue', mid = 'grey', high = 'red', midpoint = color.midpoint, na.value = 'steelblue'  )
         ##p = p + viridis::scale_color_viridis(discrete = FALSE, option = 'plasma')
-        p = p + viridis::scale_color_viridis(discrete = FALSE, option = 'plasma')
+        p = p + viridis::scale_color_viridis(end = 0.8, discrete = FALSE, option = 'plasma')
     }
     if( coordflip ) {
         p = p + coord_flip()

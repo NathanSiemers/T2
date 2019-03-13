@@ -1,7 +1,7 @@
 library(tidyverse)
 library(sqldf)
 
-TESTING = TRUE
+TESTING = FALSE
 DESTROYOLD = TRUE
 
 if( TESTING ) {

@@ -2,46 +2,62 @@ library(tidyverse)
 library(sqldf)
 
 ## set finite my.limit for testing, set to Inf for production
-my.limit = Inf
-db = 'tcga.db'
+my.limit = 100
+db = 'tcga.delete.db'
 
-tsep = '.'
+## this will likely destroy any existing database file!
 query = paste0('attach "', db, '" as new')
 sqldf(query)
 
 ################################################################
 ## create core tables
 
+## tcga numeric data with integer keys for sample and probe
 sqldf('drop table if exists tcgai', db = db)
 sqldf( 'create table tcgai (samplekey integer, probekey integer, value numeric, type character)', db = db )
+## tcga categorical data with integer keys
 sqldf('drop table if exists tcgacati', db = db)
 sqldf( 'create table tcgacati (samplekey integer, probekey integer, value character, type character)', db = db )
+## table of probes, often gene symbols without suffix (.mut, .cnv, etc)
 sqldf( 'drop table if exists probes', db = db )
 sqldf( 'create table probes (key integer primary key, probe character unique not null) ' , db = db )
+## table of probe.type combinations - useful for app menus, etc.
 sqldf( 'drop table if exists allprobes', db = db )
 sqldf( 'create table allprobes (key integer primary key, probe character unique not null) ' , db = db )
+## sample name - keytable
 sqldf( 'drop table if exists samples', db = db )
 sqldf( 'create table samples (key integer primary key, sample character unique not null) ' , db = db )
 
 ################################################################
 ## create views
-## it's ok that everything is empty right now...
+## you can create the views before any tables have data
+## or seemingly even before tables exist? (clinpheno)
 
-
-################################################################
-## core tcga view
-sqldf( 'drop view if exists tcga_old', db = db ) 
+## simple tidy tcga numeric data view
+sqldf( 'drop view if exists tcgas', db = db ) 
 sqldf('
-create view tcga_old as
+create view tcgas as
 select samples.sample, probes.probe, tcgai.value, tcgai.type
 from tcgai, samples, probes
 where tcgai.sample = samples.key and
 tcgai.probe = probes.key
 ', db = db )
 
+################################################################
+## simple tidy tcga categorical data view
+sqldf( 'drop view if exists tcgacats', db = db ) 
+sqldf('
+create view tcgacats as
+select samples.sample, probes.probe, tcgacati.value, tcgacati.type
+from tcgacati, samples, probes
+where tcgacati.sample = samples.key and
+tcgacati.probe = probes.key
+', db = db )
 
 ################################################################
-## semi-tidy TCGA - numerics plus added categorical columns.
+## main TCGA view
+## join untidy (wide) clinical info
+## plus tidy numeric genomic data in probe and value columns
 
 sqldf( 'drop view if exists tcga', db = db ) 
 sqldf('
@@ -53,9 +69,10 @@ and tcgai.probekey = probes.key
 and samples.sample = clinpheno.sample
 ', db = db )
 
-
 ################################################################
-## spread view  of categorical tcga data
+## main TCGA view for categorical data
+## cluster/subtype assignments, etc
+
 sqldf( 'drop view if exists tcgacat', db = db ) 
 sqldf('
 create view tcgacat as
@@ -67,18 +84,17 @@ and samples.sample = clinpheno.sample
 ',
       db = db )
 
+################################################################
+## master function for creating tidy data tables
+## where probe and sample keys are integer sequences
+## with separate probe and sample lookup tables
 
-tablemaker = function( data, db = 'tcga.db', categorical = FALSE, suffix = TRUE ) {
-    ## input: a tidy of sample, probe, value, type
+tablemaker = function( data, db = 'tcga.db', categorical = FALSE, suffix = TRUE, tsep = '.' ) {
+    ## input: a tidy data set of sample, probe, value, type
     ## convert sample and probe into integer keys while updating:
     ##      sampleykeys and probes tables
-    ## insert tidy data with integer keys into main table ('tcga')
-    ##
-    ## not sure at this point if adding '.cnv', '.mut' suffixes to probes is good or bad
-    ## guessing 'bad'
-    ##
+    ## data goes into tcgai or tcgacati depending on numeric or categorical
     print(db)
-    print(data)
     if( categorical ) {
         dest_table = 'tcgacati'
         print("destination table tcgacati")
@@ -87,19 +103,23 @@ tablemaker = function( data, db = 'tcga.db', categorical = FALSE, suffix = TRUE 
         print("destination table tcgai")
     }
     ## add any new sample keys to samples
+    ## make two-column table with key column = NA
+    ## sqlite will sequence keys for you
     usample = data %>% select( sample ) %>%
         distinct %>%
             mutate( key = NA ) %>%
                 select( key, sample )
-    print(usample)
     sqldf('insert or ignore into samples select key, sample from usample', db = db )
-    print( sqldf( 'select * from samples limit 5', db = db ) )
+    print( sqldf( 'select * from samples limit 2', db = db ) )
     ## add any new probe keys to probes
+    ## same method as sample keys
     uprobe = data %>%
         mutate( key = NA ) %>%
             select( key, probe ) %>%
                 distinct
-    print('uprobe'); print(uprobe)
+    ## add .type suffix probe names to allprobes if desired
+    ## i.e. ABCA1.mut, CDKN2A.cnv
+    ## these are names people will be offered in menus, etc
     if ( suffix ) {
         print('with suffix')
         allprobe = data %>%
@@ -139,12 +159,13 @@ inner join probes on probes.probe = data.probe
         dest_table,
         sql_select )
     print(sql_string)
-    ##print('select:')
-    ##print(sqldf(sql_select, db = db) %>% head)
     sqldf(sql_string, db = db)
 }
 
+################################################################
+## read tcga data files
 
+## rna
 my_rna = read_tsv('Data/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.xena.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(probe = sample) %>%
@@ -156,7 +177,7 @@ my_rna
 tablemaker(my_rna, suffix = FALSE)
 my_rna = NULL; gc()
 
-
+## cnv
 my_cnv = read_tsv('Data/broad.mit.edu_PANCAN_Genome_Wide_SNP_6_whitelisted.gene.xena.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(probe = sample) %>%
@@ -170,9 +191,12 @@ my_cnv = NULL; gc()
 
 
 ################################################################
+## gene-level mutations
 ## note
-## this is non-standard
+## this treatment is non-standard
 ## we will remove non-mutants from table
+## will need to add zeros back in R
+## will keep track of list of samples with mutations measured
 ################################################################
 my_mut = read_tsv('Data/mc3.v0.2.8.PUBLIC.nonsilentGene.xena.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
@@ -180,7 +204,6 @@ my_mut = read_tsv('Data/mc3.v0.2.8.PUBLIC.nonsilentGene.xena.gz',
             gather( sample, value, -probe ) %>%
                 mutate(type = 'mut') %>%
                     select( sample, probe, value, type ) %>%
-                        ## ok now but generally risky in R (see Inferno)
                         filter( value != 0 )
 my_mut
 

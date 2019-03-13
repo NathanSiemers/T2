@@ -1,13 +1,24 @@
 library(tidyverse)
 library(sqldf)
 
-## set finite my.limit for testing, set to Inf for production
-my.limit = 100
-db = 'tcga.delete.db'
+TESTING = TRUE
+DESTROYOLD = TRUE
 
-## this will likely destroy any existing database file!
-query = paste0('attach "', db, '" as new')
-sqldf(query)
+if( TESTING ) {
+    my.limit = 100
+    db = 'tcga.testdelete.db'
+} else {
+    my.limit = Inf
+    db = 'tcga.db'
+}    
+
+if ( DESTROYOLD ) {
+    file.remove(db)
+    query = paste0('attach "', db, '" as new')
+    sqldf(query)
+    sqldf('select name from sqlite_master', db = db)
+}
+
 
 ################################################################
 ## create core tables
@@ -581,8 +592,9 @@ sqldf('create table types as select distinct type from tcgai', db = db)
 sqldf('drop table if exists cohorts', db = db)
 sqldf('create table cohorts as select distinct tumtype as cohort, cohort as lcohort from clin', db = db)
 
-sqldf('drop table if exists subtypes', db = db)
-sqldf('create table subtypes as select distinct Subtype_Selected as subtype from clinpheno', db = db)
+## not work, Subtype_Selected isn't here
+##sqldf('drop table if exists subtypes', db = db)
+##sqldf('create table subtypes as select distinct Subtype_Selected as subtype from clinpheno', db = db)
 
 ##phenos  = sqldf('select sample, probe, value, type from tcgacat', db = db) %>%
 ##    spread(probe, value)

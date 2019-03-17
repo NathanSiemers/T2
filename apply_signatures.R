@@ -1,10 +1,10 @@
 library(tidyverse)
 
 ## simple? yet flexible signature creation function
-## select columns from a given data
+## select columns from supplied data
 ## scale data before function if desired (default: zscale)
-## apply function (default: median)
-## scale data after function is desired (default: no)
+## apply any function you would like function (default: median)
+## scale data after function if desired (default: no)
 
 sig_fn = function( dat, comp, name = 'sig',
     prescale = scale, postscale = NULL, fun = NULL  ) {

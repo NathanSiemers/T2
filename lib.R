@@ -106,6 +106,12 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
         out = out %>% mutate_at( dplyr::vars( ends_with('mut') ) , funs(as.factor) )
     }
     print(out)
+    ## order Subtype_Immune_Model_Based
+    ##string = 'aljkfdakaj (Immune C4)'
+    ##gsub('\\).*', '', gsub('.*\\(Immune ', '', string) )
+    i_cluster = unique(out$Subtype_Immune_Model_Based)
+    i_order =  order( gsub('\\).*', '', gsub('.*\\(Immune ', '', i_cluster) ), decreasing = TRUE)
+    out$Subtype_Immune_Model_Based = factor(out$Subtype_Immune_Model_Based, levels = i_cluster[i_order])
     out %>% droplevels %>% data.frame(check.names = FALSE)
 }
 

@@ -7,7 +7,7 @@ library(tidyverse)
 ## scale data after function if desired (default: no)
 
 sig_fn = function( dat, comp, name = 'sig',
-    prescale = scale, postscale = NULL, fun = NULL  ) {
+    prescale = scale, postscale = NULL, fun = NULL, ...  ) {
     ## first, define simple default functions
     median_fn = function(x){median(x, na.rm = TRUE)}
     nothing_fn = function(x){x}
@@ -46,7 +46,8 @@ if(FALSE){ # tests
     ## test signatures
     test_decon_signatures = list(
         Epi.def = list ( comp = c("EPCAM", "ESRP1") ),
-        TCD8.def = list( comp = c("CD8A", "CD8B") ),
+        ## add some nonsense elements to sig to make sure things don't barf
+        TCD8.def = list( comp = c("CD8A", "CD8B"), foo = 'bar', IHateR = TRUE ),
         Treg.def = list( comp = c("FOXP3", "CCR8") ),
         Epi.sum = list ( comp = c("EPCAM", "ESRP1"),
             fun =  function(x){ sum(x, na.rm = TRUE) } ),

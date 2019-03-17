@@ -60,14 +60,14 @@ if(FALSE){ # tests
     dat
     ## simplest usage
     sig_fn(dat, comp = genelist)
-    ## test of adding custom prescale function
-    sig_fn(dat, comp = genelist, name = 'cd8ccr82',
-           fun = function(x){ ( 0.3 * x["CD8A"] ) + ( 0.6 * x["CCR8"] )  },
-           prescale = function(x){scale(x, center = FALSE, scale = TRUE)} )
     ## test linear function with weights, no prescaling
     sig_fn(dat, comp = genelist, name = 'cd8ccr8', prescale = FALSE,
            fun = function(x){ ( 0.3 * x["CD8A"] ) + ( 0.6 * x["CCR8"] )  })
-    ## test create_signatues()
+    ## test of adding both custom prescale and signature function
+    sig_fn(dat, comp = genelist, name = 'cd8ccr82',
+           fun = function(x){ ( 0.3 * x["CD8A"] ) + ( 0.6 * x["CCR8"] )  },
+           prescale = function(x){scale(x, center = FALSE, scale = TRUE)} )
+    ## test create_signatues() with small signature database (list)
     dat
     create_signatures(data = dat, siglist = test_decon_signatures)
 }

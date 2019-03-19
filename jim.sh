@@ -1,13 +1,12 @@
 #!/bin/sh
 
-R --version
+pwd
 
-## want to see the output log live (I hope)
+ls -l
 
-##exec nohup R --no-save --no-restore CMD BATCH 00-master.R
+chmod 0775 *.sh
 
-##R --no-save --no-restore CMD BATCH 00-master.R
-Rscript jim.sh
+Rscript jim.R
 
 ##    | tee runBatch.log
 

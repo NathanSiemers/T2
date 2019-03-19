@@ -1,15 +1,23 @@
 try(system('mkdir Data'))
 
 install.packages("UCSCXenaTools")
+library(tidyverse)
 library(UCSCXenaTools)
 
-availTCGA("ProjectID")
-availTCGA("FileType")
 
 showTCGA(project = "PANCAN")
 
+## for now, omit large exon and methylation data sets
+
+mytypes = showTCGA(project = "PANCAN")$DataType
+mytypes = mytypes[ ! mytypes %in% c('DNA Methylation', 'Exon Expression RNASeq') ]
+mytypes
+
+
+
 downloadTCGA(project = "PANCAN",
-             data_type = showTCGA(project = "PANCAN")$DataType,
+             data_type = mytypes,
              file_type = showTCGA(project = "PANCAN")$FileType,
              destdir = "./Data",
              )
+

@@ -28,8 +28,8 @@ mygenes = pull( tbl(con, 'allprobes') , probe )
 probes = pull( tbl(con, 'probes') , probe )
 cohorts = tbl(con, 'cohorts')
 mycohorts = c( cohorts %>% as_tibble %>% drop_na %>% pull(cohort) )
-##subtypes = tbl(con, 'subtypes')
-##mysubtypes = c( "none", subtypes %>% pull(subtype) )
+##subtype = tbl(con, 'subtypes')
+##subtypes = c( "none", subtypes %>% pull(subtype) )
 clin = tbl(con, 'clin')
 mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 
@@ -39,22 +39,32 @@ mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     cohort = 'all',
     makefactors = TRUE,
-    db = db  ) {
+    db = tcga, dbcat = tcgacat
+                ) {
+    ##print('db data structure')
+    ##print(str(db))
+    print(match.call())
+    if(FALSE){ #testing
+        probes = c('CD8A', 'TCD8.sig'); phenos = TRUE; nonormal = FALSE; cohort = 'all'; makefactors = TRUE; db = tcga; dbcat = tcgacat
+    }
     probes_orig = probes
     ## a catch-all to retrieve more data than possibly requested
-    #probes = unique( c(probes, gsub('\\.[^.]*$', '', probes) ) )
-    probes = unique( gsub('\\.[^.]*$', '', probes) ) 
-    print(probes)
-    out = tcga %>%
-        filter(  probe %in% probes ) %>%
+    ##probes = unique( c(probes, gsub('\\.[^.]*$', '', probes) ) )
+    ## this is now a problem, as we have .sigs, with no parent in probe name
+    probes = unique( c( probes,  gsub('\\.[^.]*$', '', probes ) ) )
+    print(paste(  'Probes within gitr' ))
+    print(as.data.frame(probes))
+    out = db %>%
+        filter( probe %in% probes ) %>%
             as_tibble %>%
                 ## some immune scores are not unique in pancan tables
                 ## seems to only be the immune scores
                 distinct( sample, probe, type, .keep_all = TRUE ) %>%
                     mutate(subtype = Subtype_Selected, lcohort = cohort, cohort = tumtype)
+    print('gitr finished first query')
     ## filter out normals if desired
     if( nonormal )  {
-        out = out %>% filter( sample_type != "Solid Tissue Normal" )
+        out = out %>% dplyr::filter( sample_type != "Solid Tissue Normal" )
     }
     ## include only selected cohorts if desired
     if( !is.null(cohort) ) {
@@ -67,13 +77,16 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
             print(dim(out))
         }
     }
-    ## mutate probes
+    ## mutate probes to add type (accodate shiny)
+    ## but we need to improve this, getting .sig.sig now
+    ## below is a band-aid
     out$probe = paste(out$probe, out$type, sep = '.')
     out$probe = gsub( "\\.rna$", '', out$probe)
+    out$probe = gsub( "\\.sig$", '', out$probe)
     out = out %>% select( -type ) %>% spread( probe, value )
 
-    outcat = tcgacat %>%
-        filter( probe %in% probes & type == 'fmut' ) %>%
+    outcat = dbcat %>%
+        dplyr::filter( probe %in% probes & type == 'fmut' ) %>%
             as_tibble %>%
                 distinct( sample, probe, type, .keep_all = TRUE )
     outcat$probe = paste(outcat$probe, outcat$type, sep = '.')
@@ -109,9 +122,12 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     ## order Subtype_Immune_Model_Based
     ##string = 'aljkfdakaj (Immune C4)'
     ##gsub('\\).*', '', gsub('.*\\(Immune ', '', string) )
+    ################################################################
+    ## horrible code to order some factors - BLAME ERIKA ;)
     i_cluster = unique(out$Subtype_Immune_Model_Based)
     i_order =  order( gsub('\\).*', '', gsub('.*\\(Immune ', '', i_cluster) ), decreasing = TRUE)
     out$Subtype_Immune_Model_Based = factor(out$Subtype_Immune_Model_Based, levels = i_cluster[i_order])
+    ###############################################################
     out %>% droplevels %>% data.frame(check.names = FALSE)
 }
 
@@ -158,7 +174,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     print(list.of.markersxy)
     list.of.markersxy = list.of.markersxy[! list.of.markersxy  %in% c('+', '-')]
     print(list.of.markersxy)
-    ##data = data %>% filter( complete.cases( data[ , list.of.markersxy] ) )
+    ##data = data %>% dplyr::filter( complete.cases( data[ , list.of.markersxy] ) )
     print( head(data) )
     data = droplevels(data)
     ## convert mutations to factors

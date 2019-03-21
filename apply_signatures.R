@@ -6,7 +6,8 @@ library(tidyverse)
 ## apply any function you would like function (default: median)
 ## scale data after function if desired (default: no)
 
-sig_fn = function( dat, comp, name = 'sig',
+sig_fn = function( dat, comp, name = 'sig', gitr = FALSE,
+    gitrDB = tcga, gitrDBcat = tcgacat,
     prescale = scale, postscale = NULL, fun = NULL, ...  ) {
     ## first, define simple default functions
     median_fn = function(x){median(x, na.rm = TRUE)}
@@ -20,28 +21,42 @@ sig_fn = function( dat, comp, name = 'sig',
     if(is.null(prescale)){prescale = scale}
     ## default postscale = nothing
     if(is.null(postscale)){postscale = nothing_fn}
+    ## use gitr if asked for
+    if(gitr) {
+        print('Running GITR')
+        dat = gitr(comp, db = gitrDB, dbcat = gitrDBcat)
+    }
     ## create signature
     signature = dat %>%
-        select( one_of( comp ) ) %>%
+        select( c(comp) ) %>%
             prescale %>% apply(1, fun) %>% postscale %>%
                 data.frame 
     colnames(signature)  = name
     signature
 }    
 
-create_signatures = function(data = dat, siglist = decon_signatures) {
-    lapply(names(siglist), function(x){
+create_signatures = function(dat = tcga, siglist = decon_signature_list, gitr = TRUE) {
+    myprobes = unique(unlist(sapply(siglist, function(x){ x$comp } )))
+    if(gitr){
+        print('gitr call')
+        print(paste(myprobes, collapse = " "))
+        dat = gitr(probes = myprobes, nonormal = FALSE, db = dat)
+        print('gitr call end')
+    }
+    out = lapply(names(siglist), function(x){
         sig = siglist[[x]]
-        function_args = c( dat = quote(data), sig, name = x )
+        function_args = c( dat = quote(dat), sig, name = x )
+        ##function_args = c( dat = dat, sig, name = x )
+        ##print(paste('function args to sig_fn', function_args ))
         do.call( sig_fn, function_args )
     }) %>% data.frame
+    cbind( dat %>% select( sample ), out )
 }
 
-
-
 if(FALSE){ # tests
+
     ## test data
-    dat = data.frame(EPCAM = 1:10,ESRP1 = rnorm(10),CD8A = 10:1,CD8B = 21:30,
+    dat = data.frame(sample = paste0('sample', 1:10),EPCAM = 1:10,ESRP1 = rnorm(10),CD8A = 10:1,CD8B = 21:30,
         FOXP3 = 31:40,CCR8 = rnorm(10) + 20 )
     ## test signatures
     test_decon_signatures = list(
@@ -70,7 +85,8 @@ if(FALSE){ # tests
            prescale = function(x){scale(x, center = FALSE, scale = TRUE)} )
     ## test create_signatues() with small signature database (list)
     dat
-    create_signatures(data = dat, siglist = test_decon_signatures)
+    create_signatures(data = dat, siglist = test_decon_signatures, sampleCol = TRUE)
+
 }
 
 

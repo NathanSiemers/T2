@@ -4,7 +4,6 @@ qw = function(x, delim = "[\\s,]+", begin_delim = "^[\\s,]+" ) {
     x = gsub( begin_delim, '', x, perl = TRUE )
     as.character (  unlist( strsplit(x, split = delim, perl = TRUE) )  )
 }
-
 ## create character list without quotes, but need commas
 ## simpler than qw(), as it uses R parser
 ## qwc( a, b )   should return the same as
@@ -12,8 +11,7 @@ qw = function(x, delim = "[\\s,]+", begin_delim = "^[\\s,]+" ) {
 qwc = function(...) { as.character( unlist( as.list( match.call() )[ -1 ] ) ) }
 
 
-
-decon_signature_list = list(
+dsl = list(
     Epi.sig = list( comp = c("EPCAM", "ESRP1")),
     TCD8.sig = list( comp = c("CD8A", "CD8B")),
     Treg.sig = list( comp = c("FOXP3", "CCR8")),
@@ -21,7 +19,7 @@ decon_signature_list = list(
     Bcell.sig = list( comp = c("CD19", "CD79A", "MS4A1")),
     NK.sig = list(
         comp = c( "KIR2DL1" , "KIR2DL3" , "KIR2DL4" , "KIR3DL1" , "KIR3DL2" , "KIR3DL3" , "KIR2DS4" ),
-        fun = function(x){log2(sum(2 ** x, na.rm = TRUE))},
+        fun = function(x){log2(  sum(2 ** x, na.rm = TRUE) + 1 )},
         prescale = FALSE,
         postscale = scale   ),
     MGran.sig = list( comp = c("CLEC4D", "CLEC4E", "CLEC6A")),
@@ -47,7 +45,9 @@ decon_signature_list = list(
     BMS4.sig = list( comp = c('LAG3', 'CD274', 'CD8A', 'STAT1')),
     BMS2.sig = list( comp = c('LAG3', 'CD274')),
     DC1.sig = list( comp = c('CLEC9A', 'FLT3', 'XCR1')),
-    COXup.sig = list( comp = c('IL1A', 'IL1B', 'IL6', 'CSF3', 'CXCL1', 'CXCL2', 'CXCL8', 'CXCR1', 'CXCR2', 'CCl2', 'VEGFA' )),
+    COXup.sig = list( comp = c('IL1A', 'IL1B', 'IL6', 'CSF3', 'CXCL1', 'CXCL2',
+                          ## not founc in TCGA: 'CXCL8',
+                          'CXCR1', 'CXCR2', 'CCL2', 'VEGFA' )),
     ##Neut1.sig = list( comp = c('FPR1', 'CSF3R')),
     ##Neut2.sig = list( comp = c('FPR1', 'CSF3R', 'FCGR3B', 'CEACAM3')),
     Ifn9p.sig = list( comp = c(
@@ -116,52 +116,48 @@ RPS7
 SLC25A3
 SOD1
 TBP
-YWHAZ' )),
-    Merck18_algorithm.sig = list( comp = qw(
-                                      'CCL5 CD27 CD274 CD276 CD8A CMKLR1 CXCL9 CXCR6 HLA-DQA1 HLA-DRB1 HLA-E IDO1 LAG3 NKG7 PDCD1LG2 PSMB10 STAT1 TIGIT' ) )
-)
+YWHAZ' ) )
+    ## TregCD8.sig = list(
+    ##     comp = qwc(CD8A, CD8B, FOXP3, CCR8),
+    ##     fun = function(x){
+    ##         with(x,
+    ##              median(CD8A, CD8B, na.rm = TRUE) -
+    ##                  median(FOXP3, CCR8, na.rm = TRUE)
+    ##              ) }
+    ##     ), 
+    ## NKCD8 = list(
+    ##     comp = c( 'CD8A', 'CD8B', "KIR2DL1" , "KIR2DL3" , "KIR2DL4" , "KIR3DL1" , "KIR3DL2" , "KIR3DL3" , "KIR2DS4" ),
+    ##     fun = function(x) {
+    ##         with(x,
+    ##              median( c(CD8A, CD8B), na.rm = TRUE ) -
+    ##                  mean( c(KIR2DL1 , KIR2DL3 , KIR2DL4 , KIR3DL1 , KIR3DL2 , KIR3DL3 , KIR2DS4), na.rm = TRUE )
+    ##              ) } )
+    )
+################################################################
+## signatures of signatures - necessary to first have above evaluated? Maybe.
+
+dsl = append(dsl,
+    list(
+        TregCD8.sig = list(
+            comp = c( dsl$Treg.sig$comp, dsl$TCD8.sig$comp ),
+            fun = function(x){
+                median( x[dsl$Treg.sig$comp], na.rm = TRUE ) -
+                    median( x[dsl$TCD8.sig$comp], na.rm = TRUE )
+            }
+            ),
+        NKCD8.sig = list(
+            comp = c( dsl$NK.sig$comp, dsl$TCD8.sig$comp ),
+            fun = function(x){
+                mean( x[dsl$NK.sig$comp], na.rm = TRUE ) -
+                    median( x[dsl$TCD8.sig$comp], na.rm = TRUE )
+            }
+            )
+
+        ) )
+        
+
+decon_signature_list = dsl
 
 
-
-dsl = decon_signature_list
-
-decon_genelist = unlist(decon_signature_list, use.names=FALSE)
-
-
-
-deconfunctions =  list(
-    HypVEGFA.sig = function(x) {median(x[names(x) %in% dsl$HypVEGFA.sig])},
-    HypCA9.sig = function(x) {median(x[names(x) %in% dsl$HypCA9.sig])},
-    TGaj.sig = function(x) {median(x[names(x) %in% dsl$TGaj.sig])},
-    CyT.sig = function(x) {median(x[names(x) %in% dsl$CyT.sig])},
-    TCD8.sig = function(x) {median(x[names(x) %in% dsl$TCD8.sig])},
-    Treg.sig = function(x) {median(x[names(x) %in% dsl$Treg.sig])},
-    Tcell.sig = function(x){median(x[names(x) %in% dsl$Tcell.sig])},
-    Bcell.sig = function(x){median(x[names(x) %in% dsl$Bcell.sig])},
-    ##    NK.sig = function(x) {median(x[names(x) %in% dsl$NK.sig])},
-    NK.sig = function(x) {
-        set.seed(10538)
-        mean(x[names(x) %in% dsl$NK.sig], na.rm = TRUE ) + rnorm(1, 0.16, 0.08)
-    },
-    ##Treg.sig = function(x) {median(x[names(x) %in% dsl$Treg.sig], na.rm = TRUE)},
-    Treg.sig = function(x) {median(x[names(x) %in% dsl$Treg.sig], na.rm = TRUE  ) },
-    MGran.sig = function(x) {median(x[names(x) %in% dsl$MGran.sig], na.rm = TRUE )},
-    Mono.sig = function(x) {median(x[names(x) %in% dsl$Mono.sig], na.rm = TRUE )},
-    MFm2.sig = function(x) {median(x[names(x) %in% dsl$MFm2.sig], na.rm = TRUE )},
-    Fib.sig = function(x) {  median(x[names(x) %in% dsl$Fib.sig], na.rm = TRUE )  },
-    IFNG.sig = function(x) x[["IFNG"]],
-    TregCD8.sig = function(x) {  deconfunctions[["Treg.sig"]](x) - deconfunctions[["TCD8.sig"]](x) },
-    NKCD8.sig = function(x) { deconfunctions[["NK.sig"]](x) - deconfunctions[["TCD8.sig"]](x) },
-    Ifn9p.sig = function (x) { mean(  x[ names(x) %in% dsl$Ifn9p.sig ], na.rm = TRUE ) },
-    Endo.sig = function (x) { mean(  x[ names(x) %in% dsl$Endo.sig ], na.rm = TRUE ) },
-    Merck18_algorithm.sig = function(x) {
-        ## createdecon will demand scale = FALSE
-        ## compute mean of logged housekeeping genes.
-        hk_mean = mean( log10 ( 2 ** ( x[ names( x ) %in% dsl$Qiagen_controls] ) + 1 ) , na.rm = TRUE )
-        ## get the log10 version of the signature genes
-        ## wrapper function processes 1 row at a time
-        x = log10 ( (2 ** x) + 1 )
-        ## we don't have weights for a weighted average right now
-        sum( x / hk_mean, na.rm = TRUE)
-    }
-)
+               
+decon_genelist = unique(unlist(sapply(dsl, function(x){ x$comp} ), use.names = FALSE))

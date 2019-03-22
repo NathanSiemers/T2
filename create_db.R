@@ -52,8 +52,8 @@ sqldf('
 create view tcgas as
 select samples.sample, probes.probe, tcgai.value, tcgai.type
 from tcgai, samples, probes
-where tcgai.sample = samples.key and
-tcgai.probe = probes.key
+where tcgai.samplekey = samples.key and
+tcgai.probekey = probes.key
 ', db = db )
 
 ################################################################
@@ -63,8 +63,8 @@ sqldf('
 create view tcgacats as
 select samples.sample, probes.probe, tcgacati.value, tcgacati.type
 from tcgacati, samples, probes
-where tcgacati.sample = samples.key and
-tcgacati.probe = probes.key
+where tcgacati.samplekey = samples.key and
+tcgacati.probekey = probes.key
 ', db = db )
 
 ################################################################

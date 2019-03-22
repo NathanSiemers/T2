@@ -83,6 +83,7 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     ## but we need to improve this, getting .sig.sig now
     ## below is a band-aid
     out$probe = paste(out$probe, out$type, sep = '.')
+    out$probe = gsub( "\\.tmb$", '', out$probe)
     out$probe = gsub( "\\.rna$", '', out$probe)
     out$probe = gsub( "\\.sig$", '', out$probe)
     out = out %>% select( -type ) %>% spread( probe, value )

@@ -515,8 +515,13 @@ create index clinphenoidx on clinpheno(sample)
 sqldf('drop table if exists types', db = db)
 sqldf('create table types as select distinct type from tcgai', db = db)
 
+## massage the cohorts table
+clintmpclean  = sqldf('select tumtype, cohort from clin', db = db) %>% drop_na %>% distinct
+clintmpclean$string = with( clintmpclean, paste(cohort, '(', tumtype, ')' ) )
+clintmpclean = clintmpclean %>% rename(cohort = tumtype, lcohort = cohort, cohortstring = string)
 sqldf('drop table if exists cohorts', db = db)
-sqldf('create table cohorts as select distinct tumtype as cohort, cohort as lcohort from clin', db = db)
+sqldf('create table cohorts as select * from clintmpclean', db = db)
+sqldf('select * from cohorts', db = db)
 
 ## not work, Subtype_Selected isn't here
 ##sqldf('drop table if exists subtypes', db = db)

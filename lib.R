@@ -140,7 +140,7 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
 plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet = NULL, nonormal = TRUE,
     cohort = 'all', db = tcga, extra = NULL,  facet.formula = NULL, smooth = FALSE,
     alpha = 0.4, static.size = 9, scales = 'fixed', ncols = 12, halfmutants = FALSE,
-    static.labels = 10, static.strip = 10, static.titles = 10, coordflip = FALSE, ...
+    static.labels = 10, static.strip = 10, static.titles = 10, coordflip = FALSE, evaluate_vars = FALSE, ...
                    ) {
     myargs = as.list(sys.call())
     cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
@@ -186,28 +186,28 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     mutantlevels = c( 0, 1 )
     ##}
     lapply(list.of.markersxy, function(xx) {
-         if( grepl( '\\.mut$', xx ) ) {
-             print(paste( xx, 'is a mutant'))
-             data[ , xx ] <<-  factor( data[ , xx ], levels = mutantlevels )
-         }
-     })
+        if( grepl( '\\.mut$', xx ) ) {
+            print(paste( xx, 'is a mutant'))
+            data[ , xx ] <<-  factor( data[ , xx ], levels = mutantlevels )
+        }
+    })
     print(str(data))
     psub = ""
     if(!is.null(color)) {
         psub = paste(psub, "Color:", color)
-        aescolor = aes_string(color = color)
+        aescolor = aes_string(color = as.name(color) )
     } else {
         aescolor = aes(color = NULL)
     }
     if(!is.null(shape)) {
         psub = paste(psub, "shape:", shape)
-        aesshape = aes_string(shape = shape)
+        aesshape = aes_string(shape = as.name(shape) )
     } else {
         aesshape = aes(shape = NULL)
     }
     if(!is.null(size)) {
         psub = paste(psub, "Size:", size)
-        aessize = aes_string(size = size)
+        aessize = aes_string(size = as.name(size) )
     } else {
         aessize = aes(size = NULL)
     }
@@ -217,11 +217,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if(!is.null(facet.formula)) {
         psub = paste(psub, "Graphs:", as.character(facet.formula ) )
     }
-    aesx = aes_string( x = x )
+    aesx = aes_string( x = as.name(x) )
     if( is.null(y) ) {
         aesy = aes( y = NULL )
     } else {
-        aesy = aes_string( y = y )
+        aesy = aes_string( y = as.name(y) )
     }
     aesxy = modifyList( aesx,aesy )
     psub = paste(psub, "TCGA Pan-Cancer 2018, Nathan Siemers, Translational Medicine.")
@@ -247,6 +247,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     ## create full aesthetics
     aesfull = modifyList( aesx, c(aesy, aescolor, aesshape, aessize) )
+    print('aesfull')
     print(aesfull)
     p = ggplot( mapping = aesfull, data = data)
     if( ! grepl('\\+|\\-', x ) ) {
@@ -284,8 +285,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if ( !is.null(smooth) ) {
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {
             p = p +
-            geom_smooth(aes_string(x = x, y = y, color = color, fill = color), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
-                geom_quantile(aes_string(x = x, y = y), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
+                geom_smooth(aes_string(x = x, y = y, color = color, fill = color), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
+                    geom_quantile(aes_string(x = x, y = y), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
             if( ! is.numeric(  data[, color] ) ) {
                 ##p = p + scale_fill_gdocs(na.value = 'grey')
                 p = p + scale_fill_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
@@ -293,11 +294,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
     }
     p = p + ggtitle(  pstring, subtitle = paste(" ", pstring2, '\n ', psub) ) +
-                        theme(axis.text = element_text(size = 14 * static.labels ),
-                              axis.title = element_text(size = 17 * static.labels ),
-                              plot.title = element_text(size = 20 * static.titles),
-                              plot.subtitle = element_text(size = 13 * static.titles)
-                              )
+        theme(axis.text = element_text(size = 14 * static.labels ),
+              axis.title = element_text(size = 17 * static.labels ),
+              plot.title = element_text(size = 20 * static.titles),
+              plot.subtitle = element_text(size = 13 * static.titles)
+              )
     if ( is.factor(data[ , color] ) ) {
         p = p + viridis::scale_colour_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
         ##p = p + scale_colour_gdocs(na.value = 'grey')
@@ -312,7 +313,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
 
 fun_table1 = function ( input ) {
-##    my.input = paste ('~', paste(input$x, input$y, input$color,
+    ##    my.input = paste ('~', paste(input$x, input$y, input$color,
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
     my.input = c( input$x, input$y, input$color, input$size, input$facet )
     gitr( my.input, nonormal = FALSE)
@@ -352,18 +353,27 @@ fun_plot1.orig = function(input) {
         nonormal = input$nonormal   )
 }
 
-fun_plot1 = function(input) {
-    input = shiny::reactiveValuesToList(input) 
+fun_plot1 = function(input, reactive = TRUE) {
+    if( reactive ) {
+        input = shiny::reactiveValuesToList(input)
+    }
+    if(FALSE){
+    input =   list(x='ABCA1',y='HLA-E',shape = "",size=NULL,color="")
+    }
     cat(file = stderr(), paste('fun_plot1 input', paste(input, sep = '=', collapse = ',' ) ) )
     ## remove empty input variables and names
     input = input[ input != 'none']
     input = input[ input != '']
     input = input[ names(input) != '']
+    input = input[ ! sapply(input, is.null) ]
+    input
     cat(file = stderr(), 'CLEANED INPUT', '\n')
     cat(file = stderr(), paste(input) )
     ## transform variables that should be numeric
     numeric_vars = c('static.size', 'static.titles', 'static.labels', 'ncols', 'alpha')
     input[ names(input) %in% numeric_vars ] = as.numeric( input[ names(input) %in% numeric_vars ] )
+    ##input[ ! names(input) %in% numeric_vars ] = as.name( input[ names(input) %in% numeric_vars ] )
+    ## above: nope
     print(input)
     do.call(plotter, input)
 }

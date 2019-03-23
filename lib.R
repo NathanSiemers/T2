@@ -143,7 +143,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     alpha = 0.4, static.size = 9, scales = 'fixed', ncols = 12, halfmutants = FALSE,
     static.labels = 10, static.strip = 10, static.titles = 10, coordflip = FALSE, evaluate_vars = FALSE, ...
                    ) {
-    myargs = as.list(sys.call())
+    myargs = as.list(match.call())
     cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
     static.labels = as.numeric(static.labels) / 10
     static.strip = as.numeric(static.strip) / 10
@@ -156,59 +156,65 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if(  (is.null(facet) &  is.null(facet.formula) ) ) {
         if( x == 'cohort' ) static.size = static.size / 8
     } else {  static.size = static.size / 4  }
-    ## retrieve tcga data
+    ## retrieve tcga data  HELP
+    ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, facet, c(extra) )
     print(list.of.markers)
     data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = TRUE)
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
     if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
     cat(file = stderr(), "gitr finished")
-    cat(file = stderr(), paste(colnames(data), collapse = ';'))
-    ## will need to remove NAs from X and possibly Y.....
+    cat(file = stderr(), paste(colnames(data), collapse = ';')) ; cat('\n')
+    ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
     data = droplevels(data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,shape,facet,size)] ), ])
+    ## catch plots that would fail
+    cat(file = stderr(), 'entereng error checking\n')
     if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {
         return( ggplot() + ggtitle("Sorry, there seems to be no data associated with your query", subtitle = "Hint: some of the subtype classifications are only applied across some tumor sample, some mutations aren't present, etc" ) )
     }
     if ( nrow(data) != 0 & is.factor( data[ , x] ) & length(levels( data[ , x] )) < 2 )  {
         return( ggplot() + ggtitle("Sorry, your x variable seems to be categorical and there seems to be less than two categories to plot") )
     }
+    cat(file = stderr(), 'end of error checking\n')
     ## I really need to deal with formulae generally
-    list.of.markersxy = unlist(strsplit( c(x,y), split = " " ))
-    print(list.of.markersxy)
-    list.of.markersxy = list.of.markersxy[! list.of.markersxy  %in% c('+', '-')]
-    print(list.of.markersxy)
-    ##data = data %>% dplyr::filter( complete.cases( data[ , list.of.markersxy] ) )
-    print( head(data) )
-    data = droplevels(data)
+    if( evaluate_vars ) {
+        list.of.markersxy = unlist(strsplit( c(x,y), split = " " ))
+        print(list.of.markersxy)
+        list.of.markersxy = list.of.markersxy[! list.of.markersxy  %in% c('+', '-')]
+        print(list.of.markersxy)
+    } else {
+        list.of.markersxy = c(x,y)
+    }
+    ################################################################
     ## convert mutations to factors
     ## if( halfmutants ) {
     ##     mutantlevels = c( 0, 0.5, 1 )
     ## } else {
+    ## SETTING FACTORS ALSO NEEDS TO BE DEALT WITH GENERALLY
+    ## below is just for .mut
+    
     mutantlevels = c( 0, 1 )
-    ##}
     lapply(list.of.markersxy, function(xx) {
         if( grepl( '\\.mut$', xx ) ) {
-            print(paste( xx, 'is a mutant'))
             data[ , xx ] <<-  factor( data[ , xx ], levels = mutantlevels )
         }
     })
-    print(str(data))
     psub = ""
     if(!is.null(color)) {
         psub = paste(psub, "Color:", color)
-        aescolor = aes_string(color = as.name(color) )
+        aescolor = aes_q(color = as.name(color) )
     } else {
         aescolor = aes(color = NULL)
     }
     if(!is.null(shape)) {
         psub = paste(psub, "shape:", shape)
-        aesshape = aes_string(shape = as.name(shape) )
+        aesshape = aes_q(shape = as.name(shape) )
     } else {
         aesshape = aes(shape = NULL)
     }
     if(!is.null(size)) {
         psub = paste(psub, "Size:", size)
-        aessize = aes_string(size = as.name(size) )
+        aessize = aes_q(size = as.name(size) )
     } else {
         aessize = aes(size = NULL)
     }
@@ -218,11 +224,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if(!is.null(facet.formula)) {
         psub = paste(psub, "Graphs:", as.character(facet.formula ) )
     }
-    aesx = aes_string( x = as.name(x) )
+    aesx = aes_q( x = as.name(x) )
     if( is.null(y) ) {
         aesy = aes( y = NULL )
     } else {
-        aesy = aes_string( y = as.name(y) )
+        aesy = aes_q( y = as.name(y) )
     }
     aesxy = modifyList( aesx,aesy )
     psub = paste(psub, "TCGA Pan-Cancer 2018, Nathan Siemers, Translational Medicine.")
@@ -286,8 +292,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if ( !is.null(smooth) ) {
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {
             p = p +
-                geom_smooth(aes_string(x = x, y = y, color = color, fill = color), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
-                    geom_quantile(aes_string(x = x, y = y), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
+                geom_smooth(aes_q(x = as.name(x), y = as.name(y), color = as.name(color), fill = as.name(color)), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
+                    geom_quantile(aes_string(x = as.name(x), y = as.name(y) ), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
             if( ! is.numeric(  data[, color] ) ) {
                 ##p = p + scale_fill_gdocs(na.value = 'grey')
                 p = p + scale_fill_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
@@ -320,39 +326,6 @@ fun_table1 = function ( input ) {
     gitr( my.input, nonormal = FALSE)
 }
 
-################################################################
-## make a plotter function wrapper that takes shiny 'input'
-## as argument
-## main plotter function should be able to deal with NULLs
-################################################################
-fun_plot1.orig = function(input) {
-    input = reactiveValuesToList(input)
-    input = input[ input != 'none']
-    input = input[ input != '']
-    input = input[ names(input) != '']
-    print('INPUT')
-    print(input)
-    ##if( input$cohort[[1]] == 'all' ) input$cohort = mycohorts
-    plotter(
-        x = input$x,
-        y = input$y,
-        coordflip = input$coordflip,
-        color = input$color,
-        shape = input$shape,
-        size = input$size,
-        static.size = as.numeric(input$static.size),
-        static.labels = as.numeric(input$static.labels),
-        static.titles = as.numeric(input$static.titles),
-        ncols = as.numeric(input$ncols),
-        alpha = as.numeric(input$alpha),
-        facet = input$facet,
-        cohort = input$cohort,
-        extra = input$extra,
-        facet.formula = input$facet.formula,
-        smooth = input$smooth,
-        scales = input$fscales, 
-        nonormal = input$nonormal   )
-}
 
 fun_plot1 = function(input, reactive = TRUE) {
     if( reactive ) {
@@ -361,7 +334,7 @@ fun_plot1 = function(input, reactive = TRUE) {
     if(FALSE){
     input =   list(x='ABCA1',y='HLA-E',shape = "",size=NULL,color="")
     }
-    cat(file = stderr(), paste('fun_plot1 input', paste(input, sep = '=', collapse = ',' ) ) )
+    cat(file = stderr(), paste('fun_plot1 input', paste(names(input), input, sep = '=', collapse = ',' ) ) )
     ## remove empty input variables and names
     input = input[ input != 'none']
     input = input[ input != '']
@@ -369,7 +342,7 @@ fun_plot1 = function(input, reactive = TRUE) {
     input = input[ ! sapply(input, is.null) ]
     input
     cat(file = stderr(), 'CLEANED INPUT', '\n')
-    cat(file = stderr(), paste(input) )
+    cat(file = stderr(), paste(names(input),input) )
     ## transform variables that should be numeric
     numeric_vars = c('static.size', 'static.titles', 'static.labels', 'ncols', 'alpha')
     input[ names(input) %in% numeric_vars ] = as.numeric( input[ names(input) %in% numeric_vars ] )

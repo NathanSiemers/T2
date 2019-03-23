@@ -62,6 +62,9 @@ shinyServer (
             }
                          )
         })
+        output$datatypes = renderTable( {
+            types
+        })
         output$dlknitr = downloadHandler(
             ## this is the name of the file the user will see
             ## filename seems set at first render and I can't break the spell

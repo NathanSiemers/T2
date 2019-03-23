@@ -26,6 +26,7 @@ samples = pull(tbl(con, 'samples'), sample)
 mutationsamples = pull( tbl(con, 'mutationsamples'), sample )
 mygenes = pull( tbl(con, 'allprobes') , probe )
 probes = pull( tbl(con, 'probes') , probe )
+types = tbl(con, 'types')
 cohorts = tbl(con, 'cohorts')
 mycohorts = cohorts %>% pull(cohort)
 cohortstrings = cohorts %>% pull(cohortstring)
@@ -200,13 +201,16 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
     })
     psub = ""
-    if(!is.null(color)) {
+    if(!is.null(color) ) {
+        if( color != "") {
+            color = as.name(color)
+        }
         psub = paste(psub, "Color:", color)
-        aescolor = aes_q(color = as.name(color) )
+        aescolor = aes_q(color = color)
     } else {
         aescolor = aes(color = NULL)
     }
-    if(!is.null(shape)) {
+    if( !is.null(shape) ) {
         psub = paste(psub, "shape:", shape)
         aesshape = aes_q(shape = as.name(shape) )
     } else {
@@ -292,7 +296,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if ( !is.null(smooth) ) {
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {
             p = p +
-                geom_smooth(aes_q(x = as.name(x), y = as.name(y), color = as.name(color), fill = as.name(color)), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
+                geom_smooth(aes_q(x = as.name(x), y = as.name(y), color = color, fill = color), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
                     geom_quantile(aes_string(x = as.name(x), y = as.name(y) ), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
             if( ! is.numeric(  data[, color] ) ) {
                 ##p = p + scale_fill_gdocs(na.value = 'grey')

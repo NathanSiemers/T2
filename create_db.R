@@ -514,6 +514,9 @@ create index clinphenoidx on clinpheno(sample)
 
 sqldf('drop table if exists types', db = db)
 sqldf('create table types as select distinct type from tcgai', db = db)
+sqldf('insert into types select distinct type from tcgacati', db = db)
+sqldf('select * from types', db = db)
+
 
 ## massage the cohorts table
 clintmpclean  = sqldf('select tumtype, cohort from clin', db = db) %>% drop_na %>% distinct

@@ -150,15 +150,15 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
     ## SET VARIABLES - INTERACTIVE TESTING ONLY
     if(FALSE){ # for testing
-        x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = NULL; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
+        x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = 'KRAS.mut'; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
     }
     ## scaling factors depending on faceting
     if(  (is.null(facet) &  is.null(facet.formula) ) ) {
-        if( x == 'cohort' ) static.size = 20 * static.size / 4
+        if( x == 'cohort' ) static.size = 20 * static.size / 2
     } else {  static.size = 20 * static.size  }
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
-    list.of.markers = c( x, y, color, shape, size, facet, c(extra) )
+    list.of.markers = c( x, y, color, shape, size, c(facet), c(extra) )
     print(list.of.markers)
     data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = TRUE)
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
@@ -166,7 +166,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     cat(file = stderr(), "gitr finished")
     cat(file = stderr(), paste(colnames(data), collapse = ';')) ; cat('\n')
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
-    data = droplevels(data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,shape,facet,size)] ), ])
+    data = droplevels(data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,shape,size, c(facet))] ), ])
     ## catch plots that would fail
     cat(file = stderr(), 'entereng error checking\n')
     if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {
@@ -225,7 +225,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         aessize = aes(size = NULL)
     }
     if(!is.null(facet)) {
-        psub = paste(psub, "Graphs:", facet)
+        psub = paste(psub, "Graphs:", paste(facet, collapse = ' + ') )
     }
     if(!is.null(facet.formula)) {
         psub = paste(psub, "Graphs:", as.character(facet.formula ) )
@@ -290,8 +290,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
     }
     if(  !is.null(facet)  ) {
-        my.formula = paste( '~', facet)
-        p = p + facet_wrap(  my.formula, scales = scales, ncol = ncols ) + theme(strip.text = element_text(size = round(60 * static.strip, digits = 0 ) ) ) 
+        my.formula = as.formula(paste( '~', paste(facet, collapse = ' + ' ) ))
+        p = p + facet_wrap(  my.formula, scales = scales, ncol = ncols ) + theme(strip.text = element_text(size = round(60 * static.strip, digits = 0 ) ) )
+        print("FACET FORMULA:")
+        print(my.formula)
     }
     if(  !is.null(facet.formula)  ) {
         my.formula = paste( '~', facet.formula)

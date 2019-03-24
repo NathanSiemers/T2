@@ -17,7 +17,7 @@ shinyUI(
         div(style="display:inline-block;", selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
         div(style="display:inline-block;", selectizeInput('smooth', 'Fit Line', choices = NULL  )),
         ##div(style="display:inline-block;", selectizeInput('nonormal', 'Exclude Non-Tumor', choices = NULL  )),
-        div(style="display:inline-block;", selectizeInput('facet', 'Graph for each:', choices = NULL  )),
+        div(style="display:inline-block;", selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
         tags$br(),
         div(style="display:inline-block;", checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
         submitButton(text = "Plot", icon = NULL, width = NULL),

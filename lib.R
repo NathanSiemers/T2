@@ -153,10 +153,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = 'KRAS.mut'; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
     }
     ## scaling factors depending on faceting
-    static.size = static.size * 60 # 15 after correction
-    if(  (is.null(facet) &  is.null(facet.formula) ) ) {
-        if( x == 'cohort' ) static.size = static.size / 4
-    } 
+    static.size = static.size * 30
+    if( x == 'cohort' ) static.size = static.size / 4
+    if( ! is.null(facet) )  static.size = static.size / 4
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, c(facet), c(extra) )
@@ -205,6 +204,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         if( color != "") {
             psub = paste(psub, "Color:", color)
             aescolor = aes_q(color = as.name(color) )
+            ## there's a weird problem with setting names in color?
+            ## below does not fix
+            ## aescolor = aes_q(color = color)
         }
     } else {
         aescolor = aes(color = NULL)
@@ -226,7 +228,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         aessize = aes(size = NULL)
     }
     if(!is.null(facet)) {
-        psub = paste(psub, "Graphs:", paste(facet, collapse = ' + ') )
+        psub = paste0(psub, " Graphs: ", paste(facet, collapse = ' + '), '.' )
     }
     if(!is.null(facet.formula)) {
         psub = paste(psub, "Graphs:", as.character(facet.formula ) )
@@ -241,8 +243,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
 
     aesxy = modifyList( aesx,aesy )
+    psub = paste0(psub, " Data points: ", nrow(data), '.' )
     psub = paste(psub, "TCGA Pan-Cancer 2018.")
-    psub = paste(psub, "Data points:", nrow(data) )
+
     pstring = paste( "Relationship of", x, "and", y, "across TCGA" )
     pstring = gsub( '\\.mut', ' mutation', pstring )
     pstring = gsub( '\\.fmut', ' mutation', pstring )
@@ -304,7 +307,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if ( !is.null(smooth) ) {
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {
             p = p +
-                geom_smooth(aes_q(x = as.name(x), y = as.name(y), color = color, fill = color), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
+                ##                geom_smooth(aes_q(x = as.name(x), y = as.name(y), color = as.name(color), fill = color), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
+                geom_smooth(
+                    aes_q(x = as.name(x), y = as.name(y)  ),
+                    formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
                     geom_quantile(aes_string(x = as.name(x), y = as.name(y) ), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
             if( ! is.numeric(  data[, color] ) ) {
                 ##p = p + scale_fill_gdocs(na.value = 'grey')

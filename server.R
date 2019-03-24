@@ -41,16 +41,16 @@ shinyServer (
                              selected = 'TRUE', server = TRUE)
         updateSelectizeInput(session, 'fscales',  choices = c("free", "fixed", "free_x", "free_y"),
                              selected = 'fixed', server = TRUE)
-        updateSelectizeInput(session, 'static.size',  choices = 1:50,
-                             selected = 12, server = TRUE)
-        updateSelectizeInput(session, 'static.strip',  choices = 1:30,
-                             selected = 10, server = TRUE)
-        updateSelectizeInput(session, 'static.labels',  choices = 1:30,
-                             selected = 14, server = TRUE)
-        updateSelectizeInput(session, 'static.titles',  choices = 1:30,
-                             selected = 13, server = TRUE)
-        updateSelectizeInput(session, 'alpha',  choices = 1:20 / 20,
-                             selected = '0.65', server = TRUE)
+        updateSelectizeInput(session, 'static.size',  choices = 1:20 / 20,
+                             selected = "0.25", server = TRUE)
+        updateSelectizeInput(session, 'static.strip',  choices = 1:20 / 20,
+                             selected = "0.25", server = TRUE)
+        updateSelectizeInput(session, 'static.labels',  choices = 1:20 / 20,
+                             selected = "0.25", server = TRUE)
+        updateSelectizeInput(session, 'static.titles',  choices = 1:20 / 20,
+                             selected = "0.25", server = TRUE)
+        updateSelectizeInput(session, 'alpha',  choices = 1:50 / 50,
+                             selected = '0.5', server = TRUE)
         updateSelectizeInput(session, 'ncols',  choices = 1:50,
                              selected = 12, server = TRUE)
         output$main_plot = renderPlot( {

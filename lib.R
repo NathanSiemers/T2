@@ -4,15 +4,7 @@
 library(sqldf)
 library(ggplot2); library(ggthemes)
 library(viridis)
-##theme_set(theme_economist()+ theme(
-theme_set(theme_gdocs() + theme(
-    legend.text = element_text(colour="black", size=8 )
-    ) )
-## set some geom defaults
-## is this really worth the ugliness?
-update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
-update_geom_defaults("ribbon", list( color = plasma(1), fill = plasma(1)  ) )
-update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 05) )
+
 library(tidyverse)
 
 
@@ -141,22 +133,29 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
 
 plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet = NULL, nonormal = TRUE,
     cohort = 'all', db = tcga, extra = NULL,  facet.formula = NULL, smooth = FALSE,
-    alpha = 0.4, static.size = 9, scales = 'fixed', ncols = 12, halfmutants = FALSE,
-    static.labels = 10, static.strip = 10, static.titles = 10, coordflip = FALSE, evaluate_vars = FALSE, ...
+    alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
+    static.labels = 0.25, static.strip = 10, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE, ...
                    ) {
+    ################################################################
+    ## THEMES and ggplot geom defaults
+    ## do these enter global environment?
+    theme_set(theme_gdocs() + theme(
+        legend.text = element_text(colour="black", size=8 )
+        ) )
+    update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
+    update_geom_defaults("ribbon", list( color = plasma(1), fill = plasma(1)  ) )
+    update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 05) )
+    ## 
     myargs = as.list(match.call())
     cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
-    static.labels = as.numeric(static.labels) / 10
-    static.strip = as.numeric(static.strip) / 10
-    static.titles = as.numeric(static.titles) / 10
     ## SET VARIABLES - INTERACTIVE TESTING ONLY
     if(FALSE){ # for testing
         x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = NULL; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
     }
     ## scaling factors depending on faceting
     if(  (is.null(facet) &  is.null(facet.formula) ) ) {
-        if( x == 'cohort' ) static.size = static.size / 8
-    } else {  static.size = static.size / 4  }
+        if( x == 'cohort' ) static.size = 20 * static.size / 4
+    } else {  static.size = 20 * static.size  }
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, facet, c(extra) )
@@ -203,22 +202,25 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     psub = ""
     if(!is.null(color) ) {
         if( color != "") {
-            color = as.name(color)
+            psub = paste(psub, "Color:", color)
+            aescolor = aes_q(color = as.name(color) )
         }
-        psub = paste(psub, "Color:", color)
-        aescolor = aes_q(color = color)
     } else {
         aescolor = aes(color = NULL)
     }
     if( !is.null(shape) ) {
-        psub = paste(psub, "shape:", shape)
-        aesshape = aes_q(shape = as.name(shape) )
+        if( shape != "") {
+            psub = paste(psub, "shape:", shape)
+            aesshape = aes_q(shape = as.name(shape) )
+        }
     } else {
         aesshape = aes(shape = NULL)
     }
     if(!is.null(size)) {
-        psub = paste(psub, "Size:", size)
-        aessize = aes_q(size = as.name(size) )
+        if( size != "") {
+            psub = paste(psub, "Size:", size)
+            aessize = aes_q(size = as.name(size) )
+        }
     } else {
         aessize = aes(size = NULL)
     }
@@ -228,12 +230,15 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if(!is.null(facet.formula)) {
         psub = paste(psub, "Graphs:", as.character(facet.formula ) )
     }
+
     aesx = aes_q( x = as.name(x) )
+
     if( is.null(y) ) {
         aesy = aes( y = NULL )
     } else {
         aesy = aes_q( y = as.name(y) )
     }
+
     aesxy = modifyList( aesx,aesy )
     psub = paste(psub, "TCGA Pan-Cancer 2018, Nathan Siemers, Translational Medicine.")
     psub = paste(psub, "Data points:", nrow(data) )
@@ -286,12 +291,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     if(  !is.null(facet)  ) {
         my.formula = paste( '~', facet)
-        p = p + facet_wrap(  my.formula, scales = scales, ncol = ncols ) + theme(strip.text = element_text(size = round(11/static.strip, digits = 0 ) ) ) 
+        p = p + facet_wrap(  my.formula, scales = scales, ncol = ncols ) + theme(strip.text = element_text(size = round(60 * static.strip, digits = 0 ) ) ) 
     }
     if(  !is.null(facet.formula)  ) {
         my.formula = paste( '~', facet.formula)
         print(my.formula)
-        p = p + facet_wrap(  as.formula(my.formula), ncol = ncols, scales = scales  ) + theme(strip.text = element_text(size = 7/static.strip) )
+        p = p + facet_wrap(  as.formula(my.formula), ncol = ncols, scales = scales  ) + theme(strip.text = element_text(size = 60 * static.strip) )
     }
     if ( !is.null(smooth) ) {
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {
@@ -304,11 +309,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             }
         }
     }
+    
     p = p + ggtitle(  pstring, subtitle = paste(" ", pstring2, '\n ', psub) ) +
-        theme(axis.text = element_text(size = 14 * static.labels ),
-              axis.title = element_text(size = 17 * static.labels ),
-              plot.title = element_text(size = 20 * static.titles),
-              plot.subtitle = element_text(size = 13 * static.titles)
+        theme(axis.text = element_text(size = 14 * 4  * static.labels ),
+              axis.title = element_text(size = 14 * 4 * static.labels ),
+              plot.title = element_text(size = 22 * 4  * static.titles),
+              plot.subtitle = element_text(size = 18 * 4 * static.titles)
               )
     if ( is.factor(data[ , color] ) ) {
         p = p + viridis::scale_colour_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
@@ -336,23 +342,20 @@ fun_plot1 = function(input, reactive = TRUE) {
         input = shiny::reactiveValuesToList(input)
     }
     if(FALSE){
-    input =   list(x='ABCA1',y='HLA-E',shape = "",size=NULL,color="")
-    }
-    cat(file = stderr(), paste('fun_plot1 input', paste(names(input), input, sep = '=', collapse = ',' ) ) )
+    input =   list(x='ABCA1',y='HLA-E',shape = "",size=NULL,color="",static.size="5")
+}
+    print(str(input))
+    ##cat(file = stderr(), paste('fun_plot1 input', paste(names(input), input, sep = '=', collapse = ',' ) ) )
     ## remove empty input variables and names
-    input = input[ input != 'none']
+    input = input[ ! sapply(input, is.null) ]
+   input = input[ input != 'none']
     input = input[ input != '']
     input = input[ names(input) != '']
-    input = input[ ! sapply(input, is.null) ]
-    input
-    cat(file = stderr(), 'CLEANED INPUT', '\n')
-    cat(file = stderr(), paste(names(input),input) )
-    ## transform variables that should be numeric
-    numeric_vars = c('static.size', 'static.titles', 'static.labels', 'ncols', 'alpha')
-    input[ names(input) %in% numeric_vars ] = as.numeric( input[ names(input) %in% numeric_vars ] )
-    ##input[ ! names(input) %in% numeric_vars ] = as.name( input[ names(input) %in% numeric_vars ] )
-    ## above: nope
-    print(input)
+     print(str(input))
+    numeric_vars = c('static.strip', 'static.size', 'static.titles',
+        'static.labels', 'ncols', 'alpha')
+    input[ which(names(input) %in% numeric_vars) ] = as.numeric( input[ names(input) %in% numeric_vars ] )
+    print(str(input))
     do.call(plotter, input)
 }
 

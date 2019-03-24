@@ -153,9 +153,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = 'KRAS.mut'; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
     }
     ## scaling factors depending on faceting
+    static.size = static.size * 60 # 15 after correction
     if(  (is.null(facet) &  is.null(facet.formula) ) ) {
-        if( x == 'cohort' ) static.size = 20 * static.size / 2
-    } else {  static.size = 20 * static.size  }
+        if( x == 'cohort' ) static.size = static.size / 4
+    } 
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, c(facet), c(extra) )
@@ -240,7 +241,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
 
     aesxy = modifyList( aesx,aesy )
-    psub = paste(psub, "TCGA Pan-Cancer 2018, Nathan Siemers, Translational Medicine.")
+    psub = paste(psub, "TCGA Pan-Cancer 2018.")
     psub = paste(psub, "Data points:", nrow(data) )
     pstring = paste( "Relationship of", x, "and", y, "across TCGA" )
     pstring = gsub( '\\.mut', ' mutation', pstring )
@@ -327,6 +328,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if( coordflip ) {
         p = p + coord_flip()
     }
+    p = p + labs(caption = "Nathan Siemers, Translational Medicine") +
+        theme(plot.caption = element_text(size = 12) )
     p
 }    
 

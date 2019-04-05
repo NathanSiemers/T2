@@ -17,8 +17,19 @@ sqldf('select * from probes where probe = "ABCA1"', db = db)
 
 sqldf('select * from tcgai limit 5', db = db)
 
+sqldf('select * from tcgas limit 5', db = db)
+
+sqldf('select * from tcgas where type = "cnv" limit 5', db = db)
+
 sqldf('select * from tcgacati limit 5', db = db)
 
+sqldf('select * from clin limit 5', db = db)
+
+as.data.frame(colnames((sqldf('select * from clin limit 5', db = db))))
+
+sqldf('select * from tcga where type = "rna" limit 2', db = db)
+
+sqldf('select distinct type from tcgai', db = db)
 sqldf('select distinct type from tcgacati', db = db)
 
 sqldf('select * from tcgacati where type = "immune_subtype" limit 5', db = db)

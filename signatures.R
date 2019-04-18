@@ -99,8 +99,28 @@ CXCL11' )),
         HLA-E
         NKG7'
         ) ),
+
+    ## MERCK
+##    GEP scores listed in Table S2A were computed by first normalizing the raw
+## counts by subtracting the average of the log10 counts of the house-keeping genes from the log10 count of each of the predictor genes, and then a weighted sum of the normalized predictor gene values was calculated using the weights for each of the 18
+## genes (CCL5=0.008346; CD27=0.072293; CD274=0.042853; CD276=-0.0239; CD8A=0.031021; CMKLR1=0.151253; CXCL9=0.074135; CXCR6=0.004313; HLA.DQA1=0.020091; HLA.DRB1=0.058806; HLA.E=0.07175; IDO1=0.060679;
+## LAG3=0.123895; NKG7=0.075524; PDCD1LG2=0.003734; PSMB10=0.032999; STAT1=0.250229; TIGIT=0.084767).
     Merck18.sig = list( comp = qw(
-                            'CCL5 CD27 CD274 CD276 CD8A CMKLR1 CXCL9 CXCR6 HLA-DQA1 HLA-DRB1 HLA-E IDO1 LAG3 NKG7 PDCD1LG2 PSMB10 STAT1 TIGIT' ) ),
+                            'CCL5 CD27 CD274 CD276 CD8A CMKLR1 CXCL9 CXCR6 HLA-DQA1 HLA-DRB1 HLA-E IDO1 LAG3 NKG7 PDCD1LG2 PSMB10 STAT1 TIGIT    STK11IP ZBTB34 TBC1D10B OAZ1 POLR2A G6PD ABCF1 C14orf102 UBB TBP SDHA'
+        ),
+        prescale = function(x) {
+            ## convert log2 to log 10
+            x = ( 2 ** x ) - 1 
+            x = log10( x + 1 )
+            x
+        },
+        fun = function(x){
+            control.genes = qw('STK11IP ZBTB34 TBC1D10B OAZ1 POLR2A G6PD ABCF1 C14orf102 UBB TBP SDHA')
+            control.mean = mean( x[ control.genes ] )
+            x = x - control.mean
+            x['CCL5'] * 0.008346  +   x['CD27'] * 0.072293  +  x['CD274'] * 0.042853  +  x['CD276'] * -0.0239  +  x['CD8A'] * 0.031021  +  x['CMKLR1'] * 0.151253  +  x['CXCL9'] * 0.074135  +  x['CXCR6'] * 0.004313  +  x['HLA-DQA1'] * 0.020091  +  x['HLA-DRB1'] * 0.058806  +  x['HLA-E'] * 0.07175  +  x['IDO1'] * 0.060679  +  x['LAG3'] * 0.123895  +  x['NKG7'] * 0.075524  +  x['PDCD1LG2'] * 0.003734  +  x['PSMB10'] * 0.032999  +  x['STAT1'] * 0.250229  +  x['TIGIT'] * 0.084767
+        }
+                       ),
     Qiagen_controls = list( comp = qw(
                                 'ACTB
 ATP5F1

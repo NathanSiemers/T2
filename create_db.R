@@ -106,9 +106,10 @@ and samples.sample = clinpheno.sample
 my_rna = read_tsv('Data/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.xena.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(probe = sample) %>%
-            gather( sample, value, -probe ) %>%
-                mutate(type = 'rna') %>%
-                    select( sample, probe, value, type )
+            mutate ( probe = make.unique(probe, sep = '_' ) )%>%
+                gather( sample, value, -probe ) %>%
+                    mutate(type = 'rna') %>%
+                        select( sample, probe, value, type )
 my_rna
 
 tablemaker(my_rna, suffix = FALSE)
@@ -118,9 +119,10 @@ my_rna = NULL; gc()
 my_cnv = read_tsv('Data/broad.mit.edu_PANCAN_Genome_Wide_SNP_6_whitelisted.gene.xena.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(probe = sample) %>%
-            gather( sample, value, -probe ) %>%
-                mutate(type = 'cnv') %>%
-                    select( sample, probe, value, type )
+            mutate ( probe = make.unique(probe, sep = '_') ) %>%
+                gather( sample, value, -probe ) %>%
+                    mutate(type = 'cnv') %>%
+                        select( sample, probe, value, type )
 my_cnv
 
 tablemaker(my_cnv)
@@ -138,10 +140,11 @@ my_cnv = NULL; gc()
 my_mut = read_tsv('Data/mc3.v0.2.8.PUBLIC.nonsilentGene.xena.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(probe = sample) %>%
-            gather( sample, value, -probe ) %>%
-                mutate(type = 'mut') %>%
-                    select( sample, probe, value, type ) %>%
-                        filter( value != 0 )
+            mutate ( probe = make.unique(probe, sep = '_') ) %>%
+                gather( sample, value, -probe ) %>%
+                    mutate(type = 'mut') %>%
+                        select( sample, probe, value, type ) %>%
+                            filter( value != 0 )
 my_mut
 
 tablemaker(my_mut)
@@ -155,30 +158,47 @@ my_mut = NULL; gc()
 my_urna = read_tsv('Data/pancanMiRs_EBadjOnProtocolPlatformWithoutRepsWithUnCorrectMiRs_08_04_16.xena.gz', 
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(probe = sample) %>%
-            gather( sample, value, -probe ) %>%
-                mutate(type = 'urna') %>%
-                    select( sample, probe, value, type )
+            mutate ( probe = make.unique(probe, sep = '_') )  %>%
+                gather( sample, value, -probe ) %>%
+                    mutate(type = 'urna') %>%
+                        select( sample, probe, value, type )
 my_urna
 
 tablemaker(my_urna)
 my_urna = NULL; gc()
 
 
-my_pc_gene_program = read_tsv('Data/Pancan12_GenePrograms_drugTargetCanon_in_Pancan33.tsv.gz',
-    trim_ws = TRUE, n_max = my.limit ) %>% gather( probe, value, -sample ) %>%
-        mutate(type = 'pc_gene_program') %>%
-            select( sample, probe, value, type )
-my_pc_gene_program
+################################################################
+## there's a file corruption here, skipping for now
+## my_pc_gene_program = read_tsv('Data/Pancan12_GenePrograms_drugTargetCanon_in_Pancan33.tsv.gz',
+##     trim_ws = TRUE, n_max = my.limit ) %>%
+##         gather( probe, value, -sample ) %>%
+##         mutate(type = 'pc_gene_program') %>%
+##             select( sample, probe, value, type )
+## my_pc_gene_program
+## tablemaker(my_pc_gene_program)
+## my_pc_gene_program = NULL; gc()
+################################################################
 
-tablemaker(my_pc_gene_program)
-my_pc_gene_program = NULL; gc()
+my_rabit = read_tsv('Data/RABIT__pancan__RABIT_pancan.HiSeq.V2.gz',
+    trim_ws = TRUE, n_max = my.limit )%>%
+        ##rename(probe = sample) %>%
+        mutate ( sample = make.unique(sample, sep = '_') )  %>%
+            gather( probe, value, -sample ) %>%
+                mutate(type = 'rabit') %>%
+                    select( sample, probe, value, type )
+my_rabit
+
+tablemaker(my_rabit)
+my_rabit = NULL; gc()
 
 my_hrd = read_tsv('Data/TCGA.HRD_withSampleID.txt.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(sample = sampleID) %>%
-            gather( probe, value, -sample ) %>%
-                mutate( type = 'hrd' ) %>%
-                    select( sample, probe, value, type )
+            mutate(sample = make.unique(sample, sep = '_') ) %>%
+                gather( probe, value, -sample ) %>%
+                    mutate( type = 'hrd' ) %>%
+                        select( sample, probe, value, type )
 my_hrd
 
 tablemaker(my_hrd)
@@ -187,34 +207,39 @@ my_hrd = NULL; gc()
 my_immune_score = read_tsv('Data/TCGA_pancancer_10852whitelistsamples_68ImmuneSigs.xena.gz',
     trim_ws = TRUE, n_max = my.limit )%>%
         rename(sample = X1) %>%
-            gather( probe, value, -sample ) %>%
-                mutate( type = 'immune_score' ) %>%
-                    select( sample, probe, value, type )
+            mutate(sample = make.unique(sample, sep = '_') ) %>%
+                gather( probe, value, -sample ) %>%
+                    mutate( type = 'immune_score' ) %>%
+                        select( sample, probe, value, type )
 my_immune_score
 
 unique(my_immune_score$probe)
 
 tablemaker(my_immune_score)
-my_hrd = NULL; gc()
+my_immune_score = NULL; gc()
 
 my_molec_subtype = read_tsv('Data/TCGASubtype.20170308.tsv.gz',
     col_types = cols( .default=col_character() ),
     trim_ws = TRUE, n_max = my.limit ) %>%
         rename(sample = sampleID) %>%
-            gather( probe, value, -sample )%>%
-                mutate( type = 'molec_subtype' ) %>%
-                    select( sample, probe, value, type )
+            mutate(sample = make.unique(sample, sep = '_') ) %>%
+                gather( probe, value, -sample )%>%
+                    mutate( type = 'molec_subtype' ) %>%
+                        select( sample, probe, value, type )
 my_molec_subtype
+
 tablemaker(my_molec_subtype, categorical = TRUE, suffix = FALSE)
 
 my_molec_subtype = NULL; gc()
 
 my_immune = read_tsv('Data/Subtype_Immune_Model_Based.txt.gz',
     trim_ws = TRUE, n_max = my.limit ) %>%
-        gather( probe, value, -sample ) %>%
-            mutate( type = 'immune_subtype' ) %>%
-                select( sample, probe, value, type )
+        mutate(sample = make.unique(sample, sep = '_') ) %>%
+                   gather( probe, value, -sample ) %>%
+                       mutate( type = 'immune_subtype' ) %>%
+                           select( sample, probe, value, type )
 my_immune
+
 tablemaker(my_immune, categorical = TRUE, suffix = FALSE)
 my_immune = NULL; gc()
 
@@ -254,12 +279,12 @@ my_clin = read_tsv('Data/Survival_SupplementalTable_S1_20171025_xena_sp.gz',
         DFI.time = col_double(),
         PFI = col_double(),
         PFI.time = col_double()
-    ),
+        ),
     trim_ws = TRUE, n_max = my.limit )  
 colnames(my_clin)
 
 my_clin = my_clin %>% rename(Patient = '_PATIENT',
-               tumtype = "cancer type abbreviation"  )
+    tumtype = "cancer type abbreviation"  )
 
 ################################################################
 ## phenos table is small, add to clin before joining
@@ -329,7 +354,7 @@ dim(sqldf('select * from mutationsamples', db = db))
 
 my_fmut = my_mutation %>%
     select( sample, probe = gene, value = longgene ) %>%
-            mutate( type = 'fmut' )
+        mutate( type = 'fmut' )
 
 my_fmut
 tablemaker( my_fmut, categorical = TRUE )
@@ -500,7 +525,7 @@ str(sqldf('select * from clinpheno limit 5', db = db))
 allprobe = data.frame(
     key = NA,
     probe = colnames(sqldf('select * from clin limit 1', db = db) )
-)
+    )
 sqldf('insert or ignore into allprobes select key, probe from allprobe', db = db )
 
 

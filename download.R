@@ -5,8 +5,6 @@ library(tidyverse)
 library(UCSCXenaTools)
 
 
-showTCGA(project = "PANCAN")
-
 ## for now, omit large exon and methylation data sets
 
 mytypes = showTCGA(project = "PANCAN")$DataType

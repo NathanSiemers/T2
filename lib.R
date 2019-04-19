@@ -79,9 +79,8 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     out$probe = gsub( "\\.tmb$", '', out$probe)
     out$probe = gsub( "\\.rna$", '', out$probe)
     out$probe = gsub( "\\.sig$", '', out$probe)
-    out$probe = gsub( "\\.estimate$", '', out$probe)
+    ## not needed: out$probe = gsub( "\\.estimate$", '', out$probe)
     out = out %>% select( -type ) %>% spread( probe, value )
-
     outcat = dbcat %>%
         dplyr::filter( probe %in% probes & type == 'fmut' ) %>%
             as_tibble %>%

@@ -12,7 +12,7 @@ my.limit = Inf
 
 rna_file = 'Data/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.xena.gz'
 
-my_rna = read.csv(rna_file, stringsAsFactors = FALSE, sep = '\t')
+my_rna = read.csv(rna_file, stringsAsFactors = FALSE, sep = '\t', check.names = FALSE)
 my_rna[1:5,1:5]
 rownames(my_rna) = make.unique(my_rna$sample)
 my_rna$sample = NULL
@@ -41,20 +41,24 @@ my_load = my_estimate %>%
         rename(probe = NAME) %>%
             gather( sample, value, -probe ) %>%
                 mutate( type = 'estimate' ) %>%
+                    mutate ( sample = gsub('.', '-', sample, fixed = TRUE)  ) %>% 
                     select(sample, probe, value, type)
+
+
 str(my_load)
 
 head(my_load)
 dim(my_load)
 
 
-tablemaker( my_load, deleteType = TRUE)
+tablemaker( my_load, deleteType = TRUE, suffix = TRUE)
 
 sqldf::sqldf('select * from tcgas where type = "estimate" limit 10', db = db )
 
-sqldf::sqldf('select * from tcgas where probe = "StromalScore" and type = "estimate" limit 2', db = db )
+sqldf::sqldf('select * from tcgas where probe = "StromalScore.estimate" and type = "estimate" limit 2', db = db )
 
 system('rm Data/rna.tmp Data/estimatein.tmp Data/estimateout.tmp')
+
 
 
 

@@ -2,6 +2,7 @@
 ## master function for creating tidy data tables
 ## where probe and sample keys are integer sequences
 ## with separate probe and sample lookup tables
+library(sqldf)
 
 tablemaker = function( data, db = 'tcga.db', categorical = FALSE, suffix = TRUE, tsep = '.', deleteType = FALSE ) {
     ## input: a tidy data set of sample, probe, value, type

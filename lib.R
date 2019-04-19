@@ -4,7 +4,6 @@
 library(sqldf)
 library(ggplot2); library(ggthemes)
 library(viridis)
-
 library(tidyverse)
 
 
@@ -31,6 +30,7 @@ mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 
 ################################################################
 ## gitr - data retriever
+
 gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     cohort = 'all',
     makefactors = TRUE,
@@ -72,13 +72,14 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
             print(dim(out))
         }
     }
-    ## mutate probes to add type (accodate shiny)
+    ## mutate probes to add type (accomodate shiny)
     ## but we need to improve this, getting .sig.sig now
     ## below is a band-aid
     out$probe = paste(out$probe, out$type, sep = '.')
     out$probe = gsub( "\\.tmb$", '', out$probe)
     out$probe = gsub( "\\.rna$", '', out$probe)
     out$probe = gsub( "\\.sig$", '', out$probe)
+    out$probe = gsub( "\\.estimate$", '', out$probe)
     out = out %>% select( -type ) %>% spread( probe, value )
 
     outcat = dbcat %>%

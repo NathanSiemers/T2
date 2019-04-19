@@ -34,6 +34,7 @@ mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     cohort = 'all',
     makefactors = TRUE,
+    allComplete = FALSE,
     db = tcga, dbcat = tcgacat
                 ) {
     ##print('db data structure')
@@ -166,7 +167,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     cat(file = stderr(), "gitr finished")
     cat(file = stderr(), paste(colnames(data), collapse = ';')) ; cat('\n')
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
-    data = droplevels(data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,shape,size, c(facet))] ), ])
+    if( allComplete ) {
+        data = data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,size, c(facet))] ), ] 
+    }
+    data = droplevels(data)
     ## catch plots that would fail
     cat(file = stderr(), 'entereng error checking\n')
     if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {

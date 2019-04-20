@@ -117,16 +117,33 @@ my_rna = NULL; gc()
 
 ## cnv
 my_cnv = read_tsv('Data/broad.mit.edu_PANCAN_Genome_Wide_SNP_6_whitelisted.gene.xena.gz',
-    trim_ws = TRUE, n_max = my.limit ) %>%
+    trim_ws = TRUE, n_max = my.limit )
+my_cnv
+my_cnv = my_cnv %>%
         rename(probe = sample) %>%
             mutate ( probe = make.unique(probe, sep = '_') ) %>%
                 gather( sample, value, -probe ) %>%
                     mutate(type = 'cnv') %>%
                         select( sample, probe, value, type )
 my_cnv
-
 tablemaker(my_cnv)
 my_cnv = NULL; gc()
+
+
+## cnc : thresholded gistic copy number
+## note: sample is Sample on header of this data set
+my_cnc = read_tsv('Data/TCGA.PANCAN.sampleMap__Gistic2_CopyNumber_Gistic2_all_thresholded.by_genes.gz',
+    trim_ws = TRUE, n_max = my.limit )
+my_cnc
+my_cnc = my_cnc %>%
+        rename(probe = Sample) %>%
+            mutate ( probe = make.unique(probe, sep = '_') ) %>%
+                gather( sample, value, -probe ) %>%
+                    mutate(type = 'cnc') %>%
+                        select( sample, probe, value, type )
+my_cnc
+tablemaker(my_cnc)
+my_cnc = NULL; gc()
 
 
 ################################################################

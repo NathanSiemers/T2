@@ -34,12 +34,9 @@ mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     cohort = 'all',
     makefactors = TRUE,
-    allComplete = FALSE,
     db = tcga, dbcat = tcgacat
                 ) {
-    ##print('db data structure')
-    ##print(str(db))
-    print(match.call())
+    ##print(match.call())
     if(FALSE){ #testing
         probes = c('CD8A', 'TCD8.sig'); phenos = TRUE; nonormal = FALSE; cohort = 'all'; makefactors = TRUE; db = tcga; dbcat = tcgacat
     }
@@ -133,9 +130,10 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
 ################################################################
 
 plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet = NULL, nonormal = TRUE,
-    cohort = 'all', db = tcga, extra = NULL,  facet.formula = NULL, smooth = FALSE,
+    cohort = 'all', db = tcga, extra = NULL,  facet.formula = NULL, smooth = FALSE, allComplete = FALSE,
     alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
-    static.labels = 0.25, static.strip = 10, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE, ...
+    static.labels = 0.25, static.strip = 10, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
+    condition = NULL, ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
@@ -159,7 +157,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if( ! is.null(facet) )  static.size = static.size / 4
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
-    list.of.markers = c( x, y, color, shape, size, c(facet), c(extra) )
+    list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(condition)  )
     print(list.of.markers)
     data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = TRUE)
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
@@ -188,6 +186,18 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         print(list.of.markersxy)
     } else {
         list.of.markersxy = c(x,y)
+    }
+
+    ################################################################
+    ## subtract conditioning variable(s) from x
+    ## ## later, will add y as a possibility too.
+    if (! is.null(condition) ) {
+        smalldat = data[ , colnames(data) %in% c(y, condition) ]
+        theformula = as.formula(paste(
+            y, " ~ .  - ", y
+            ))
+        resid = residuals( lm( theformula, data = smalldat ) )
+        data[, y] = resid
     }
     ################################################################
     ## convert mutations to factors
@@ -249,7 +259,6 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     aesxy = modifyList( aesx,aesy )
     psub = paste0(psub, " Data points: ", nrow(data), '.' )
     psub = paste(psub, "TCGA Pan-Cancer 2018.")
-
     pstring = paste( "Relationship of", x, "and", y, "across TCGA" )
     pstring = gsub( '\\.mut', ' mutation', pstring )
     pstring = gsub( '\\.fmut', ' mutation', pstring )

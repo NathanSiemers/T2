@@ -20,6 +20,8 @@ shinyServer (
                                         #prog2 <- shiny::Progress$new()
         ##progress$set(message = "Loading all of TCGA", value = 0.5)
         ##on.exit(progress$close())
+        updateSelectizeInput(session, 'condition',  choices = mygenesplus,
+                             selected = "", server = TRUE)
         updateSelectizeInput(session, 'x',  choices = mygenesplus,
                              selected = 'PIK3CA.mut', server = TRUE)
         updateSelectizeInput(session, 'y',  choices = mygenesplus,

@@ -291,6 +291,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     } else {
         pstring2 = 'All'
     }
+################################################################
+    ## add conditioning text
+    if (! is.null(condition)  & pcortype != 'none') {
+        pstring2 = paste(pstring2, '   \n', "Conditioning:",  paste(condition, collapse = ','), 'on', pcortype )
+    }
     ## create full aesthetics
     aesfull = modifyList( aesx, c(aesy, aescolor, aesshape, aessize) )
     print('aesfull')

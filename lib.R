@@ -111,6 +111,7 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     if( makefactors ) {
         out = out %>% mutate_if(is.character, as.factor)
         out = out %>% mutate_at( dplyr::vars( ends_with('mut') ) , funs(as.factor) )
+        out = out %>% mutate_at( dplyr::vars( ends_with('cnc') ) , funs(as.factor) )
     }
     print(out)
     ## order Subtype_Immune_Model_Based
@@ -133,7 +134,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     cohort = 'all', db = tcga, extra = NULL,  facet.formula = NULL, smooth = FALSE, allComplete = FALSE,
     alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
     static.labels = 0.25, static.strip = 10, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
-    condition = NULL, ...
+    condition = NULL, pcortype = 'none', ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
@@ -191,13 +192,25 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ################################################################
     ## subtract conditioning variable(s) from x
     ## ## later, will add y as a possibility too.
-    if (! is.null(condition) ) {
-        smalldat = data[ , colnames(data) %in% c(y, condition) ]
-        theformula = as.formula(paste(
-            y, " ~ .  - ", y
-            ))
-        resid = residuals( lm( theformula, data = smalldat ) )
-        data[, y] = resid
+    if (! is.null(condition)  & pcortype != 'none') {
+        ## force complete cases
+        data = data[ complete.cases( data[ , c(x,y,condition) ] ), ]
+        if( pcortype == 'y' | pcortype == 'both') {
+            smalldat = data[ , colnames(data) %in% c(y, condition) ]
+            theformula = as.formula(paste(
+                y, " ~ .  - ", y
+                ))
+            resid = residuals( lm( theformula, data = smalldat ) )
+            data[, y] = resid
+        }
+        if( pcortype == 'x' | pcortype == 'both') {
+            smalldat = data[ , colnames(data) %in% c(x, condition) ]
+            theformula = as.formula(paste(
+                x, " ~ .  - ", x
+                ))
+            resid = residuals( lm( theformula, data = smalldat ) )
+            data[, x] = resid
+        }
     }
     ################################################################
     ## convert mutations to factors

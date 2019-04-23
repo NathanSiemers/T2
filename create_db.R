@@ -513,6 +513,8 @@ and tcgacati.samplekey = samples.key
 and tcgacati.type <> "fmut"
 ', db = db)
 
+
+
 unique(phenos$probe)
 unique(phenos$value)
 head(phenos)
@@ -524,15 +526,45 @@ unique(phenos$'_primary_disease')
 tail(phenos)
 which(duplicated(phenos$sample))
 
+clinpheno_intermediate = sqldf('
+select * from clin
+left outer join phenos
+on clin.sample = phenos.sample
+', db = db)
 
+## Replace subtype NA values with tumtype.NA
 
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Selected), "Subtype_Selected" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Selected), "tumtype" ], "NA", sep = '.' )
+
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_CNA), "Subtype_CNA" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_CNA), "tumtype" ], "NA", sep = '.' )
+
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_DNAmeth), "Subtype_DNAmeth" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_DNAmeth), "tumtype" ], "NA", sep = '.' )
+
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Immune_Model_Based), "Subtype_Immune_Model_Based" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Immune_Model_Based), "tumtype" ], "NA", sep = '.' )
+
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Integrative), "Subtype_Integrative" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Integrative), "tumtype" ], "NA", sep = '.' )
+
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_miRNA), "Subtype_miRNA" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_miRNA), "tumtype" ], "NA", sep = '.' )
+
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_mRNA), "Subtype_mRNA" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_mRNA), "tumtype" ], "NA", sep = '.' )
+
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_other), "Subtype_other" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_other), "tumtype" ], "NA", sep = '.' )
+
+clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_protein), "Subtype_protein" ]   =
+    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_protein), "tumtype" ], "NA", sep = '.' )
 
 sqldf('drop table if exists clinpheno', db = db)
 sqldf('
 create table clinpheno as
-select * from clin
-left outer join phenos
-on clin.sample = phenos.sample
+select * from clinpheno_intermediate
 ', db = db)
 
 str(sqldf('select * from clinpheno limit 5', db = db))

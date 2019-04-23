@@ -138,16 +138,16 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
-    ## do these enter global environment?
     theme_set(theme_gdocs() + theme(
-        legend.text = element_text(colour="black", size=8 )
+        legend.text = element_text(colour="black", size=8 ),
+        panel.background = element_rect(fill = "grey97")
         ) )
     update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("ribbon", list( color = plasma(1), fill = plasma(1)  ) )
-    update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 05) )
+    update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 0.5) )
     ## 
-    myargs = as.list(match.call())
-    cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
+    ##myargs = as.list(match.call())
+    ##cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
     ## SET VARIABLES - INTERACTIVE TESTING ONLY
     if(FALSE){ # for testing
         x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = 'KRAS.mut'; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10

@@ -1,62 +1,57 @@
 library(shiny)
 library(shinythemes)
-library('shinycssloaders')
-##source('global.R')
+library(shinycssloaders)
+## convenience functions
+nbsp = function(n) {
+    paste( rep( '&nbsp;', n ), collapse = ' ')
+}
+inline = function (x) {  shiny::tags$div(style="display:inline-block;", x)  }
+
 shinyUI(
     fluidPage(
         theme = shinytheme('flatly'),
         tags$head(tags$style("h6 {font-size: 75%; }")),
-        ## put a.title in global.R
         h4(a.title),
-        ## put your outputs here
-        div(style="display:inline-block;", selectizeInput('x', 'Gene (X)', choices = NULL, options = list(create=TRUE) ) ),
-        div(style="display:inline-block;", selectizeInput('y', 'Gene (Y)', choices = NULL, options = list(create=TRUE) ) ),
-        div(style="display:inline-block;", selectizeInput('color', 'color', choices = NULL) ),
-        ##div(style="display:inline-block;", selectizeInput('shape', 'shape', choices = NULL )),
-        div(style="display:inline-block;", selectizeInput('size', 'size', choices = NULL )),
-        div(style="display:inline-block;", selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
-        div(style="display:inline-block;", selectizeInput('smooth', 'Fit Line', choices = NULL  )),
-        ##div(style="display:inline-block;", selectizeInput('nonormal', 'Exclude Non-Tumor', choices = NULL  )),
-        div(style="display:inline-block;", selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
-        div(style="display:inline-block;", checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
-        div(style="display:inline-block;", checkboxInput("allComplete", "Show only results with complete information:", value = TRUE)),
+        inline( selectizeInput('x', 'Gene (X)', choices = NULL, options = list(create=TRUE) ) ),
+        inline( selectizeInput('y', 'Gene (Y)', choices = NULL, options = list(create=TRUE) ) ),
+        inline( selectizeInput('color', 'color', choices = NULL) ),
+        inline( selectizeInput('size', 'size', choices = NULL )),
+        inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
+        ##inline( selectizeInput('nonormal', 'Exclude Non-Tumor', choices = NULL  )),
+        inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
+        inline(HTML(nbsp(5))),
+        inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
         tags$br(),
-        div(style="display:inline-block;",
-            selectizeInput('condition', 'Condition with:', choices = NULL, multiple = TRUE ) ),
-        div(style="display:inline-block;",
-            radioButtons('pcortype', 'Condition on:', choices = c('none', 'x', 'y', 'both'), selected = 'none', inline = TRUE 
-                         ) ),
+        inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
+        inline(HTML(nbsp(5))),
+        inline(
+            radioButtons('pcortype', 'Remove influence on:',
+                         choices = c('none', 'x', 'y', 'both'), selected = 'none', inline = TRUE  ) ),
         submitButton(text = "Plot", icon = NULL, width = NULL),
         tags$br(),
         withSpinner( plotOutput( "main_plot", height = '900px', width = '100%' ),
-                    proxy.height = "200px", color = viridis::plasma(1)
-                    ),
-        ##put a.PI and a.credits in global.R
-        h5(  paste( 'PI:', a.PI )  ),
-        h5(  paste('Contributors:', a.credits)  ),
+                    proxy.height = "200px", color = viridis::plasma(1) ),
+        h5( paste( 'PI:', a.PI ) ),
+        h5( paste('Contributors:', a.credits) ),
         h5( Sys.Date() ),
-        tags$br(),
+        downloadButton('downloadData', 'Download Table'),
+        ##downloadButton('dlknitr', 'Download Report'),
         h4('Fiddly Options'),
-        div(style="display:inline-block;", selectizeInput('fscales', 'Multigraph Scales', choices = NULL  )),
-        div(style="display:inline-block;", selectizeInput('alpha', 'Transparency', choices = NULL  )),
-        div(style="display:inline-block;", selectizeInput('static.size', 'Point Size multipier', choices = NULL  )),
-        div(style="display:inline-block;", selectizeInput('static.strip', 'Multi-Graph Label Size multipier', choices = NULL  )),
-        div(style="display:inline-block;", selectizeInput('static.titles', 'Top  Title Size', choices = NULL  )),
-        div(style="display:inline-block;", selectizeInput('static.labels', 'Axis Label Multiplier', choices = NULL  )),
-        div(style="display:inline-block;", selectizeInput('ncols', 'Multi-graph Columns', choices = NULL  )),
+        inline( selectizeInput('fscales', 'Multigraph Scales', choices = NULL  ) ),
+        inline( selectizeInput('alpha', 'Transparency', choices = NULL  )),
+        inline( selectizeInput('static.size', 'Point Size multipier', choices = NULL  ) ),
+        inline( selectizeInput('static.strip', 'Multi-Graph Label Size multipier', choices = NULL  ) ),
+        inline( selectizeInput('static.titles', 'Top  Title Size', choices = NULL  ) ),
+        inline( selectizeInput('static.labels', 'Axis Label Multiplier', choices = NULL  ) ),
+        inline( selectizeInput('ncols', 'Multi-graph Columns', choices = NULL  ) ),
+        inline( selectizeInput('smooth', 'Fit Line', choices = NULL  ) ),
+        checkboxInput("allComplete", "Show only results with complete information:", value = TRUE),
         submitButton(text = "Plot", icon = NULL, width = NULL),
         tags$br(),
         h4("Types of TCGA Data available"),
         tableOutput('datatypes'),
-        tags$br(),
-        downloadButton('dlknitr', 'Download Report'),
-        downloadButton('downloadData', 'Download Table'),
-        ## downloadButton('downloadData', 'Download Table'),
-        tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),
-        tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),
-        tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),
+        tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),
         h5('Below is an area for my notes, you can ignore...'),
-        ## standard stuff, including a debug window
         verbatimTextOutput('print1')
         )
     )

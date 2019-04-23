@@ -1,25 +1,14 @@
 library(shiny)
 library(shinythemes)
 library(rmarkdown)
-##library(sqldf)
-##library(DT)
-##library(plyr)
-##library(knitr)
-##library(rmarkdown)
+
 source("lib.R")
-##library(dplyr)
-##library(ggplot2)
-##library(ggthemes)
 
 ## for testing only
 l.input = list(gene1 = 'CDKN2A.cnv', gene2 = 'CD274.cnv', cohort = 'all')
 
 shinyServer (
     function(input, output, session) {
-        ##progress <- shiny::Progress$new()
-                                        #prog2 <- shiny::Progress$new()
-        ##progress$set(message = "Loading all of TCGA", value = 0.5)
-        ##on.exit(progress$close())
         updateSelectizeInput(session, 'condition',  choices = mygenesplus,
                              selected = c('StromalScore.estimate'), server = TRUE)
         updateSelectizeInput(session, 'x',  choices = mygenesplus,
@@ -30,11 +19,8 @@ shinyServer (
                              selected = 'CD274', server = TRUE)
         updateSelectizeInput(session, 'size',  choices = mygenesplus,
                              selected = "", server = TRUE)
-##        updateSelectizeInput(session, 'shape',  choices = c( 'cohort', 'subtype', mygenesplus ),
-##                             selected = NULL, server = TRUE)
         updateSelectizeInput(session, 'cohort',  choices = c('all', mycohorts ),
                              selected = "STAD", server = TRUE)
-        ## we don't need mygenesplus for a facet below???
         updateSelectizeInput(session, 'facet',  choices = mygenesplus,
                              selected = 'subtype', server = TRUE)
         updateSelectizeInput(session, 'smooth',  choices = c("TRUE", "FALSE"),
@@ -58,7 +44,6 @@ shinyServer (
         output$main_plot = renderPlot( {
             if( input$x == "" | input$y == "" ) { return(NULL) }
             withProgress(message = 'Working...', value = 0, {
-                ##use a progress bar to let people know we arent' dead...
                 incProgress(0.20, message = "Plotting")
                 fun_plot1(input)
             }
@@ -67,6 +52,7 @@ shinyServer (
         output$datatypes = renderTable( {
             types
         })
+        ## this needs fixing
         output$dlknitr = downloadHandler(
             ## this is the name of the file the user will see
             ## filename seems set at first render and I can't break the spell
@@ -89,7 +75,6 @@ shinyServer (
         output$downloadData = downloadHandler(
             filename = "csvdownload.csv",
             content = function(file) {
-                ## not hard to do more complicated things, i.e subset of a table
                 write.csv(fun_table1(input), file)
             })
         output$print1 = renderPrint({

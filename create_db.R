@@ -463,21 +463,8 @@ my_geo = NULL; gc()
 ##              db = db
 ##              )
 
-################################################################
-## indices
 
-sqldf( 'drop index if exists tcgaidxprobe', db = db ) 
-sqldf('create index tcgaidxprobe on tcgai ( probekey, type )', db = db)
-sqldf( 'drop index if exists tcgaidxsample', db = db )
-sqldf('create index tcgaidxsample on tcgai( samplekey, probekey, type )', db = db)
-sqldf( 'drop index if exists tcgaidxtype', db = db )
-sqldf('create index tcgaidxtype on tcgai( type )', db = db)
-sqldf( 'drop index if exists tcgacatidxprobe', db = db ) 
-sqldf('create index tcgacatidxprobe on tcgacati ( probekey, type )', db = db)
-sqldf( 'drop index if exists tcgacatidxtype', db = db ) 
-sqldf('create index tcgacatidxtype on tcgacati ( type )', db = db)
-sqldf( 'drop index if exists tcgacatidxsample', db = db )
-sqldf('create index tcgacatidxsample on tcgacati( samplekey, probekey, type )', db = db)
+
 
 
 ################################################################
@@ -582,8 +569,6 @@ sqldf('drop index if exists clinphenoidx', db = db)
 sqldf('
 create index clinphenoidx on clinpheno(sample)
 ', db = db)
-
-
 
 sqldf('drop table if exists types', db = db)
 sqldf('create table types as select distinct type from tcgai', db = db)

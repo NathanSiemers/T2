@@ -45,6 +45,8 @@ dsl = list(
     BMS4.sig = list( comp = c('LAG3', 'CD274', 'CD8A', 'STAT1')),
     BMS2.sig = list( comp = c('LAG3', 'CD274')),
     DC1.sig = list( comp = c('CLEC9A', 'FLT3', 'XCR1')),
+    IfnTypeII.sig = list( comp = c('IFI16','ISG20','TRIM22','TRIM25')),
+    IfnTypeI.sig = list( comp = c('CMPK2','EPSTI1','HERC5','IFI27','IFI44','IFI44L','RSAD2','IFIT1','OAS3','MX1')),
     COXup.sig = list( comp = c('IL1A', 'IL1B', 'IL6', 'CSF3', 'CXCL1', 'CXCL2',
                           ## not founc in TCGA: 'CXCL8',
                           'CXCR1', 'CXCR2', 'CCL2', 'VEGFA' )),

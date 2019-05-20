@@ -1,8 +1,11 @@
 library(shiny)
 library(shinythemes)
 library(rmarkdown)
+library(DBI)
+
 
 source("lib.R")
+
 
 ## for testing only
 l.input = list(gene1 = 'CDKN2A.cnv', gene2 = 'CD274.cnv', cohort = 'all')

@@ -5,12 +5,40 @@ library(sqldf)
 library(ggplot2); library(ggthemes)
 library(viridis)
 library(tidyverse)
+db = 'tcga.db'
 
+##con = RSQLite::dbConnect(RSQLite::SQLite(), dbname = db, flags = RSQLite::SQLITE_RW )
+
+
+## con = RMySQL::dbConnect (
+##     drv       = RMySQL::MySQL(),
+##     dbname    = "pancan2018dev",
+##     host      = "pancan2018dev.cbe7mtbvwi2d.us-east-1.rds.amazonaws.com",
+##     port      = 3306,
+##     username  = "admin",
+##     password  = "Adminuser19")
+con = RMySQL::dbConnect (
+    drv       = RMySQL::MySQL(),
+    dbname    = "pancan2018",
+    host      = "pancan2018.cbe7mtbvwi2d.us-east-1.rds.amazonaws.com",
+    port      = 3306,
+    username  = "admin",
+    password  = "Adminuser19")
+
+##install.packages('pool')
+##library(pool)
+## con <- dbPool(
+##   drv = RSQLite::SQLite(),
+##   dbname = db
+## )
+## onStop(function() {
+##   poolClose(pool)
+## })
 
 ################################################################
 ## database connections and convenience lists
-db = 'tcga.db'
-con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db, flags = SQLITE_RO )
+##db = 'tcga.db'
+
 tcga = tbl(con, 'tcga')
 tcgacat = tbl(con, 'tcgacat')
 samples = pull(tbl(con, 'samples'), sample)
@@ -19,6 +47,10 @@ mygenes = pull( tbl(con, 'allprobes') , probe )
 probes = pull( tbl(con, 'probes') , probe )
 types = tbl(con, 'types')
 cohorts = tbl(con, 'cohorts')
+tcgas = tbl(con, 'tcgas')
+tcgai = tbl(con, 'tcgai')
+tcgacati = tbl(con, 'tcgacati')
+tcgacats = tbl(con, 'tcgacats')
 mycohorts = cohorts %>% pull(cohort)
 cohortstrings = cohorts %>% pull(cohortstring)
 names(mycohorts) = cohortstrings
@@ -34,20 +66,23 @@ mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     cohort = 'all',
     makefactors = TRUE,
-    db = tcga, dbcat = tcgacat
+    db = 'tcga',
+    dbcat = 'tcgacat'
                 ) {
     ##print(match.call())
     if(FALSE){ #testing
-        probes = c('CD8A', 'TCD8.sig'); phenos = TRUE; nonormal = FALSE; cohort = 'all'; makefactors = TRUE; db = tcga; dbcat = tcgacat
+        probes = c('CD8A', 'CD8B'); phenos = TRUE; nonormal = FALSE; cohort = 'all'; makefactors = TRUE; db = tcga; dbcat = tcgacat
     }
     probes_orig = probes
     ## a catch-all to retrieve more data than possibly requested
     ##probes = unique( c(probes, gsub('\\.[^.]*$', '', probes) ) )
     ## this is now a problem, as we have .sigs, with no parent in probe name
-    probes = unique( c( probes,  gsub('\\.[^.]*$', '', probes ) ) )
+    ## new comment
+    ##probes = unique( c( probes,  gsub('\\.[^.]*$', '', probes ) ) )
     print(paste(  'Probes within gitr' ))
     print(as.data.frame(probes))
-    out = db %>%
+    ##    out = tbl(con, 'tcga')  %>%
+    out = tcga  %>%
         filter( probe %in% probes ) %>%
             as_tibble %>%
                 ## some immune scores are not unique in pancan tables
@@ -73,17 +108,19 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     ## mutate probes to add type (accomodate shiny)
     ## but we need to improve this, getting .sig.sig now
     ## below is a band-aid
-    out$probe = paste(out$probe, out$type, sep = '.')
-    out$probe = gsub( "\\.tmb$", '', out$probe)
-    out$probe = gsub( "\\.rna$", '', out$probe)
-    out$probe = gsub( "\\.sig$", '', out$probe)
+    ## new commented
+    ##out$probe = paste(out$probe, out$type, sep = '.')
+    ##out$probe = gsub( "\\.tmb$", '', out$probe)
+    ##out$probe = gsub( "\\.rna$", '', out$probe)
+    ##out$probe = gsub( "\\.sig$", '', out$probe)
     ## not needed: out$probe = gsub( "\\.estimate$", '', out$probe)
     out = out %>% select( -type ) %>% spread( probe, value )
-    outcat = dbcat %>%
+    ##    outcat = tbl(con, dbcat)  %>%
+        outcat = tcgacat  %>%
         dplyr::filter( probe %in% probes & type == 'fmut' ) %>%
             as_tibble %>%
                 distinct( sample, probe, type, .keep_all = TRUE )
-    outcat$probe = paste(outcat$probe, outcat$type, sep = '.')
+    ##outcat$probe = paste(outcat$probe, outcat$type, sep = '.')
     outcat = outcat %>% select ( sample, probe, value ) %>%
         spread( probe, value ) 
     out = out %>% left_join(outcat, by = 'sample')
@@ -129,11 +166,13 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
 ################################################################
 ## make a plotter function
 ################################################################
+interactive_plotter = function(...) { plotter( ..., static.strip = 0.5, static.size = 0.1, static.labels = 0.05, static.titles = 0.05) }
+
 
 plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet = NULL, nonormal = TRUE,
-    cohort = 'all', db = tcga, extra = NULL,  facet.formula = NULL, smooth = FALSE, allComplete = FALSE,
+    cohort = 'all', extra = NULL,  facet.formula = NULL, smooth = FALSE, allComplete = FALSE,
     alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
-    static.labels = 0.25, static.strip = 10, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
+    static.labels = 0.25, static.strip = 0.5, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
     condition = NULL, pcortype = 'none', ...
                    ) {
     ################################################################

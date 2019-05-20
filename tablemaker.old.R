@@ -29,7 +29,7 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
             mutate( key = NA ) %>%
                 dplyr::select( key, sample )
     print('writing to sample index table (samples)' )
-    print(usample)
+    print(head(usample))
     ## write usample to temporary table in db (samplestmp)
     dbWriteTable(connection, 'samplestmp', usample, append = TRUE, row.names = FALSE)
     ## insert any new samples into samples table
@@ -44,49 +44,57 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     ## add any new probe keys to probes
     ## same method as sample keys
     uprobe = dat %>%
-        mutate(  probe = case_when(
-                     suffix == TRUE ~ paste( probe, type, sep = tsep ),
-                     TRUE ~ probe ) ) %>%
-                         select ( probe ) %>%
-                             distinct %>%
-                                 mutate( key = NA ) %>%
-                                     select(key, probe)
-    print("UPROBE")
-    print(uprobe)
-    ## to allprobes if desired i.e. ABCA1.mut, CDKN2A.cnv these are
-    ## names people will be offered in menus, etc
-    allprobe = uprobe %>% select(key, probe)
+        mutate( key = NA ) %>%
+            dplyr::select( key, oprobe = probe, type ) %>%
+                distinct %>%
+                    mutate(  probe = case_when(
+                                suffix == TRUE ~ paste( oprobe, type, sep = tsep ),
+                                 TRUE ~ oprobe ) ) %>%
+                                     select ( key, probe, oprobe )
+    uprobe
+    
+                           
+    ## add .type suffix probe names to allprobes if desired
+    ## i.e. ABCA1.mut, CDKN2A.cnv
+    ## these are names people will be offered in menus, etc
+    if ( suffix ) {
+        print('with suffix')
+        allprobe = dat %>%
+            mutate( newprobe = paste( probe, type, sep = tsep ) ) %>%
+                mutate( key = NA, probe = newprobe ) %>%
+                    dplyr::select( key, probe ) %>%
+                        distinct
+        print('allprobe')
+        print(allprobe)
+    } else {
+        print('without suffix')
+        allprobe = uprobe %>% select(key, probe)
+        print('allprobe')
+        print(allprobe)
+    }
     ## insert or ignore into probes
+    print('probes')
     ## write temporary table to db
     ## insert any new probes into probe
     print('dbwrite probestmp')
-    dbWriteTable(connection, 'probestmp', uprobe, overwrite = TRUE, row.names = FALSE)
-    print('probestmp')
+    print(head(uprobe))
+    dbWriteTable(connection, 'probestmp', uprobe, append = TRUE, row.names = FALSE)
     Q('select * from probestmp limit 5')
-    print('probes')
-    Q('select * from probes limit 5')
-    print('sanity checking: length, unique, head')
-    ptmp = pull( Q('select probe from probestmp'), 'probe') ; print(length(ptmp)); print(length(unique(ptmp)));print(head(ptmp)); 
-    ptot = pull( Q('select probe from probes'), 'probe'); length(ptot); head(ptot)
-    print("intersection of tmp file with probes")
-    print(length(which( ptmp %in% ptot )))
     if(mysql){
-        ##dbExecute(connection, 'insert ignore into probes select probestmp.key, probe, oprobe  from probestmp')
-        dbExecute(connection, 'insert ignore into probes select *  from probestmp')
+        dbExecute(connection, 'insert ignore into probes select "key", probe, oprobe  from probestmp')
     } else {
-        ##dbExecute(connection, 'insert OR ignore into probes select probestmp.key, probe, oprobe from probestmp')
-        dbExecute(connection, 'insert OR ignore into probes select key, probe from probestmp')
+        dbExecute(connection, 'insert OR ignore into probes select key, probe, oprobe from probestmp')
     }
     dbExecute(connection, 'delete from probestmp')
     ##sqldf('insert or ignore into probes select key, probe from uprobe', connection = con )
     ## insert or ignore into allprobes
     print('allprobes')
     print('dbwrite allprobestmp')
-    dbWriteTable(connection, 'allprobestmp', allprobe, overwrite = TRUE, row.names = FALSE)
+    dbWriteTable(connection, 'allprobestmp', allprobe, append = TRUE, row.names = FALSE)
     if(mysql){
-        dbExecute(connection, 'insert ignore into allprobes select `key`, probe from allprobestmp')
+        dbExecute(connection, 'insert ignore into allprobes select "key", probe from allprobestmp')
     } else {
-        dbExecute(connection, 'insert OR ignore into allprobes select `key`, probe from allprobestmp')
+        dbExecute(connection, 'insert OR ignore into allprobes select key, probe from allprobestmp')
     }
     dbExecute(connection, 'delete from allprobestmp')
     print( dbGetQuery(connection,  'select * from allprobes limit 5') )
@@ -155,7 +163,7 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     print('db write of temp table complete')
     print('insert tmpdata into core tidy tables')
 
-    sqljoin = paste0('select samples.key as samplekey, probes.key as probekey,  value, type from ', dest_tmp, ' left join samples on ', dest_tmp, '.sample = samples.sample left join probes on ', dest_tmp, '.probe = probes.probe ')
+    sqljoin = paste0('select samples.key as samplekey, probes.key as probekey,  value, type from ', dest_tmp, ' inner join samples on ', dest_tmp, '.sample = samples.sample inner join probes on ', dest_tmp, '.probe = probes.probe ')
     
     print(sqljoin)
     ##     sql_select = paste0('

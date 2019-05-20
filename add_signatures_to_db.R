@@ -1,14 +1,26 @@
 library(tidyverse)
-library(sqldf)
+source('lib.R')
 source('signatures.R')
 source('apply_signatures.R')
 source('tablemaker.R')
-source('lib.R')
 
-db = 'tcga.db'
-con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db, flags = SQLITE_RO )
 tcga = tbl(con, 'tcga')
 tcgacat = tbl(con, 'tcgacat')
+
+sig_projection = create_signatures(dat = tcga, siglist = dsl)
+dim(sig_projection)
+head(sig_projection, 1)
+
+sig_load = sig_projection %>%
+    gather(probe, value, -sample) %>%
+        mutate(type = 'sig') %>%
+            select( sample, probe, value, type ) %>%
+                mutate(oprobe = probe) %>%
+                    as_tibble
+
+tablemaker(dat = sig_load, con = con, deleteType = TRUE, suffix = FALSE)
+
+system('touch restart.txt')
 
 if(FALSE){ #testing
 
@@ -29,17 +41,3 @@ test5 = create_signatures(dat = tcga, siglist = dsl["NKCD8.sig"] )
 head(test5)
 
 }
-
-sig_projection = create_signatures(dat = tcga, siglist = dsl)
-dim(sig_projection)
-head(sig_projection, 1)
-
-sig_load = sig_projection %>%
-    gather(probe, value, -sample) %>%
-        mutate(type = 'sig') %>%
-            select( sample, probe, value, type )
-tablemaker(data = sig_load, db = db, deleteType = TRUE, suffix = FALSE)
-system('touch restart.txt')
-
-
-

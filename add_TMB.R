@@ -1,10 +1,13 @@
-library(sqldf)
 library(tidyverse)
-
 source('tablemaker.R')
-db = 'tcga.db'
 
-fmut = sqldf('select * from tcgacats where type = "fmut"', db = db)
+samples = tbl(con, "samples"); probes = tbl(con, "probes"); tcgacati = tbl(con, "tcgacati")
+
+fmut = tcgacati %>% filter( type == 'fmut' ) %>%
+    left_join( samples %>% rename( samplekey = key) ) %>%
+        left_join( probes %>% rename( probekey = key ) ) %>%
+            select( sample, probe, value, type )
+fmut
 
 tmb = fmut %>%
     group_by( sample ) %>% 
@@ -13,16 +16,7 @@ tmb = fmut %>%
                 rename(value = n ) %>%
                     mutate( value = log10(value + 1) ) %>%
                         mutate( probe = 'tmb', type = 'tmb' ) %>%
-                            select(sample, probe, value, type)
+                            select(sample, probe, value, type) %>% collect
+dim(tmb)
 
 tablemaker(tmb, suffix = FALSE, deleteType = TRUE)
-
-
-
-
-
-
-
-
-
-

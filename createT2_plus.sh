@@ -22,6 +22,8 @@ fi
 
 rsync -avz -e 'ssh -o StrictHostKeyChecking=no' . ec2-user@shiny.rwc.bms.com:Shiny/T2/ 
 rm ~domino/.ssh/id_rsa
+ssh ec2-user@shiny.rwc.bms.com touch Shiny/T2/restart.txt
+
 
 
 

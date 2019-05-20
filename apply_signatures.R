@@ -36,9 +36,9 @@ sig_fn = function( dat, comp, name = 'sig', gitr = FALSE,
     signature
 }    
 
-create_signatures = function(dat = tcga, siglist = decon_signature_list, gitr = TRUE) {
+create_signatures = function(dat = tcga, siglist = decon_signature_list, withgitr = TRUE) {
     myprobes = unique(unlist(sapply(siglist, function(x){ x$comp } )))
-    if(gitr){
+    if(withgitr){
         print('gitr call')
         print(paste(myprobes, collapse = " "))
         dat = gitr(probes = myprobes, nonormal = FALSE, db = dat)

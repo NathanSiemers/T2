@@ -4,15 +4,14 @@
 library(tidyverse)
 library(utils)
 rforge <- "http://r-forge.r-project.org"
-install.packages("estimate", repos=rforge, dependencies=TRUE)
+if ( ! require('estimate') ) install.packages("estimate", repos=rforge, dependencies=TRUE)
 library(estimate)
 source('tablemaker.R')
-db = 'tcga.db'
 my.limit = Inf
 
 rna_file = 'Data/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.xena.gz'
 
-my_rna = read.csv(rna_file, stringsAsFactors = FALSE, sep = '\t', check.names = FALSE)
+my_rna = read.csv(rna_file, stringsAsFactors = FALSE, sep = '\t', check.names = FALSE, nrows = my.limit)
 my_rna[1:5,1:5]
 rownames(my_rna) = make.unique(my_rna$sample)
 my_rna$sample = NULL
@@ -53,11 +52,11 @@ dim(my_load)
 
 tablemaker( my_load, deleteType = TRUE, suffix = TRUE)
 
-sqldf::sqldf('select * from tcgas where type = "estimate" limit 10', db = db )
+##sqldf::sqldf('select * from tcgas where type = "estimate" limit 10', con = con )
 
-sqldf::sqldf('select * from tcgas where probe = "StromalScore.estimate" and type = "estimate" limit 2', db = db )
+##sqldf::sqldf('select * from tcgas where probe = "StromalScore.estimate" and type = "estimate" limit 2', con = con )
 
-system('rm Data/rna.tmp Data/estimatein.tmp Data/estimateout.tmp')
+try(system('rm Data/rna.tmp Data/estimatein.tmp Data/estimateout.tmp'), silent = TRUE)
 
 
 

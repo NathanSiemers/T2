@@ -167,11 +167,13 @@ sqldf('select * from tcgacats limit 5')
 
 sqldf('select * from tcgacats where type = "fmut" limit 5')
 
-sqldf('
+out = sqldf('
 select value from tcgacats
 where type = "molec_subtype"
 and probe = "Subtype_Selected"') %>%
     table %>% as_tibble
+summary(out)
+
 
 
 

@@ -11,12 +11,10 @@ con = RMySQL::dbConnect (
     port      = 3306,
     username  = "reader",
     password  = "Readeruser19"  )
-
 ## if you have a local sqlite database you can use this instead
 if(FALSE){
     con = RSQLite::dbConnect(RSQLite::SQLite(), dbname = 'tcga.db', flags = RSQLite::SQLITE_RO)
 }
-
 ################################################################
 ## load these convenient table bindings:
 ## you are connecting a relational database table to something that acts as a tibble/data.frame
@@ -27,7 +25,6 @@ tcgas = tbl(con, "tcgas")  ## simple sample/probe/value/type view
 tcgacats = tbl(con, "tcgacats")  ## simple sample/probe/value/type view
 clinpheno = tbl(con, "clinpheno")  ## clinical/phenotype table
 ## below are less necesary, more convenience
-
 ## tcga = numerical genomic + clinical
 tcga = tbl(con, "tcga")  ## genomic + clinical columns
 ## sample list table
@@ -38,7 +35,6 @@ probes = tbl(con, "probes")
 allprobes = probes %>% pull(probe)
 ## table of samples that were tested for mutation, will need this later
 mutationsamples = tbl(con, 'mutationsamples') %>% pull(sample)
-
 ## example list of probes
 myprobes = c('CCR8', 'IFNG', 'TP53.mut', 'PIK3CA.mut', 'PIK3CA.fmut')
 
@@ -64,7 +60,7 @@ tcgas %>% filter( probe %in% myprobes ) %>%
         spread(probe, value)
 
 
-## "tcga" get probe + clin results in tidy format
+## "tcga" get probe PLUS CLINICAL/SAMPLE results in tidy format
 
 tcga %>% filter( probe == 'FOXP3' )  ## note: probe/value/type as last columns
 ## dimensions of results
@@ -139,19 +135,21 @@ num_and_cat(myprobes)
 
 
 ## get it all, at least for the probes you ask for
+## this one lets you get only cohorts you want
 
-alldat = function( myprobes ) {
-    gdatnumeric(myprobes) %>%
+alldat = function( myprobes , cohorts = NULL) {
+    out = gdatnumeric(myprobes) %>%
         full_join(  gdatcategorical(myprobes) ) %>%
             left_join( clinpheno %>% collect )
+    if( !is.null(cohorts) ) {
+        out = out %>% filter( tumtype  %in% cohorts )
+    }
+    out
 }
 
-alldat(myprobes)
+alldat(myprobes) %>% colnames
 
-
-
-
-
+alldat(myprobes, cohorts = 'STAD') %>% collect %>% dim
 
 
 

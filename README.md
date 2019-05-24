@@ -1,5 +1,25 @@
 # Pancan_Database_2018
 
+## Important changes
+
+The updated code in the *mysql* branch is preferred.  The code base has been extended to support a local installation of Pancan TCGA on your local machine (sqlite), or an enterprise installation in the cloud (mysql).
+
+Do not run this code with mysql = TRUE in settings.R unless you also change the mysql connection string in database_connection.R. You could destroy the current enterprise database.
+
+A domino instance of the code and shiny application is available at:
+
+https://domino.web.bms.com/u/siemersn/T2Create/endpoints
+
+Let me know if you need permissions to start the app.  After that, you can launch a session within domino and see the shiny app.
+
+The enterprise shiny app for T2 is available at:
+
+http://shiny.rwc.bms.com/T2
+
+
+-Nathan
+
+
 Good morning, Peter.
 
 Thanks!  I’ve got ¾ of RWC Tbio using the data on a daily basis.  And the last holdout (Jim) built own his copy last week.

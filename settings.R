@@ -1,6 +1,6 @@
 TESTING = FALSE
 TESTINGLINES = 10
-mysql  = TRUE
+mysql  = FALSE
 mysqldb = 'prod'    # dev or prod
 sqldestroy = FALSE
 download = TRUE

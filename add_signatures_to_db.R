@@ -1,5 +1,5 @@
 library(tidyverse)
-source('lib.R')
+source('gitr.R')
 source('signatures.R')
 source('apply_signatures.R')
 source('tablemaker.R')
@@ -18,7 +18,9 @@ sig_load = sig_projection %>%
                 mutate(oprobe = probe) %>%
                     as_tibble
 
-tablemaker(dat = sig_load, con = con, deleteType = TRUE, suffix = FALSE)
+
+
+tablemaker(dat = sig_load, connection = con, deleteType = TRUE, suffix = FALSE)
 
 system('touch restart.txt')
 

@@ -5,12 +5,17 @@
 library(tidyverse)
 ##library(DBI)
 
+
+
 tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE, tsep = '.', deleteType = TRUE ) {
     thistype = dat$type[[1]]  ## there can be only one
     ## input: a tidy data set of sample, probe, value, type
     ## convert sample and probe into integer keys while updating:
     ##      samples and probes tables with key relationships
     ## data goes into tcgai or tcgacati depending on numeric or categorical
+    Q = function( query ){
+        as_tibble(do.call(dbGetQuery, list( con = connection, statement = query ) ))
+    }
     print(connection)
     if( categorical ) {
         dest_table = 'tcgacati'
@@ -47,10 +52,10 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
         mutate(  probe = case_when(
                      suffix == TRUE ~ paste( probe, type, sep = tsep ),
                      TRUE ~ probe ) ) %>%
-                         select ( probe ) %>%
+                         select ( probe, oprobe ) %>%
                              distinct %>%
                                  mutate( key = NA ) %>%
-                                     select(key, probe)
+                                     select(key, probe, oprobe)
     print("UPROBE")
     print(uprobe)
     ## to allprobes if desired i.e. ABCA1.mut, CDKN2A.cnv these are
@@ -62,10 +67,9 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     print('dbwrite probestmp')
     dbWriteTable(connection, 'probestmp', uprobe, overwrite = TRUE, row.names = FALSE)
     print('probestmp')
-    Q('select * from probestmp limit 5')
     print('probes')
-    Q('select * from probes limit 5')
     print('sanity checking: length, unique, head')
+    Q('select * from probes limit 5')
     ptmp = pull( Q('select probe from probestmp'), 'probe') ; print(length(ptmp)); print(length(unique(ptmp)));print(head(ptmp)); 
     ptot = pull( Q('select probe from probes'), 'probe'); length(ptot); head(ptot)
     print("intersection of tmp file with probes")

@@ -1,9 +1,9 @@
 TESTING = FALSE
 TESTINGLINES = 10
-mysql  = FALSE
+mysql  = TRUE
 mysqldb = 'prod'    # dev or prod
-sqldestroy = TRUE
+sqldestroy = FALSE
 download = TRUE
-sqlvacuum = FALSE
+sqlvacuum = TRUE
 optimize = TRUE
 

@@ -5,9 +5,13 @@ library(sqldf)
 library(ggplot2); library(ggthemes)
 library(viridis)
 library(tidyverse)
-db = 'tcga.db'
+source('gitr.R')
+##source('plotter.R')
 
+##mysql = FALSE
 ##con = RSQLite::dbConnect(RSQLite::SQLite(), dbname = db, flags = RSQLite::SQLITE_RW )
+##db = 'tcga.db'
+
 
 
 ## con = RMySQL::dbConnect (
@@ -17,13 +21,15 @@ db = 'tcga.db'
 ##     port      = 3306,
 ##     username  = "admin",
 ##     password  = "Adminuser19")
-con = RMySQL::dbConnect (
-    drv       = RMySQL::MySQL(),
-    dbname    = "pancan2018",
-    host      = "pancan2018.cbe7mtbvwi2d.us-east-1.rds.amazonaws.com",
-    port      = 3306,
-    username  = "admin",
-    password  = "Adminuser19")
+
+## mysql = TRUE
+## con = RMySQL::dbConnect (
+##     drv       = RMySQL::MySQL(),
+##     dbname    = "pancan2018",
+##     host      = "pancan2018.cbe7mtbvwi2d.us-east-1.rds.amazonaws.com",
+##     port      = 3306,
+##     username  = "admin",
+##     password  = "Adminuser19")
 
 ##install.packages('pool')
 ##library(pool)
@@ -47,121 +53,13 @@ mygenes = pull( tbl(con, 'allprobes') , probe )
 probes = pull( tbl(con, 'probes') , probe )
 types = tbl(con, 'types')
 cohorts = tbl(con, 'cohorts')
+mycohorts = pull( cohorts, cohort )
 tcgas = tbl(con, 'tcgas')
 tcgai = tbl(con, 'tcgai')
 tcgacati = tbl(con, 'tcgacati')
 tcgacats = tbl(con, 'tcgacats')
-mycohorts = cohorts %>% pull(cohort)
-cohortstrings = cohorts %>% pull(cohortstring)
-names(mycohorts) = cohortstrings
-##subtype = tbl(con, 'subtypes')
-##subtypes = c( "none", subtypes %>% pull(subtype) )
 clin = tbl(con, 'clin')
 mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
-
-
-################################################################
-## gitr - data retriever
-
-gitr = function(probes, phenos = TRUE, nonormal = TRUE,
-    cohort = 'all',
-    makefactors = TRUE,
-    db = 'tcga',
-    dbcat = 'tcgacat'
-                ) {
-    ##print(match.call())
-    if(FALSE){ #testing
-        probes = c('CD8A', 'CD8B'); phenos = TRUE; nonormal = FALSE; cohort = 'all'; makefactors = TRUE; db = tcga; dbcat = tcgacat
-    }
-    probes_orig = probes
-    ## a catch-all to retrieve more data than possibly requested
-    ##probes = unique( c(probes, gsub('\\.[^.]*$', '', probes) ) )
-    ## this is now a problem, as we have .sigs, with no parent in probe name
-    ## new comment
-    ##probes = unique( c( probes,  gsub('\\.[^.]*$', '', probes ) ) )
-    print(paste(  'Probes within gitr' ))
-    print(as.data.frame(probes))
-    ##    out = tbl(con, 'tcga')  %>%
-    out = tcga  %>%
-        filter( probe %in% probes ) %>%
-            as_tibble %>%
-                ## some immune scores are not unique in pancan tables
-                ## seems to only be the immune scores
-                distinct( sample, probe, type, .keep_all = TRUE ) %>%
-                    mutate(subtype = Subtype_Selected, lcohort = cohort, cohort = tumtype)
-    print('gitr finished first query')
-    ## filter out normals if desired
-    if( nonormal )  {
-        out = out %>% dplyr::filter( sample_type != "Solid Tissue Normal" )
-    }
-    ## include only selected cohorts if desired
-    if( !is.null(cohort) ) {
-        if ( cohort  != "all"  ) {
-            print("filtering by cohort")
-            print(dim(out))
-            print(paste('Cohort', cohort))
-            out = out[ out$cohort %in% cohort, ]
-            print(paste(unique( out$tumtype)))
-            print(dim(out))
-        }
-    }
-    ## mutate probes to add type (accomodate shiny)
-    ## but we need to improve this, getting .sig.sig now
-    ## below is a band-aid
-    ## new commented
-    ##out$probe = paste(out$probe, out$type, sep = '.')
-    ##out$probe = gsub( "\\.tmb$", '', out$probe)
-    ##out$probe = gsub( "\\.rna$", '', out$probe)
-    ##out$probe = gsub( "\\.sig$", '', out$probe)
-    ## not needed: out$probe = gsub( "\\.estimate$", '', out$probe)
-    out = out %>% select( -type ) %>% spread( probe, value )
-    ##    outcat = tbl(con, dbcat)  %>%
-        outcat = tcgacat  %>%
-        dplyr::filter( probe %in% probes & type == 'fmut' ) %>%
-            as_tibble %>%
-                distinct( sample, probe, type, .keep_all = TRUE )
-    ##outcat$probe = paste(outcat$probe, outcat$type, sep = '.')
-    outcat = outcat %>% select ( sample, probe, value ) %>%
-        spread( probe, value ) 
-    out = out %>% left_join(outcat, by = 'sample')
-
-    ## impute 0 mutation calls
-    out = out %>% mutate_at(
-        vars( ends_with(".mut") ),
-        funs( case_when(
-            is.na(.) & sample %in% mutationsamples ~ 0,
-            TRUE ~ .  ) )
-        )
-    out = out %>% mutate_at(
-        vars( ends_with(".fmut") ),
-        funs( case_when(
-            is.na(.) & sample %in% mutationsamples ~ 'wt',
-            TRUE ~ .  ) )
-        )
-    out = out %>% mutate_at(
-        vars( ends_with("mutvaf") ),
-        funs( case_when(
-            is.na(.) & sample %in% mutationsamples ~ 0,
-            TRUE ~ .  ) )
-        )
-    ## make factors
-    if( makefactors ) {
-        out = out %>% mutate_if(is.character, as.factor)
-        out = out %>% mutate_at( dplyr::vars( ends_with('mut') ) , funs(as.factor) )
-        out = out %>% mutate_at( dplyr::vars( ends_with('cnc') ) , funs(as.factor) )
-    }
-    print(out)
-    ## order Subtype_Immune_Model_Based
-    ##string = 'aljkfdakaj (Immune C4)'
-    ##gsub('\\).*', '', gsub('.*\\(Immune ', '', string) )
-    ################################################################
-    ## horrible code to order some factors - BLAME ERIKA ;)
-    i_cluster = unique(out$Subtype_Immune_Model_Based)
-    i_order =  order( gsub('\\).*', '', gsub('.*\\(Immune ', '', i_cluster) ), decreasing = TRUE)
-    out$Subtype_Immune_Model_Based = factor(out$Subtype_Immune_Model_Based, levels = i_cluster[i_order])
-    ###############################################################
-    out %>% droplevels %>% data.frame(check.names = FALSE)
-}
 
 ################################################################
 ## make a plotter function

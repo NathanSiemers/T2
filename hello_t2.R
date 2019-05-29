@@ -22,6 +22,7 @@ if(FALSE){
 ## these first thre are very important and capture
 ## almost the entire data in the db
 tcgas = tbl(con, "tcgas")  ## simple sample/probe/value/type view
+tcgai = tbl(con, "tcgai")  ## simple sample/probe/value/type view
 tcgacats = tbl(con, "tcgacats")  ## simple sample/probe/value/type view
 clinpheno = tbl(con, "clinpheno")  ## clinical/phenotype table
 ## below are less necesary, more convenience

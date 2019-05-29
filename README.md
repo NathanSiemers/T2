@@ -1,20 +1,40 @@
 # Pancan_Database_2018
 
-## Important changes
+## Getting started
 
-The updated code in the *mysql* branch is preferred.  The code base has been extended to support a local installation of Pancan TCGA on your local machine (sqlite), or an enterprise installation in the cloud (mysql).
 
-Do not run this code with mysql = TRUE in settings.R unless you also change the mysql connection string in database_connection.R. You could destroy the current enterprise database.
+git clone git@biogit.pri.bms.com:siemersn/Pancan_Database_2018.git
 
-A domino instance of the code and shiny application is available at:
+cd Pancan_Database_2018
 
-https://domino.web.bms.com/u/siemersn/T2Create/endpoints
+### run the shiny app
 
-Let me know if you need permissions to start the app.  After that, you can launch a session within domino and see the shiny app.
+bash app.sh
+
+then browse to
+
+http://localhost:8888
 
 The enterprise shiny app for T2 is available at:
 
 http://shiny.rwc.bms.com/T2
+
+
+### talk to the database directly
+
+The hello_t2.R script has an introdution to using the database directly (by default, a read-only connection to a T2 mysql instance in the cloud ).
+
+## Important changes
+
+The code base has been extended to support a local installation of Pancan TCGA on your local machine (sqlite), or an enterprise installation in the cloud (mysql).
+
+Do not run this code with mysql = TRUE in settings.R unless you also change the mysql connection string in database_connection.R. You could destroy the current enterprise database. Not the end of the world, but it would take a day or two to rebuild.
+
+A domino instance of the code and shiny application is also available at:
+
+https://domino.web.bms.com/u/siemersn/T2Create/endpoints
+
+Let me know if you need permissions to start the app.  After that, you can launch a session within domino and see the shiny app.
 
 
 -Nathan

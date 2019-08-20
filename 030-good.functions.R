@@ -1,3 +1,13 @@
+library(tidyverse)
+library(sqldf)
+source('tablemaker.R')
+
+if( TESTING ) {
+    my.limit = TESTINGLINES
+} else {
+    my.limit = Inf
+}    
+
 
 Q = function( query ){
     as_tibble(do.call(dbGetQuery, list( con = con, statement = query ) ))

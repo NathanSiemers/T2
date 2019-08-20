@@ -21,6 +21,7 @@ shinyUI(
         inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
         inline(HTML(nbsp(5))),
         inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
+        inline(checkboxInput("nonormal", "Exclude Non-tumor", value = TRUE)),
         tags$br(),
         inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
         inline(HTML(nbsp(5))),
@@ -29,8 +30,11 @@ shinyUI(
                          choices = c('none', 'x', 'y', 'both'), selected = 'none', inline = TRUE  ) ),
         submitButton(text = "Plot", icon = NULL, width = NULL),
         tags$br(),
-        withSpinner( plotOutput( "main_plot", height = '900px', width = '100%' ),
-                    proxy.height = "200px", color = viridis::plasma(1) ),
+        fluidRow(
+            column(12, align="center",
+                   withSpinner( plotOutput( "main_plot", height = '1200px', width = '85%' ),
+                               proxy.height = "200px", color = viridis::plasma(1) )
+                   ) ),
         h5( paste( 'PI:', a.PI ) ),
         h5( paste('Contributors:', a.credits) ),
         h5( Sys.Date() ),

@@ -34,7 +34,7 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
             mutate( key = NA ) %>%
                 dplyr::select( key, sample )
     print('writing to sample index table (samples)' )
-    print(usample)
+    print(head(usample))
     ## write usample to temporary table in db (samplestmp)
     dbWriteTable(connection, 'samplestmp', usample, append = TRUE, row.names = FALSE)
     ## insert any new samples into samples table
@@ -52,12 +52,14 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
         mutate(  probe = case_when(
                      suffix == TRUE ~ paste( probe, type, sep = tsep ),
                      TRUE ~ probe ) ) %>%
-                         select ( probe, oprobe ) %>%
+                         ##select ( probe, oprobe ) %>%
+                         select ( probe ) %>%
                              distinct %>%
                                  mutate( key = NA ) %>%
-                                     select(key, probe, oprobe)
+                                     ##select(key, probe, oprobe)
+                                     select(key, probe)
     print("UPROBE")
-    print(uprobe)
+    print(head(uprobe))
     ## to allprobes if desired i.e. ABCA1.mut, CDKN2A.cnv these are
     ## names people will be offered in menus, etc
     allprobe = uprobe %>% select(key, probe)
@@ -102,12 +104,13 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     if( deleteType ) {
         print(paste('DELETING TYPE', thistype, 'from table', dest_table))
         print(Q('select distinct type from types'))
-        query = paste(
-            'delete from',
+        query = paste0(
+            'delete from ',
             dest_table,
-            'where type = "',
+            ' where type = "',
             thistype, '"'
             )
+        print(query)
         dbExecute(connection, query)
         dbExecute(connection, paste0( 'delete from types where type = "', thistype, '"' ))
         dbExecute(connection, paste0( 'delete from nosuffix where type = "', thistype, '"' ))

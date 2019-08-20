@@ -60,7 +60,7 @@ tcgas = tbl(con, 'tcgas')
 tcgai = tbl(con, 'tcgai')
 tcgacati = tbl(con, 'tcgacati')
 tcgacats = tbl(con, 'tcgacats')
-clin = tbl(con, 'clin')
+clin = tbl(con, 'clinpheno')
 mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 
 ################################################################
@@ -99,7 +99,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(condition)  )
     print(list.of.markers)
-    data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = TRUE)
+    data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = nonormal)
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
     if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
     cat(file = stderr(), "gitr finished")
@@ -242,12 +242,22 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     p = ggplot( mapping = aesfull, data = data)
     if( ! grepl('\\+|\\-', x ) ) {
         ##        if(   is.factor(data[, x]) | is.factor(data[, y])   ) {
-        if(   is.factor(data[, x])   ) {
+        if(   is.factor(data[, x])  ) {
             ##data[,x] = factor(  data[,x], levels = c(0,1) )
             if(! is.null(size))  {
-                p = p + geom_boxplot(mapping = aesxy, inherit.aes = FALSE, outlier.shape = NA) + geom_jitter(width = 0.2, alpha = alpha)
+                ##p = p + geom_boxplot(mapping = aesxy, inherit.aes = FALSE, outlier.shape = NA) + geom_jitter(width = 0.2, alpha = alpha)
+                if(is.null(color)) {
+                    p = p + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitter(width = 0.2), alpha = alpha)
+                } else {
+                    p = p + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(), width = 0.2, alpha = alpha)
+                }
             } else {
-                p = p + geom_boxplot(mapping = aesxy, inherit.aes = FALSE, outlier.shape = NA) + geom_jitter(width = 0.2, alpha = alpha, size = static.size)
+                if(is.null(color)){
+                ##p = p + geom_boxplot(mapping = aesxy, inherit.aes = FALSE, outlier.shape = NA) + geom_jitter(width = 0.2, alpha = alpha, size = static.size)
+                    p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitter(width = 0.2), alpha = alpha, size = static.size)
+                } else {
+                    p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitterdodge(), width = 0.2, alpha = alpha, size = static.size)
+                }
             }
         } else {
             if(! is.null(size))  {
@@ -305,7 +315,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         p = p + coord_flip()
     }
     p = p + labs(caption = "Nathan Siemers, Translational Medicine") +
-        theme(plot.caption = element_text(size = 12) )
+        theme(plot.caption = element_text(size = 12),
+              axis.text.x = element_text(angle = 90, hjust = 1)
+              )
     p
 }    
 

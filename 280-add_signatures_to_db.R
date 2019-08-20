@@ -20,7 +20,7 @@ sig_load = sig_projection %>%
 
 
 
-tablemaker(dat = sig_load, connection = con, deleteType = TRUE, suffix = FALSE)
+tablemaker(dat = sig_load, connection = con, deleteType = TRUE,  suffix = FALSE)
 
 system('touch restart.txt')
 

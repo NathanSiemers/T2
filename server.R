@@ -43,7 +43,7 @@ shinyServer (
         updateSelectizeInput(session, 'alpha',  choices = 1:50 / 50,
                              selected = '0.5', server = TRUE)
         updateSelectizeInput(session, 'ncols',  choices = 1:50,
-                             selected = 12, server = TRUE)
+                             selected = 2, server = TRUE)
         output$main_plot = renderPlot( {
             if( input$x == "" | input$y == "" ) { return(NULL) }
             withProgress(message = 'Working...', value = 0, {
@@ -53,7 +53,7 @@ shinyServer (
                          )
         })
         output$datatypes = renderTable( {
-            types
+            types %>% select(type)
         })
         ## this needs fixing
         output$dlknitr = downloadHandler(

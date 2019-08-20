@@ -80,7 +80,15 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     outcat = outcat %>% select ( sample, probe, value ) %>%
         spread( probe, value ) 
     out = out %>% left_join(outcat, by = 'sample')
-
+    ## make sample_type a factor
+    out$sample_type = factor(out$sample_type,
+        levels = c( "Primary Tumor",
+            "Recurrent Tumor",
+            "Metastatic",
+            "Additional - New Primary",
+            "Additional Metastatic",
+            "Solid Tissue Normal"
+                   ) )                      
     ## impute 0 mutation calls
     out = out %>% mutate_at(
         vars( ends_with(".mut") ),

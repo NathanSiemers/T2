@@ -1,4 +1,5 @@
 library(DBI)
+try(dbDisconnect(con))
 if( ! mysql ) {
     db = 'tcga.db'
     if( sqldestroy ) {

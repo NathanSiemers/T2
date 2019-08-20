@@ -81,14 +81,14 @@ and tcgai.probekey = probes.key
 and samples.sample = clinpheno.sample
 ' )
 
-dbExecute(con, '
-create view testy as
-select clinpheno.*, probe, value, type
-from tcgai, samples, probes, clinpheno
-where tcgai.samplekey = samples.key 
-and tcgai.probekey = probes.key
-and samples.sample = clinpheno.sample
-' )
+## dbExecute(con, '
+## create view testy as
+## select clinpheno.*, probe, value, type
+## from tcgai, samples, probes, clinpheno
+## where tcgai.samplekey = samples.key 
+## and tcgai.probekey = probes.key
+## and samples.sample = clinpheno.sample
+## ' )
 
 ################################################################
 ## main TCGA view for categorical data

@@ -24,14 +24,17 @@ tcgas
 tcgas %>% filter(probe == 'KRAS')
 
 tcgas %>% filter(probe == 'KRAS.mut')
+tcgas %>% filter(probe == 'KRAS.cnv')
+tcgas %>% filter(probe == 'KRAS.cnc')
 ## important - wt not stored in database.
 ## you can get all samples tested for mutation from mutationsamples
 ## samples in mutationsamples without a mutation are correctly inferred as wild type.
 head(mutationsamples)
 
-
 ## categorical tcga data in tidy format
-tcgacats
+tcgacats %>% filter( type == 'fmut')
+
+tcgacats %>% filter( type == 'fmut') %>% filter(probe == 'OPN4.fmut')
 
 tcgacats 
 
@@ -120,10 +123,10 @@ tmb
 
 saveRDS(tmb, file = 'estimate.rds')
 
+##clinpheno %>% filter(cohort == "liver hepatocellular carcinoma") %>% select( Subtype_Selected ) %>% table
 
 ################################################################
 ## for Jun
-
 
 library(data.table)
 
@@ -139,11 +142,9 @@ d = tcgas %>%
                 select( -type ) %>%
                     collect
 
-
 ################################################################
 ## only need the line below for mutation
 ##        filter( sample %in% mutationsamples) %>%
-
 
 ## it is unfortunate you cannot cast nor spread in sql
 ## only need fill = 0 for mutations
@@ -152,7 +153,6 @@ d[1:5,1:5]
 ## join to clinpheno
 d = prostatedata %>% collect %>% left_join( d )
 
-
 ################################################################
 ## get categorical data from tcgacats
 
@@ -160,9 +160,18 @@ d = prostatedata %>% collect %>% left_join( d )
 
 ## 
 
+tcgas %>% pull(type) %>% unique
 tcgacats %>% pull(type) %>% unique
 
 tcgacats %>% filter( type == 'fmut' )
 
 
+################################################################
+## for Vlado
+
+library(sqldf)
+
+sqldf('show tables', connection = con)
+
+tbl(con, 'mutation')
 

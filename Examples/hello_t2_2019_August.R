@@ -15,7 +15,8 @@ tcga = tbl(con, "tcga")  ## genomic + clinical columns
 tcgas = tbl(con, "tcgas")  ## simple sample/probe/value/type view
 tcgacats = tbl(con, "tcgacats")  ## simple sample/probe/value/type view
 clinpheno = tbl(con, "clinpheno")  ## clinical/phenotype table
-mutationsamples = tbl(con, "mutationsamples")  ## clinical/phenotype table
+mutationsamples = tbl(con, "mutationsamples")  %>% pull(sample)  ## clinical/phenotype table
+allcohorts = unique(clinpheno %>% pull(cohort))
 
 ## numeric tcga data in tidy format
 tcgas
@@ -26,7 +27,7 @@ tcgas %>% filter(probe == 'KRAS.mut')
 ## important - wt not stored in database.
 ## you can get all samples tested for mutation from mutationsamples
 ## samples in mutationsamples without a mutation are correctly inferred as wild type.
-mutationsamples
+head(mutationsamples)
 
 
 ## categorical tcga data in tidy format
@@ -118,4 +119,32 @@ tmb = tcgas %>%
 tmb
 
 saveRDS(tmb, file = 'estimate.rds')
+
+
+################################################################
+## for Jun
+
+
+library(data.table)
+
+prostatedata = clinpheno %>% filter(cohort == "prostate adenocarcinoma") 
+prostatesample = prostatedata %>% pull( sample )
+
+## get all prostate mutants
+## infer wt
+
+d = tcgas %>%
+    filter( type == "mut" ) %>%
+        filter( sample %in% prostatesample) %>%
+            ## only need the line below for mutation
+            filter( sample %in% mutationsamples) %>%
+                select( -type ) %>%
+                    collect
+
+
+## it is unfortunate you cannot cast nor spread in sql 
+d = dcast( setDT(d), sample ~ probe, value.var = "value", fill = 0)
+d[1:5,1:5]
+## join to clinpheno
+d = prostatedata %>% collect %>% left_join( d )
 

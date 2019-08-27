@@ -142,9 +142,20 @@ d = tcgas %>%
                     collect
 
 
-## it is unfortunate you cannot cast nor spread in sql 
+## it is unfortunate you cannot cast nor spread in sql
+## only need fill = 0 for mutations
 d = dcast( setDT(d), sample ~ probe, value.var = "value", fill = 0)
 d[1:5,1:5]
 ## join to clinpheno
 d = prostatedata %>% collect %>% left_join( d )
+
+
+################################################################
+## get categorical data from tcgacats
+
+## what are the types of categorical information?
+
+tcgacats %>% pull(type) %>% unique
+
+tcgacats %>% filter( type == 'fmut' ) 
 

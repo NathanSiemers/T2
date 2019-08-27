@@ -15,11 +15,24 @@ tcga = tbl(con, "tcga")  ## genomic + clinical columns
 tcgas = tbl(con, "tcgas")  ## simple sample/probe/value/type view
 tcgacats = tbl(con, "tcgacats")  ## simple sample/probe/value/type view
 clinpheno = tbl(con, "clinpheno")  ## clinical/phenotype table
+mutationsamples = tbl(con, "mutationsamples")  ## clinical/phenotype table
 
 ## numeric tcga data in tidy format
 tcgas
+
+tcgas %>% filter(probe == 'KRAS')
+
+tcgas %>% filter(probe == 'KRAS.mut')
+## important - wt not stored in database.
+## you can get all samples tested for mutation from mutationsamples
+## samples in mutationsamples without a mutation are correctly inferred as wild type.
+mutationsamples
+
+
 ## categorical tcga data in tidy format
 tcgacats
+
+tcgacats 
 
 ## table of clinical and subtype information for samples
 clinpheno

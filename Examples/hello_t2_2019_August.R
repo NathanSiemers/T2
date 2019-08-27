@@ -135,11 +135,14 @@ prostatesample = prostatedata %>% pull( sample )
 
 d = tcgas %>%
     filter( type == "mut" ) %>%
-        filter( sample %in% prostatesample) %>%
-            ## only need the line below for mutation
-            filter( sample %in% mutationsamples) %>%
+            filter( sample %in% prostatesample) %>%
                 select( -type ) %>%
                     collect
+
+
+################################################################
+## only need the line below for mutation
+##        filter( sample %in% mutationsamples) %>%
 
 
 ## it is unfortunate you cannot cast nor spread in sql
@@ -155,7 +158,11 @@ d = prostatedata %>% collect %>% left_join( d )
 
 ## what are the types of categorical information?
 
+## 
+
 tcgacats %>% pull(type) %>% unique
 
-tcgacats %>% filter( type == 'fmut' ) 
+tcgacats %>% filter( type == 'fmut' )
+
+
 

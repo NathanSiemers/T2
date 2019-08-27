@@ -175,3 +175,4 @@ sqldf('show tables', connection = con)
 
 tbl(con, 'mutation')
 
+sqldf('select * from mutation limit 2', connection = con)

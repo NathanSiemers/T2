@@ -15,21 +15,21 @@ shinyServer (
         updateSelectizeInput(session, 'condition',  choices = mygenesplus,
                              selected = c('StromalScore.estimate'), server = TRUE)
         updateSelectizeInput(session, 'x',  choices = mygenesplus,
-                             selected = 'PIK3CA.mut', server = TRUE)
+                             selected = 'cohort', server = TRUE)
         updateSelectizeInput(session, 'y',  choices = mygenesplus,
                              selected = 'CD8A', server = TRUE)
         updateSelectizeInput(session, 'color',  choices = mygenesplus,
-                             selected = 'CD274', server = TRUE)
+                             selected = 'sample_type', server = TRUE)
         updateSelectizeInput(session, 'size',  choices = mygenesplus,
                              selected = "", server = TRUE)
         updateSelectizeInput(session, 'cohort',  choices = c('all', mycohorts ),
-                             selected = "STAD", server = TRUE)
+                             selected = NULL, server = TRUE)
         updateSelectizeInput(session, 'facet',  choices = mygenesplus,
-                             selected = 'subtype', server = TRUE)
+                             selected = NULL, server = TRUE)
         updateSelectizeInput(session, 'smooth',  choices = c("TRUE", "FALSE"),
                              selected = 'TRUE', server = TRUE)
-        updateSelectizeInput(session, 'nonormal',  choices = c("TRUE", "FALSE"),
-                             selected = 'TRUE', server = TRUE)
+##        updateSelectizeInput(session, 'nonormal',  choices = c("TRUE", "FALSE"),
+##                             selected = 'FALSE', server = TRUE)
         updateSelectizeInput(session, 'fscales',  choices = c("free", "fixed", "free_x", "free_y"),
                              selected = 'fixed', server = TRUE)
         updateSelectizeInput(session, 'static.size',  choices = 1:20 / 20,

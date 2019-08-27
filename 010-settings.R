@@ -1,12 +1,9 @@
 TESTING = FALSE
 TESTINGLINES = 10
 mysql  = TRUE
-mysqldb = 'dev'    # dev or prod
+mysqldb = 'prod'    # dev or prod
 sqldestroy = FALSE
-download = TRUE
+download = FALSE
 sqlvacuum = FALSE
 optimize = FALSE
-xena.force = TRUE
-
-
-
+xena.force = FALSE

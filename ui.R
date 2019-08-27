@@ -21,7 +21,7 @@ shinyUI(
         inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
         inline(HTML(nbsp(5))),
         inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
-        inline(checkboxInput("nonormal", "Exclude Non-tumor", value = TRUE)),
+        inline(checkboxInput("nonormal", "Exclude Non-tumor", value = FALSE)),
         tags$br(),
         inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
         inline(HTML(nbsp(5))),

@@ -15,22 +15,22 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
     }
     probes_orig = probes
 
-    ## tcga = tbl(conn, 'tcga')
-    ## tcgacat = tbl(conn, 'tcgacat')
-    ## samples = pull(tbl(conn, 'samples'), sample)
-    ## mutationsamples = pull( tbl(conn, 'mutationsamples'), sample )
-    ## mygenes = pull( tbl(conn, 'allprobes') , probe )
-    ## probes = pull( tbl(conn, 'probes') , probe )
-    ## types = tbl(conn, 'types')
-    ## cohorts = tbl(conn, 'cohorts')
-    ## tcgas = tbl(conn, 'tcgas')
-    ## tcgai = tbl(conn, 'tcgai')
-    ## tcgacati = tbl(conn, 'tcgacati')
-    ## tcgacats = tbl(conn, 'tcgacats')
+    tcga = tbl(conn, 'tcga')
+    tcgacat = tbl(conn, 'tcgacat')
+    samples = pull(tbl(conn, 'samples'), sample)
+    mutationsamples = pull( tbl(conn, 'mutationsamples'), sample )
+    mygenes = pull( tbl(conn, 'allprobes') , probe )
+    ##probes = pull( tbl(conn, 'probes') , probe )
+    types = tbl(conn, 'types')
+    cohorts = tbl(conn, 'cohorts')
+    tcgas = tbl(conn, 'tcgas')
+    tcgai = tbl(conn, 'tcgai')
+    tcgacati = tbl(conn, 'tcgacati')
+    tcgacats = tbl(conn, 'tcgacats')
     ## ##subtype = tbl(conn, 'subtypes')
-    ## ##subtypes = c( "none", subtypes %>% pull(subtype) )
-    ## clin = tbl(conn, 'clin')
-    ## mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
+    ##subtypes = c( "none", subtypes %>% pull(subtype) )
+    clin = tbl(conn, 'clin')
+    mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
 
     ## a catch-all to retrieve more data than possibly requested
     ##probes = unique( c(probes, gsub('\\.[^.]*$', '', probes) ) )
@@ -114,7 +114,7 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
         out = out %>% mutate_at( dplyr::vars( ends_with('mut') ) , funs(as.factor) )
         out = out %>% mutate_at( dplyr::vars( ends_with('cnc') ) , funs(as.factor) )
     }
-    print(out)
+    ##print(out)
     ## order Subtype_Immune_Model_Based
     ##string = 'aljkfdakaj (Immune C4)'
     ##gsub('\\).*', '', gsub('.*\\(Immune ', '', string) )

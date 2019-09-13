@@ -103,6 +103,20 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
     if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
     cat(file = stderr(), "gitr finished")
+    if(length(x) > 1) {
+        data$signature_x = data %>%
+            select( x ) %>%
+                scale %>%
+                    apply( 1, median, na.rm = TRUE )
+        x = 'signature_x'
+    }
+    if(length(y) > 1) {
+        data$signature_y = data %>%
+            select( y ) %>%
+                scale %>%
+                    apply( 1, median, na.rm = TRUE )
+        y = 'signature_y'
+    }
     cat(file = stderr(), paste(colnames(data), collapse = ';')) ; cat('\n')
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
     if( allComplete ) {

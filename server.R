@@ -14,7 +14,7 @@ shinyServer (
     function(input, output, session) {
         updateSelectizeInput(session, 'condition',  choices = mygenesplus,
                              selected = c('StromalScore.estimate'), server = TRUE)
-        updateSelectizeInput(session, 'x',  choices = mygenesplus,
+        updateSelectizeInput(session, 'x',  choices = mygenesplus, 
                              selected = 'cohort', server = TRUE)
         updateSelectizeInput(session, 'y',  choices = mygenesplus,
                              selected = 'CD8A', server = TRUE)
@@ -45,6 +45,7 @@ shinyServer (
         updateSelectizeInput(session, 'ncols',  choices = 1:50,
                              selected = 2, server = TRUE)
         output$main_plot = renderPlot( {
+            if( length(input$x) == 0 | length(input$y) == 0 ) { return( NULL ) }
             if( input$x == "" | input$y == "" ) { return(NULL) }
             withProgress(message = 'Working...', value = 0, {
                 incProgress(0.20, message = "Plotting")

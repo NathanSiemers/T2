@@ -52,6 +52,7 @@ dsl = list(
                           'CXCR1', 'CXCR2', 'CCL2', 'VEGFA' )),
     ##Neut1.sig = list( comp = c('FPR1', 'CSF3R')),
     ##Neut2.sig = list( comp = c('FPR1', 'CSF3R', 'FCGR3B', 'CEACAM3')),
+    NeutElastase.sig = list( comp = c('ELANE', 'AZU1') ),
     Ifn9p.sig = list( comp = c(
                           "IFIT1B",
                           "IFNA21",

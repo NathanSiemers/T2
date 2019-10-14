@@ -15,6 +15,7 @@ tcga = tbl(con, "tcga")  ## genomic + clinical columns
 tcgas = tbl(con, "tcgas")  ## simple sample/probe/value/type view
 tcgacats = tbl(con, "tcgacats")  ## simple sample/probe/value/type view
 clinpheno = tbl(con, "clinpheno")  ## clinical/phenotype table
+mutation = tbl(con, "mutation")  
 mutationsamples = tbl(con, "mutationsamples")  %>% pull(sample)  ## clinical/phenotype table
 allcohorts = unique(clinpheno %>% pull(cohort))
 
@@ -36,7 +37,16 @@ tcgacats %>% filter( type == 'fmut')
 
 tcgacats %>% filter( type == 'fmut') %>% filter(probe == 'OPN4.fmut')
 
-tcgacats 
+tcgacats %>% filter( type == 'fmut') %>% filter(probe == 'BRAF.fmut')
+
+## mini deep dive on braf
+
+
+tcgacats %>% filter( type == 'fmut') %>% filter(probe == 'BRAF.fmut') %>%
+    select( sample, value ) %>% collect %>%
+        filter( grepl('p\\.V600', value ) ) %>% table %>%
+            data.frame 
+
 
 ## table of clinical and subtype information for samples
 clinpheno

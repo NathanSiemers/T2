@@ -43,7 +43,7 @@ shinyServer (
         updateSelectizeInput(session, 'alpha',  choices = 1:50 / 50,
                              selected = '0.5', server = TRUE)
         updateSelectizeInput(session, 'ncols',  choices = 1:50,
-                             selected = 2, server = TRUE)
+                             selected = 8, server = TRUE)
         output$main_plot = renderPlot( {
             if( length(input$x) == 0 | length(input$y) == 0 ) { return( NULL ) }
             if( input$x == "" | input$y == "" ) { return(NULL) }

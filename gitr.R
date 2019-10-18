@@ -14,7 +14,13 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
         probes = c('CD8A', 'CD8B'); phenos = TRUE; nonormal = FALSE; cohort = 'all'; makefactors = TRUE
     }
     probes_orig = probes
-
+    ## test to see if mutations are here, if so add muttest.muttest to probe list to capture wt samples
+    if ( any( grepl('\\.mut$|\\.fmut$|mutvaf$', probes))) {
+        probes = c( probes, 'muttest.muttest' )
+        MUTTEST = TRUE
+    } else {
+        MUTTEST = FALSE
+    }
     tcga = tbl(conn, 'tcga')
     tcgacat = tbl(conn, 'tcgacat')
     samples = pull(tbl(conn, 'samples'), sample)
@@ -114,6 +120,7 @@ gitr = function(probes, phenos = TRUE, nonormal = TRUE,
         out = out %>% mutate_at( dplyr::vars( ends_with('mut') ) , funs(as.factor) )
         out = out %>% mutate_at( dplyr::vars( ends_with('cnc') ) , funs(as.factor) )
     }
+    if(MUTTEST){ out = out %>% select( -muttest.muttest ) }
     ##print(out)
     ## order Subtype_Immune_Model_Based
     ##string = 'aljkfdakaj (Immune C4)'

@@ -39,6 +39,19 @@ my_fmut
 tablemaker( my_fmut, categorical = TRUE )
 my_fmut = NULL; gc()
 
+## add a mutation tested "probe" to tcgai
+
+samples = dbGetQuery(con, 'select * from mutationsamples')
+
+mutationtested = data.frame(
+    sample = samples$sample,
+    probe = 'muttest',
+    value = 1,
+    type = 'muttest',
+    stringsAsFactors = FALSE
+    )
+
+tablemaker( mutationtested )
 
 if(mysql){
     try(dbExecute(  con,  'drop index mutidx on mutation' ), silent = TRUE)

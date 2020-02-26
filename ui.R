@@ -41,7 +41,7 @@ shinyUI(
         downloadButton('downloadData', 'Download Table'),
         ##downloadButton('dlknitr', 'Download Report'),
         h4('Fiddly Options'),
-        inline( selectizeInput('fscales', 'Multigraph Scales', choices = NULL  ) ),
+        inline( selectizeInput('scales', 'Multigraph Scales', choices = NULL  ) ),
         inline( selectizeInput('alpha', 'Transparency', choices = NULL  )),
         inline( selectizeInput('static.size', 'Point Size multipier', choices = NULL  ) ),
         inline( selectizeInput('static.strip', 'Multi-Graph Label Size multipier', choices = NULL  ) ),

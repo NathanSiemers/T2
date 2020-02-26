@@ -30,7 +30,7 @@ shinyServer (
                              selected = 'TRUE', server = TRUE)
 ##        updateSelectizeInput(session, 'nonormal',  choices = c("TRUE", "FALSE"),
 ##                             selected = 'FALSE', server = TRUE)
-        updateSelectizeInput(session, 'fscales',  choices = c("free", "fixed", "free_x", "free_y"),
+        updateSelectizeInput(session, 'scales',  choices = c("free", "fixed", "free_x", "free_y"),
                              selected = 'fixed', server = TRUE)
         updateSelectizeInput(session, 'static.size',  choices = 1:20 / 20,
                              selected = "0.25", server = TRUE)

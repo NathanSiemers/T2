@@ -1,0 +1,137 @@
+library(tidyverse)
+library(DBI)
+
+
+con = RMySQL::dbConnect (
+    drv       = RMySQL::MySQL(),
+    dbname    = "pancan2018",
+    host      = "pancan2018.cbe7mtbvwi2d.us-east-1.rds.amazonaws.com",
+    port      = 3306,
+    username  = "reader",
+    password  = "Readeruser19"  )
+
+## if you have a local sqlite database you can use this instead
+if(FALSE){
+    con = RSQLite::dbConnect(RSQLite::SQLite(), dbname = 'tcga.db', flags = RSQLite::SQLITE_RO)
+}
+
+## load these convenient table bindings:
+## really simple tables
+tcgas = tbl(con, "tcgas")  ## simple sample/probe/value/type view
+tcgacats = tbl(con, "tcgacats")  ## simple sample/probe/value/type view
+## tcga = numerical genomic + clinical
+tcga = tbl(con, "tcga")  ## genomic + clinical columns
+## clinpheno - clinical plus sample plus subtype information
+clinpheno = tbl(con, "clinpheno")  ## clinical table
+## probe list table
+probes = tbl(con, "probes")
+## vector of all probes
+allprobes = probes %>% pull(probe)
+## example list of probes
+myprobes = c('ABCA1', 'IFNG', 'TP53.mut')
+
+
+## properties of the clinical table
+
+as.tibble(colnames(clinpheno))
+
+## breakdown of assigned subtype
+clinpheno %>% select( Subtype_Selected ) %>%
+    data.frame %>% table %>% as_tibble
+
+## look at tcgas - the simple numeric table of sample/probe/type things
+
+tcgas
+
+tcgas %>% filter( probe == 'FOXP3' )
+tcgas %>% filter( probe == 'FOXP3.cnv' )
+tcgas %>% filter( probe == 'FOXP3.mut' )
+tcgas %>% filter( probe %in% myprobes )
+
+## a simple spread() to get probes in columns
+tcgas %>% filter( probe %in% myprobes ) %>%
+    select( -type ) %>% collect %>%
+        spread(probe, value)
+
+
+## get probe + clin results in tidy format
+
+tcga %>% filter( probe == 'FOXP3' )  ## note: probe/value/type as last columns
+tcga %>% filter( probe == 'FOXP3' ) %>% as_tibble %>% dim
+
+
+## a function to get you genomics data spread out in probe columns
+genomedat = function(probes) {
+    tcgas %>% 
+        filter( probe %in% probes ) %>%
+            select( -type ) %>%
+                as_tibble %>% 
+                    spread(probe, value)
+}
+
+genomedat( myprobes )
+
+## a function to get you clinical + genomics data
+
+clingeno = function(probes) {
+    clinpheno %>% as_tibble %>%
+        left_join( genomedat(probes) )
+}
+
+clingeno(myprobes)
+
+## make a plot
+
+library(ggplot2)
+
+ggplot(  aes(x = FOXP3, y = ABCA1, color = OS, size = OS.time),
+       data = clingeno( c("FOXP3", "ABCA1") ) )  +
+           geom_point( alpha = 0.1 ) +
+               geom_smooth(method = 'lm') +
+                   facet_wrap( ~ tumtype )
+
+
+################################################################
+## you can use sql just as well
+library(sqldf)
+options(sqldf.connection = con)
+
+sqldf('select * from tcgas limit 1')
+
+sqldf('select * from tcgas where probe = "FOXP3" limit 1')
+
+sqldf('select * from tcgacats limit 5')
+
+sqldf('select * from tcgacats where type = "fmut" limit 5')
+
+sqldf('
+select value from tcgacats
+where type = "molec_subtype"
+and probe = "Subtype_Selected"') %>%
+    table %>% as_tibble
+
+
+################################################################
+## do you want an entire set of genomics data?
+## you'll need to be patient and have RAM
+## a good network to east coast amazon also helps 
+## data.table library is recommended for spread/cast
+
+n = 100000  ## testing only, set to Inf for query to get all rna
+d = tcgas %>%
+    filter( type == "rna" ) %>%
+        head(n) %>%
+            select(sample, probe, value) %>%
+                collect
+dim(d)
+
+## it is unfortunate you cannot cast nor spread in sql 
+library(data.table)
+d = dcast( setDT(d), sample ~ probe, value.var = "value")
+
+dim(d)
+d[1:3,100:110]
+
+gc()
+
+

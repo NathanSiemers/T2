@@ -8,10 +8,11 @@ my_molec_subtype = read_tsv('Data/TCGASubtype.20170308.tsv.gz',
                     mutate( type = 'molec_subtype' ) %>%
                         select( sample, probe, value, type )
 my_molec_subtype
+length(which(is.na(my_molec_subtype$value)))
 unique(my_molec_subtype$probe)
 unique(my_molec_subtype$value)
 
-tablemaker(my_molec_subtype, categorical = TRUE, suffix = FALSE)
+tablemaker(my_molec_subtype, categorical = TRUE, sparse = FALSE)
 
 dbGetQuery(con, 'select distinct value from tcgacati')
 

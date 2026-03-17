@@ -7,6 +7,6 @@ my_immune = read_tsv('Data/Subtype_Immune_Model_Based.txt.gz',
                     select( sample, probe, value, type )
 my_immune
 
-tablemaker(my_immune, categorical = TRUE, suffix = FALSE)
+tablemaker(my_immune, categorical = TRUE, sparse = FALSE)
 my_immune = NULL; gc()
 

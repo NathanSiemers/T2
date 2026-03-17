@@ -1,11 +1,10 @@
 ## need to write a separate file that only destroys...
-sqldestroy = TRUE   # delete datbases before starting!
-
-TESTING = FALSE
+sqldestroy = FALSE   # delete datbases before starting!
+TESTING = TRUE
 TESTINGLINES = Inf
 mysql  = FALSE
 mysqldb = 'prod'    # dev or prod
-download = FALSE
+download = TRUE
 sqlvacuum = FALSE
 optimize = FALSE
 xena.force = FALSE

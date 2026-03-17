@@ -47,6 +47,12 @@ if( mysql ) {
                            probe = 'varchar(35)',
                            value = 'varchar(35) not null',
                            type = 'varchar(35)' ) )
+    try(dbRemoveTable(con, 'tested'))
+    dbCreateTable(con, name = 'tested', c(
+      sample = 'varchar(35)',
+      ##probe = 'varchar(35)',
+      value = 'int',
+      type = 'varchar(35)' ) )
     try(dbRemoveTable(con, 'probestmp'))
     dbCreateTable(con, name = 'probestmp', c(
                            key = 'mediumint unsigned',
@@ -127,4 +133,10 @@ if( mysql ) {
     try(dbRemoveTable(con, 'nosuffix'), silent = TRUE)
     dbCreateTable(con, name = 'nosuffix', c(
                            type = 'character unique not null') )
+    try(dbRemoveTable(con, 'tested'))
+    dbCreateTable(con, name = 'tested', c(
+      sample = 'varchar(35)',
+      ##probe = 'varchar(35)',
+      value = 'int',
+      type = 'varchar(35)' ) )
 }

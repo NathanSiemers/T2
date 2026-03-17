@@ -13,10 +13,10 @@ my_mut = read_tsv('Data/mc3.v0.2.8.PUBLIC.nonsilentGene.xena.gz',
             mutate ( probe = make.unique(as.character(probe), sep = '_') ) %>%
                 gather( sample, value, -probe ) %>%
                     mutate(type = 'mut') %>%
-                        select( sample, probe, value, type ) %>%
-                            filter( value != 0 )
+                        select( sample, probe, value, type ) 
+##        %>% filter( value != 0 )
 my_mut
 
-tablemaker(my_mut)
+tablemaker(my_mut, sparse = TRUE)
 
 my_mut = NULL; gc()

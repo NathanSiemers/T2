@@ -1,4 +1,4 @@
-#' # tidy tcga database 
+#' # tidy tcga database
 #' ## Nathan Siemers
 
 library(sqldf)
@@ -6,6 +6,8 @@ library(ggplot2); library(ggthemes)
 library(viridis)
 library(tidyverse)
 source('gitr.R')
+## initialize gitr, perhaps it will make it more responsive interactively
+nothing = gitr(c('FOXP3', 'CD8A', 'CD8B', 'TP53', 'cohort', 'sample_type'))
 ##source('plotter.R')
 
 ##mysql = FALSE
@@ -73,18 +75,20 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     cohort = 'all', extra = NULL,  facet.formula = NULL, smooth = FALSE, allComplete = FALSE,
     alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
     static.labels = 0.25, static.strip = 0.5, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
-    condition = NULL, pcortype = 'none', ...
+    condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none', ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
     theme_set(theme_gdocs() + theme(
-        legend.text = element_text(colour="black", size=8 ),
-        panel.background = element_rect(fill = "grey97")
+        text = element_text(colour = "black"),
+        legend.title = element_text(colour="black", size=14 ),
+        legend.text = element_text(colour="black", size=14 ),
+        panel.background = element_rect(fill = "white")
         ) )
     update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("ribbon", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 0.5) )
-    ## 
+    ##
     ##myargs = as.list(match.call())
     ##cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
     ## SET VARIABLES - INTERACTIVE TESTING ONLY
@@ -93,38 +97,38 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     ## scaling factors depending on faceting
     static.size = static.size * 30
-    if( x == 'cohort' ) static.size = static.size / 4
-    if( ! is.null(facet) )  static.size = static.size / 4
+    if( x[1] == 'cohort' ) static.size = static.size / 4
+    if( ! is.null(facet)[1] )  static.size = static.size / 4
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(condition)  )
     print(list.of.markers)
-    data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = nonormal)
+    data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = nonormal, noheme = noheme)
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
     if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
     cat(file = stderr(), "gitr finished")
     if(length(x) > 1) {
-        newvar = paste(x, sep = '.', collapse = '.') 
+        newvar = paste(x, sep = '.', collapse = '.')
         data[ , newvar]  = data %>%
             select( x ) %>%
                 scale %>%
                     apply( 1, median, na.rm = TRUE )
         x = newvar
-        ##x = paste(x, sep = '.', collapse = '.') 
+        ##x = paste(x, sep = '.', collapse = '.')
     }
     if(length(y) > 1) {
-        newvar = paste(y, sep = '.', collapse = '.') 
+        newvar = paste(y, sep = '.', collapse = '.')
         data[ , newvar] = data %>%
             select( y ) %>%
                 scale %>%
                     apply( 1, median, na.rm = TRUE )
         y = newvar
-        
+
     }
     cat(file = stderr(), paste(colnames(data), collapse = ';')) ; cat('\n')
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
     if( allComplete ) {
-        data = data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,size, c(facet))] ), ] 
+        data = data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,size, c(facet))] ), ]
     }
     data = droplevels(data)
     ## catch plots that would fail
@@ -132,9 +136,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {
         return( ggplot() + ggtitle("Sorry, there seems to be no data associated with your query", subtitle = "Hint: some of the subtype classifications are only applied across some tumor sample, some mutations aren't present, etc" ) )
     }
-    if ( nrow(data) != 0 & is.factor( data[ , x] ) & length(levels( data[ , x] )) < 2 )  {
-        return( ggplot() + ggtitle("Sorry, your x variable seems to be categorical and there seems to be less than two categories to plot") )
-    }
+    ##if ( nrow(data) != 0 & is.factor( data[ , x] ) & length(levels( data[ , x] )) < 1 )  {
+    ##    return( ggplot() + ggtitle("Sorry, your x variable seems to be categorical and there seems to be less than two categories to plot") )
+    ##}
     cat(file = stderr(), 'end of error checking\n')
     ## I really need to deal with formulae generally
     if( evaluate_vars ) {
@@ -169,6 +173,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             data[, x] = resid
         }
     }
+    ## check for waterfall
+    if(waterfall){
+      data[,x] = forcats::fct_reorder(data[,x],data[,y], .desc = waterfall_flip)
+    }
     ################################################################
     ## convert mutations to factors
     ## if( halfmutants ) {
@@ -176,10 +184,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## } else {
     ## SETTING FACTORS ALSO NEEDS TO BE DEALT WITH GENERALLY
     ## below is just for .mut
-    
+
     mutantlevels = c( 0, 1 )
     lapply(list.of.markersxy, function(xx) {
-        if( grepl( '\\.mut$', xx ) ) {
+        if( grepl( '\\.mut$', xx[1] ) ) {
             data[ , xx ] <<-  factor( data[ , xx ], levels = mutantlevels )
         }
     })
@@ -211,7 +219,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     } else {
         aessize = aes(size = NULL)
     }
-    if(!is.null(facet)) {
+    if(!is.null(facet[1])) {
         psub = paste0(psub, " Graphs: ", paste(facet, collapse = ' + '), '.' )
     }
     if(!is.null(facet.formula)) {
@@ -220,7 +228,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
     aesx = aes_q( x = as.name(x) )
 
-    if( is.null(y) ) {
+    if( is.null(y[1]) ) {
         aesy = aes( y = NULL )
     } else {
         aesy = aes_q( y = as.name(y) )
@@ -235,7 +243,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     pstring = gsub( '\\.cnv', ' CNA', pstring )
     print(paste( 'cohort length:', length(cohort) ))
     print(paste( 'cohort:', cohort))
-    if( !is.null(cohort) ) {
+    if( !is.null(cohort[1]) ) {
         if( length(cohort) < 6) {
             pstring2 = paste( "Cohorts:",
                 paste( gsub('_', ' ', cohort), sep = ',', collapse = ', ')
@@ -258,7 +266,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     print('aesfull')
     print(aesfull)
     p = ggplot( mapping = aesfull, data = data)
-    if( ! grepl('\\+|\\-', x ) ) {
+    if( ! grepl('\\+|\\-', x[1] ) ) {
         ##        if(   is.factor(data[, x]) | is.factor(data[, y])   ) {
         if(   is.factor(data[, x])  ) {
             ##data[,x] = factor(  data[,x], levels = c(0,1) )
@@ -267,14 +275,14 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                 if(is.null(color)) {
                     p = p + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitter(width = 0.2), alpha = alpha)
                 } else {
-                    p = p + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(), width = 0.2, alpha = alpha)
+                    p = p + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha)
                 }
             } else {
                 if(is.null(color)){
                 ##p = p + geom_boxplot(mapping = aesxy, inherit.aes = FALSE, outlier.shape = NA) + geom_jitter(width = 0.2, alpha = alpha, size = static.size)
                     p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitter(width = 0.2), alpha = alpha, size = static.size)
                 } else {
-                    p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitterdodge(), width = 0.2, alpha = alpha, size = static.size)
+                    p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha, size = static.size)
                 }
             }
         } else {
@@ -291,7 +299,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             p = p + geom_point(alpha = alpha, size = static.size)
         }
     }
-    if(  !is.null(facet)  ) {
+    if(  !is.null(facet[1])  ) {
         my.formula = as.formula(paste( '~', paste(facet, collapse = ' + ' ) ))
         p = p + facet_wrap(  my.formula, scales = scales, ncol = ncols ) + theme(strip.text = element_text(size = round(60 * static.strip, digits = 0 ) ) )
         print("FACET FORMULA:")
@@ -316,7 +324,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             }
         }
     }
-    
+
     p = p + ggtitle(  pstring, subtitle = paste(" ", pstring2, '\n ', psub) ) +
         theme(axis.text = element_text(size = 14 * 4  * static.labels ),
               axis.title = element_text(size = 14 * 4 * static.labels ),
@@ -332,12 +340,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if( coordflip ) {
         p = p + coord_flip()
     }
-    p = p + labs(caption = "Nathan Siemers, Translational Medicine") +
+    p = p + labs(caption = "Nathan Siemers, Ph.D.") +
         theme(plot.caption = element_text(size = 12),
               axis.text.x = element_text(angle = 90, hjust = 1)
               )
     p
-}    
+}
 
 
 fun_table1 = function ( input ) {
@@ -393,7 +401,7 @@ if(FALSE) {
             extra = input$extra,
             facet.formula = input$facet.formula,
             smooth = input$smooth,
-            scales = input$fscales, 
+            scales = input$fscales,
             nonormal = input$nonormal   )
     }
 

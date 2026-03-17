@@ -1,10 +1,9 @@
 ################################################################
-## master function for creating tidy data tables
-## where probe and sample keys are integer sequences
-## with separate probe and sample lookup tables
-##library(DBI)
+## master function for retrieving tidy data tables
+## we need this because sometimes data is sparse
+UNFINISHED.
 
-tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE, tsep = '.', deleteType = TRUE, sparse = TRUE ) {
+tableget = function( dat, connection = con, categorical = FALSE, suffix = TRUE, tsep = '.', deleteType = TRUE, sparse = TRUE ) {
     thistype = dat$type[[1]]  ## there can be only one
     ## input: a tidy data set of sample, probe, value, type
     ## convert sample and probe into integer keys while updating:
@@ -34,21 +33,18 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
       value = 1,
       type = dat$type 
     ) %>% distinct(sample, value, type) 
-  ## 
-    print("NUMBER OF SAMPLES TESTED")
     dim(mytested)
     ## right now were are always deleting old rows with same 'type'
     sql_string = paste0( 'delete from tested where type = "', the_type, '"' )
     dbExecute(connection, sql_string)
     #' let's build the table in dplyr
     #' but we need clin from db
-    #' WHY DO WE NEED CLIN? THIS WILL ADD ALL SAMPLES TO TESTED????!!!!
     clin = Q('select * from clin')
-    ##mytested = clin %>% select(sample) %>%
-    ##  left_join(mytested, by = join_by(sample)) 
+    mytested = clin %>% select(sample) %>%
+      left_join(mytested, by = join_by(sample)) 
     print(mytested)
     mytested$type = the_type
-    ##mytested[is.na(mytested$value), "value"] = 0
+    mytested[is.na(mytested$value), "value"] = 0
     print(mytested)
     print("samples assayed in this type")
     print(table(mytested$value, exclude = FALSE))

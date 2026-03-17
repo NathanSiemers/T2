@@ -9,7 +9,8 @@ tcgacat = tbl(con, 'tcgacat')
 
 sig_projection = create_signatures(dat = tcga, siglist = dsl)
 dim(sig_projection)
-head(sig_projection, 1)
+head(sig_projection, 5)
+length(which(is.na(sig_projection)))
 
 sig_load = sig_projection %>%
     gather(probe, value, -sample) %>%
@@ -17,7 +18,17 @@ sig_load = sig_projection %>%
             select( sample, probe, value, type ) %>%
                 mutate(oprobe = probe) %>%
                     as_tibble
+length(which(is.na(sig_load$value)))
+head(sig_load)
 
+my_na = sig_load[is.na(sig_load$value), ]
+table(my_na$probe)  ## always  the same number per sig no matter what!
+head(my_na)
+length(unique(my_na$sample))  # they are all the same samples
+
+dim(sig_load)
+sig_load = sig_load[ !is.na(sig_load$value), ]
+dim(sig_load)
 
 
 tablemaker(dat = sig_load, connection = con, deleteType = TRUE,  suffix = FALSE)

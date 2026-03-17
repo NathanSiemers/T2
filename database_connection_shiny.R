@@ -1,4 +1,4 @@
-mysql = TRUE
+mysql = FALSE
 mysqldb = 'prod'
 sqldestroy = FALSE
 

@@ -12,6 +12,10 @@ qwc = function(...) { as.character( unlist( as.list( match.call() )[ -1 ] ) ) }
 
 
 dsl = list(
+  LILRB2.sig = list(comp = c("LILRB2") ),
+      VSIG4.sig = list(comp = c("VSIG4") ),
+    HLAI.sig = list(comp = c("HLA-A", "HLA-B", "HLA-C")),
+    HLAIall.sig = list(comp = c("HLA-A", "HLA-B", "HLA-C", "HLA-E", "HLA-F", "HLA-G", "CD1C")),
     Epi.sig = list( comp = c("EPCAM", "ESRP1")),
     TCD8.sig = list( comp = c("CD8A", "CD8B")),
     Treg.sig = list( comp = c("FOXP3", "CCR8")),
@@ -113,7 +117,7 @@ CXCL11' )),
         ),
         prescale = function(x) {
             ## convert log2 to log 10
-            x = ( 2 ** x ) - 1 
+            x = ( 2 ** x ) - 1
             x = log10( x + 1 )
             x
         },
@@ -147,7 +151,7 @@ YWHAZ' ) )
     ##              median(CD8A, CD8B, na.rm = TRUE) -
     ##                  median(FOXP3, CCR8, na.rm = TRUE)
     ##              ) }
-    ##     ), 
+    ##     ),
     ## NKCD8 = list(
     ##     comp = c( 'CD8A', 'CD8B', "KIR2DL1" , "KIR2DL3" , "KIR2DL4" , "KIR3DL1" , "KIR3DL2" , "KIR3DL3" , "KIR2DS4" ),
     ##     fun = function(x) {
@@ -160,27 +164,49 @@ YWHAZ' ) )
 ## signatures of signatures - necessary to first have above evaluated? Maybe.
 
 dsl = append(dsl,
-    list(
-        TregCD8.sig = list(
-            comp = c( dsl$Treg.sig$comp, dsl$TCD8.sig$comp ),
-            fun = function(x){
-                median( x[dsl$Treg.sig$comp], na.rm = TRUE ) -
-                    median( x[dsl$TCD8.sig$comp], na.rm = TRUE )
-            }
-            ),
-        NKCD8.sig = list(
-            comp = c( dsl$NK.sig$comp, dsl$TCD8.sig$comp ),
-            fun = function(x){
-                mean( x[dsl$NK.sig$comp], na.rm = TRUE ) -
-                    median( x[dsl$TCD8.sig$comp], na.rm = TRUE )
-            }
-            )
+             list(
+                 LILRB2vsVSIG4p5.sig = list(
+                     comp = c( "LILRB2", "VSIG4"),
+                     prescale = FALSE,
+                   fun = function(x){
+                     x['LILRB2'] - x['VSIG4'] + 5
+                     }
+                 ),
+                 LILRB2.vs.HLAI.sig = list(
+                     comp = c( dsl$HLAIall.sig$comp, "LILRB2" ),
+                     fun = function(x){
+                         x["LILRB2"] -
+                             median( x[dsl$HLAIall.sig$comp], na.rm = TRUE )
+                     }
+                 ),
+                 LILRB2.plus.HLAI.sig = list(
+                     comp = c( dsl$HLAIall.sig$comp, "LILRB2" ),
+                     fun = function(x){
+                         median( x[dsl$HLAIall.sig$comp], na.rm = TRUE )/2 +
+                             x["LILRB2"]/2
+                     }
+                 ),
+                 TregCD8.sig = list(
+                     comp = c( dsl$Treg.sig$comp, dsl$TCD8.sig$comp ),
+                     fun = function(x){
+                         median( x[dsl$Treg.sig$comp], na.rm = TRUE ) -
+                             median( x[dsl$TCD8.sig$comp], na.rm = TRUE )
+                     }
+                 ),
+                 NKCD8.sig = list(
+                     comp = c( dsl$NK.sig$comp, dsl$TCD8.sig$comp ),
+                     fun = function(x){
+                         mean( x[dsl$NK.sig$comp], na.rm = TRUE ) -
+                             median( x[dsl$TCD8.sig$comp], na.rm = TRUE )
+                     }
+                 )
+             )
+)
 
-        ) )
-        
+
 
 decon_signature_list = dsl
 
 
-               
+
 decon_genelist = unique(unlist(sapply(dsl, function(x){ x$comp} ), use.names = FALSE))

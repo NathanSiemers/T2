@@ -21,7 +21,10 @@ shinyUI(
         inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
         inline(HTML(nbsp(5))),
         inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
+        inline(checkboxInput("waterfall", "Waterfall", value = FALSE)),
+        inline(checkboxInput("waterfall_flip", "Flip waterfall", value = FALSE)),
         inline(checkboxInput("nonormal", "Exclude Non-tumor", value = FALSE)),
+        inline(checkboxInput("noheme", "Exclude tumors of heme origin", value = FALSE)),
         tags$br(),
         inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
         inline(HTML(nbsp(5))),
@@ -32,7 +35,7 @@ shinyUI(
         tags$br(),
         fluidRow(
             column(12, align="center",
-                   withSpinner( plotOutput( "main_plot", height = '1200px', width = '85%' ),
+                   withSpinner( plotOutput( "main_plot", height = '1800px', width = '95%' ),
                                proxy.height = "200px", color = viridis::plasma(1) )
                    ) ),
         h5( paste( 'PI:', a.PI ) ),

@@ -12,6 +12,7 @@ my_urna = read_tsv('Data/pancanMiRs_EBadjOnProtocolPlatformWithoutRepsWithUnCorr
                         select( sample, probe, value, type )
 my_urna
 
-tablemaker(my_urna)
+## not centered at zero - sparse = FALSE
+tablemaker(my_urna, sparse = FALSE)
 my_urna = NULL; gc()
 

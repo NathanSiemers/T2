@@ -1,7 +1,20 @@
 source ('010-settings.R',echo = TRUE, max.deparse.length = Inf)
+download = FALSE
+optimize = FALSE
+sqldestroy = FALSE
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
+## you need this to keep the 020 script from clobbering the database later
+## it keeps getting called to make sure the db connection doesn't drop...
+sqldestroy = FALSE
+
 source ('030-good.functions.R',echo = TRUE, max.deparse.length = Inf)
+source( 'tablemaker.R')
+################################################################
+
+if(download){
 source ('035-download.R',echo = TRUE, max.deparse.length = Inf)
+}
+source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 source ('040-create_schema.R',echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 source ('050-create_early_indexes.R',echo = TRUE, max.deparse.length = Inf)
@@ -28,8 +41,8 @@ source ('135-viral.R',echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 source ('140-urna.R',echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
-##source ('150-pcgeneprogram.R',echo = TRUE, max.deparse.length = Inf)
-##source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
+source ('150-pcgeneprogram.R',echo = TRUE, max.deparse.length = Inf)
+source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 source ('160-rabit.R',echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 source ('170-hrd.R',echo = TRUE, max.deparse.length = Inf)
@@ -60,10 +73,12 @@ source ('270-estimate.R', echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 ## add_signatures_to_db.R will break with small tests, so do this near the end
 source ('280-add_signatures_to_db.R', echo = TRUE, max.deparse.length = Inf)
+### the below *shouldnt* be necessary?
+source ('300-final_indexing.R', echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 source ('290-record_environment.R', echo = TRUE, max.deparse.length = Inf)
 ## source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
-## source ('310-optimize.R', echo = TRUE, max.deparse.length = Inf)
+if(optimize) source ('310-optimize.R', echo = TRUE, max.deparse.length = Inf)
 
 
 sessionInfo()

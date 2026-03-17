@@ -14,7 +14,7 @@ shinyServer (
     function(input, output, session) {
         updateSelectizeInput(session, 'condition',  choices = mygenesplus,
                              selected = c('StromalScore.estimate'), server = TRUE)
-        updateSelectizeInput(session, 'x',  choices = mygenesplus, 
+        updateSelectizeInput(session, 'x',  choices = mygenesplus,
                              selected = 'cohort', server = TRUE)
         updateSelectizeInput(session, 'y',  choices = mygenesplus,
                              selected = 'CD8A', server = TRUE)
@@ -33,20 +33,20 @@ shinyServer (
         updateSelectizeInput(session, 'scales',  choices = c("free", "fixed", "free_x", "free_y"),
                              selected = 'fixed', server = TRUE)
         updateSelectizeInput(session, 'static.size',  choices = 1:20 / 20,
-                             selected = "0.25", server = TRUE)
+                             selected = "0.5", server = TRUE)
         updateSelectizeInput(session, 'static.strip',  choices = 1:20 / 20,
-                             selected = "0.25", server = TRUE)
+                             selected = "0.5", server = TRUE)
         updateSelectizeInput(session, 'static.labels',  choices = 1:20 / 20,
-                             selected = "0.25", server = TRUE)
+                             selected = "0.6", server = TRUE)
         updateSelectizeInput(session, 'static.titles',  choices = 1:20 / 20,
-                             selected = "0.25", server = TRUE)
+                             selected = "0.6", server = TRUE)
         updateSelectizeInput(session, 'alpha',  choices = 1:50 / 50,
-                             selected = '0.5', server = TRUE)
+                             selected = '0.12', server = TRUE)
         updateSelectizeInput(session, 'ncols',  choices = 1:50,
                              selected = 8, server = TRUE)
         output$main_plot = renderPlot( {
             if( length(input$x) == 0 | length(input$y) == 0 ) { return( NULL ) }
-            if( input$x == "" | input$y == "" ) { return(NULL) }
+            if( input$x[1] == "" | input$y[1] == "" ) { return(NULL) }
             withProgress(message = 'Working...', value = 0, {
                 incProgress(0.20, message = "Plotting")
                 fun_plot1(input)

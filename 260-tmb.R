@@ -6,7 +6,7 @@ samples = tbl(con, "samples"); probes = tbl(con, "probes"); tcgacati = tbl(con, 
 fmut = tcgacati %>% filter( type == 'fmut' ) %>%
     left_join( samples %>% rename( samplekey = key) ) %>%
         left_join( probes %>% rename( probekey = key ) ) %>%
-            select( sample, probe, value, type )
+            select( sample, probe, value, type ) %>% collect
 fmut
 
 tmb = fmut %>%

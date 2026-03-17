@@ -11,6 +11,13 @@ my_rna = read_tsv('Data/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.xena.gz'
                         select( sample, probe, value, type )
 my_rna
 
+
+length(which(is.na(my_rna$value))) / nrow(my_rna)
+dim(my_rna)
+my_rna = my_rna[!is.na(my_rna$value), ]
+dim(my_rna)
+
+
 tablemaker(my_rna, suffix = FALSE)
 
 my_rna = NULL; gc()

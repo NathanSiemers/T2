@@ -53,10 +53,10 @@ if (FALSE) {
 
 my_load = read.csv("ESTIMATE_copy.csv")
 my_load$X = NULL
+## strip .estimate suffix — tablemaker will re-add it via suffix=TRUE
+my_load$probe = gsub("\\.estimate$", "", my_load$probe)
 head(my_load)
-## probe names already include .estimate suffix from saved copy
-## suffix=FALSE keeps them as-is (no double-suffix)
-tablemaker( my_load, deleteType = TRUE, suffix = FALSE)
+tablemaker( my_load, deleteType = TRUE)
 
 ##sqldf::sqldf('select * from tcgas where type = "estimate" limit 10', con = con )
 

@@ -10,8 +10,8 @@ my_hrd
 
 length(unique(my_hrd$sample))
 
-## decent number of zeroes sparse = TRUE (default)
-tablemaker(my_hrd)
+## HRD score of 0 is a real measurement, not missing data
+tablemaker(my_hrd, sparse = FALSE)
 
 my_hrd = NULL; gc()
 

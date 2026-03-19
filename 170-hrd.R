@@ -10,8 +10,9 @@ my_hrd
 
 length(unique(my_hrd$sample))
 
-## HRD score of 0 is a real measurement, not missing data
-tablemaker(my_hrd, sparse = FALSE)
+## sparse=TRUE: zeros omitted from tcgai, backfilled by view
+## real NAs preserved in tcgai by tablemaker
+tablemaker(my_hrd)
 
 my_hrd = NULL; gc()
 

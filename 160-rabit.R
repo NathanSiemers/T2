@@ -6,6 +6,7 @@ my_rabit = read_tsv('Data/RABIT__pancan__RABIT_pancan.HiSeq.V2.gz',
                 mutate(type = 'rabit') %>%
                     select( sample, probe, value, type )
 my_rabit
-## RABIT zeros are real scores, not missing data
-tablemaker(my_rabit, sparse = FALSE)
+## sparse=TRUE: zeros omitted from tcgai, backfilled by view
+## real NAs (309K) preserved in tcgai by tablemaker
+tablemaker(my_rabit)
 my_rabit = NULL; gc()

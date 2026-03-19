@@ -174,7 +174,9 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     print(head(dat))
     if(sparse){
       print("filtering zeros from result (sparse representation)")
-      dat = dat %>% filter( value != 0 )
+      print(paste("  NAs in source data:", sum(is.na(dat$value))))
+      print(paste("  zeros in source data:", sum(dat$value == 0, na.rm = TRUE)))
+      dat = dat %>% filter( value != 0 | is.na(value) )
     }
     
     print("transform dat probe to probe.type if suffix = TRUE")

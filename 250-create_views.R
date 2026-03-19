@@ -1,108 +1,124 @@
 ################################################################
-## create views
-## you can create the views before any tables have data
-## or seemingly even before tables exist? (clinpheno)
-## this doesn't work for mysql so view creation must happen later...
+## create dense views
+## these views handle sparse data correctly:
+##   - tested sample with no row in tcgai → 0 (sparse zero)
+##   - tested sample with NULL in tcgai   → NA (genuine missing)
+##   - untested sample                    → not returned (true NA at caller level)
+##
+## requires: probe_types and probe_types_cat lookup tables
+## requires: tcgaiidx_pts index on tcgai(probekey, type, samplekey)
+## requires: tcgacatiidx_pts index on tcgacati(probekey, type, samplekey)
 
 ################################################################
-## simple tidy tcga numeric data view
+## build probe_types lookup tables (small, ~100K rows)
+## these map each probekey to its type(s) in tcgai/tcgacati
 
-if(mysql){
-    dbExecute( con, 'drop view if exists tcgas')
-    ## works for sqlite
-    dbExecute(con, '
-create view tcgas as
-select samples.sample, probes.probe, tcgai.value, tcgai.type
-from tcgai, samples, probes
-where tcgai.samplekey = samples.key and
-tcgai.probekey = probes.key
-')
-} else {
-    dbExecute( con, 'drop view if exists tcgas')
-    ## works for sqlite
-    dbExecute(con, '
-create view tcgas as
-select samples.sample, probes.probe, tcgai.value, tcgai.type
-from tcgai, samples, probes
-where tcgai.samplekey = samples.key and
-tcgai.probekey = probes.key
-')
-}
+print("creating probe_types lookup table from tcgai")
+dbExecute(con, 'DROP TABLE IF EXISTS probe_types')
+dbExecute(con, 'CREATE TABLE probe_types AS SELECT DISTINCT probekey, type FROM tcgai')
+dbExecute(con, 'CREATE INDEX probe_types_pk ON probe_types(probekey, type)')
+dbExecute(con, 'CREATE INDEX probe_types_tp ON probe_types(type, probekey)')
 
+print("creating probe_types_cat lookup table from tcgacati")
+dbExecute(con, 'DROP TABLE IF EXISTS probe_types_cat')
+dbExecute(con, 'CREATE TABLE probe_types_cat AS SELECT DISTINCT probekey, type FROM tcgacati')
+dbExecute(con, 'CREATE INDEX probe_types_cat_pk ON probe_types_cat(probekey, type)')
 
+## index on tcgacati if not already present
+try(dbExecute(con, 'CREATE INDEX IF NOT EXISTS tcgacatiidx_pts ON tcgacati(probekey, type, samplekey)'), silent = TRUE)
 
 ################################################################
-## simple tidy tcga categorical data view
+## tcgas: dense numeric view (sample, probe, value, type)
 
-if(mysql){
-    dbExecute( con, 'drop view if exists tcgacats')
-    ## works for sqlite
-    dbExecute(con, '
-create view tcgacats as
-select samples.sample, probes.probe, tcgacati.value, tcgacati.type
-from tcgacati, samples, probes
-where tcgacati.samplekey = samples.key and
-tcgacati.probekey = probes.key
-')
-} else {
-    dbExecute( con, 'drop view if exists tcgacats')
-    ## works for sqlite
-    dbExecute(con, '
-create view tcgacats as
-select samples.sample, probes.probe, tcgacati.value, tcgacati.type
-from tcgacati, samples, probes
-where tcgacati.samplekey = samples.key and
-tcgacati.probekey = probes.key
-')
-}
-
-
-## dbExecute( con, 'drop view if exists tcgacats' )
-## dbExecute(con, '
-## create view tcgacats as
-## select samples.sample, probes.probe, tcgacati.value, tcgacati.type
-## from tcgacati, samples, probes
-## where tcgacati.samplekey = samples.key and
-## tcgacati.probekey = probes.key
-## ')
-
-################################################################
-## main TCGA view
-## join untidy (wide) clinical info
-## plus tidy numeric genomic data in probe and value columns
-
-dbExecute( con, 'drop view if exists tcga')
+dbExecute(con, 'DROP VIEW IF EXISTS tcgas')
 dbExecute(con, '
-create view tcga as
-select clinpheno.*, probe, value, type
-from tcgai, samples, probes, clinpheno
-where tcgai.samplekey = samples.key 
-and tcgai.probekey = probes.key
-and samples.sample = clinpheno.sample
-' )
-
-## dbExecute(con, '
-## create view testy as
-## select clinpheno.*, probe, value, type
-## from tcgai, samples, probes, clinpheno
-## where tcgai.samplekey = samples.key 
-## and tcgai.probekey = probes.key
-## and samples.sample = clinpheno.sample
-## ' )
+CREATE VIEW tcgas AS
+SELECT
+  sa.sample,
+  pr.probe,
+  CASE
+    WHEN dat.probekey IS NOT NULL THEN dat.value
+    ELSE 0
+  END AS value,
+  pt.type
+FROM probes pr
+JOIN probe_types pt ON pt.probekey = pr.key
+JOIN tested t ON t.type = pt.type
+JOIN samples sa ON sa.sample = t.sample
+LEFT JOIN tcgai dat
+  ON dat.probekey   = pr.key
+  AND dat.samplekey = sa.key
+  AND dat.type      = pt.type
+')
+print("created view: tcgas (dense numeric)")
 
 ################################################################
-## main TCGA view for categorical data
-## cluster/subtype assignments, etc
+## tcgacats: dense categorical view (sample, probe, value, type)
 
-dbExecute( con, 'drop view if exists tcgacat' )
-dbExecute( con, '
-create view tcgacat as
-select clinpheno.*, probe, value, type
-from tcgacati, samples, probes, clinpheno
-where tcgacati.samplekey = samples.key 
-and tcgacati.probekey = probes.key
-and samples.sample = clinpheno.sample
-' )
+dbExecute(con, 'DROP VIEW IF EXISTS tcgacats')
+dbExecute(con, '
+CREATE VIEW tcgacats AS
+SELECT
+  sa.sample,
+  pr.probe,
+  dat.value,
+  pt.type
+FROM probes pr
+JOIN probe_types_cat pt ON pt.probekey = pr.key
+JOIN tested t ON t.type = pt.type
+JOIN samples sa ON sa.sample = t.sample
+LEFT JOIN tcgacati dat
+  ON dat.probekey   = pr.key
+  AND dat.samplekey = sa.key
+  AND dat.type      = pt.type
+')
+print("created view: tcgacats (dense categorical)")
 
+################################################################
+## tcga: dense numeric + clinpheno join
 
+dbExecute(con, 'DROP VIEW IF EXISTS tcga')
+dbExecute(con, '
+CREATE VIEW tcga AS
+SELECT
+  cp.*,
+  pr.probe,
+  CASE
+    WHEN dat.probekey IS NOT NULL THEN dat.value
+    ELSE 0
+  END AS value,
+  pt.type
+FROM probes pr
+JOIN probe_types pt ON pt.probekey = pr.key
+JOIN tested t ON t.type = pt.type
+JOIN samples sa ON sa.sample = t.sample
+JOIN clinpheno cp ON cp.sample = sa.sample
+LEFT JOIN tcgai dat
+  ON dat.probekey   = pr.key
+  AND dat.samplekey = sa.key
+  AND dat.type      = pt.type
+')
+print("created view: tcga (dense numeric + clinpheno)")
 
+################################################################
+## tcgacat: dense categorical + clinpheno join
+
+dbExecute(con, 'DROP VIEW IF EXISTS tcgacat')
+dbExecute(con, '
+CREATE VIEW tcgacat AS
+SELECT
+  cp.*,
+  pr.probe,
+  dat.value,
+  pt.type
+FROM probes pr
+JOIN probe_types_cat pt ON pt.probekey = pr.key
+JOIN tested t ON t.type = pt.type
+JOIN samples sa ON sa.sample = t.sample
+JOIN clinpheno cp ON cp.sample = sa.sample
+LEFT JOIN tcgacati dat
+  ON dat.probekey   = pr.key
+  AND dat.samplekey = sa.key
+  AND dat.type      = pt.type
+')
+print("created view: tcgacat (dense categorical + clinpheno)")

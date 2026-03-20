@@ -1,7 +1,7 @@
 source ('010-settings.R',echo = TRUE, max.deparse.length = Inf)
 download = FALSE
 optimize = FALSE
-sqldestroy = FALSE
+sqldestroy = TRUE
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 ## you need this to keep the 020 script from clobbering the database later
 ## it keeps getting called to make sure the db connection doesn't drop...
@@ -67,9 +67,14 @@ source ('260-tmb.R', echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 source ('270-estimate.R', echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
+## create views before signatures (signatures need the tcga view)
+source ('300-final_indexing.R', echo = TRUE, max.deparse.length = Inf)
+source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
+source ('250-create_views.R', echo = TRUE, max.deparse.length = Inf)
+source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 ## add_signatures_to_db.R will break with small tests, so do this near the end
 source ('280-add_signatures_to_db.R', echo = TRUE, max.deparse.length = Inf)
-## views + probe_types must be created AFTER all data is loaded
+## rebuild views + probe_types to pick up signature probes
 source ('300-final_indexing.R', echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 source ('250-create_views.R', echo = TRUE, max.deparse.length = Inf)

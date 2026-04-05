@@ -4,7 +4,7 @@
 ## with separate probe and sample lookup tables
 ##library(DBI)
 
-tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE, tsep = '.', deleteType = TRUE, sparse = TRUE ) {
+tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE, tsep = '.', deleteType = TRUE, sparse = TRUE, r_datatype = NULL ) {
     thistype = dat$type[[1]]  ## there can be only one
     ## input: a tidy data set of sample, probe, value, type
     ## convert sample and probe into integer keys while updating:
@@ -165,6 +165,23 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
                                          thistype, '" )'  ) )
         }
     }
+
+    ## insert into datatypes table
+    ## default: categorical -> factor, numeric -> numeric
+    effective_datatype = if (!is.null(r_datatype)) r_datatype
+                         else if (categorical) "factor"
+                         else "numeric"
+    if(deleteType) {
+        dbExecute(connection, paste0('delete from datatypes where type = "', thistype, '"'))
+    }
+    if(mysql){
+        dbExecute(connection, paste0('insert ignore into datatypes values ( "',
+                                     thistype, '", "', effective_datatype, '" )'  ) )
+    } else {
+        dbExecute(connection, paste0('insert OR ignore into datatypes values ( "',
+                                     thistype, '", "', effective_datatype, '" )'  ) )
+    }
+    print(paste("R datatype for", thistype, ":", effective_datatype))
 
     ## ################################################################
     ## INSERT INTO CORE TIDY TABLE

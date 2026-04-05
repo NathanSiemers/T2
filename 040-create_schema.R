@@ -74,6 +74,10 @@ if( mysql ) {
     try(dbRemoveTable(con, 'nosuffix'), silent = TRUE)
     dbCreateTable(con, name = 'nosuffix', c(
                            type = 'varchar(35) primary key') )
+    try(dbRemoveTable(con, 'datatypes'), silent = TRUE)
+    dbCreateTable(con, name = 'datatypes', c(
+                           type = 'varchar(35) primary key',
+                           r_datatype = "varchar(15) not null default 'numeric'") )
 } else {
     print('Non-MySQL connection')
     try(dbRemoveTable(con, 'tcgai'), silent = TRUE)
@@ -133,6 +137,10 @@ if( mysql ) {
     try(dbRemoveTable(con, 'nosuffix'), silent = TRUE)
     dbCreateTable(con, name = 'nosuffix', c(
                            type = 'character unique not null') )
+    try(dbRemoveTable(con, 'datatypes'), silent = TRUE)
+    dbCreateTable(con, name = 'datatypes', c(
+                           type = 'character primary key',
+                           r_datatype = "character not null default 'numeric'") )
     try(dbRemoveTable(con, 'tested'))
     dbCreateTable(con, name = 'tested', c(
       sample = 'varchar(35)',

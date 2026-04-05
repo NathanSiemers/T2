@@ -8,6 +8,7 @@ gitrdb = 'tcga.db'
 ##   tested + no value in tcgai = 0 (sparse zero)
 ##   tested + NULL in tcgai     = NA (genuine missing)
 ##   not tested                 = NA (sample not in view)
+## Uses datatypes table to determine R class for each probe column.
 gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 cohort = 'all', conn = con,
                 makefactors = TRUE,
@@ -60,6 +61,8 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
       rout = left_join(rout, tidyr::spread(num_result, probe, value), by = 'sample')
     }
     if (nrow(cat_result) > 0) {
+      ## deduplicate: some categorical types (fmut) can have multiple values per sample
+      cat_result = cat_result %>% distinct(sample, probe, .keep_all = TRUE)
       rout = left_join(rout, tidyr::spread(cat_result, probe, value), by = 'sample')
     }
 
@@ -96,13 +99,66 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                                         "Solid Tissue Normal"))
   }
 
-  ## convert .mut and .cnc columns to factors (numeric 0/1 or -2..2 -> categorical)
-  ## this is needed so ggplot renders boxplots instead of scatterplots
-  if (makefactors) {
-    out = out %>%
-      mutate(across(where(is.character), as.factor)) %>%
-      mutate(across(ends_with('mut'), as.factor)) %>%
-      mutate(across(ends_with('cnc'), as.factor))
+  ## apply R datatypes from the datatypes table
+  if (makefactors && length(db_probes) > 0) {
+    dt_map = tryCatch(
+      dbGetQuery(gitrconn, "SELECT type, r_datatype FROM datatypes"),
+      error = function(e) data.frame(type = character(0), r_datatype = character(0))
+    )
+
+    if (nrow(dt_map) > 0) {
+      dtype_lookup = setNames(dt_map$r_datatype, dt_map$type)
+      probe_cols = intersect(colnames(out), db_probes)
+
+      ## determine datatype for each probe column by suffix or db lookup
+      probe_dtypes = sapply(probe_cols, function(p) {
+        suffix = sub(".*\\.", "", p)
+        if (suffix %in% names(dtype_lookup)) return(dtype_lookup[[suffix]])
+        NA_character_
+      })
+
+      ## batch lookup for nosuffix probes (rna, tmb, sig, estimate)
+      unknown = probe_cols[is.na(probe_dtypes)]
+      if (length(unknown) > 0) {
+        uq_sql = paste(sprintf("'%s'", unknown), collapse = ", ")
+        ns_types = dbGetQuery(gitrconn, sprintf(
+          "SELECT pr.probe, pt.type FROM probes pr
+           JOIN probe_types pt ON pt.probekey = pr.key
+           WHERE pr.probe IN (%s)
+           UNION
+           SELECT pr.probe, pt.type FROM probes pr
+           JOIN probe_types_cat pt ON pt.probekey = pr.key
+           WHERE pr.probe IN (%s)", uq_sql, uq_sql))
+        for (i in seq_len(nrow(ns_types))) {
+          idx = which(probe_cols == ns_types$probe[i])
+          if (length(idx) > 0 && ns_types$type[i] %in% names(dtype_lookup)) {
+            probe_dtypes[idx] = dtype_lookup[[ns_types$type[i]]]
+          }
+        }
+      }
+
+      ## default anything still unknown to numeric
+      probe_dtypes[is.na(probe_dtypes)] = "numeric"
+
+      ## apply factor conversion
+      factor_cols = probe_cols[probe_dtypes == "factor"]
+      if (length(factor_cols) > 0) {
+        out = out %>% mutate(across(all_of(factor_cols), as.factor))
+      }
+
+      ## convert clinpheno character columns to factor (preserving existing behavior)
+      out = out %>% mutate(across(where(is.character) & !all_of(probe_cols), as.factor))
+
+    } else {
+      ## fallback: no datatypes table, use legacy suffix matching
+      out = out %>%
+        mutate(across(where(is.character), as.factor)) %>%
+        mutate(across(ends_with('mut'), as.factor)) %>%
+        mutate(across(ends_with('cnc'), as.factor))
+    }
+  } else if (makefactors) {
+    ## no db probes, just convert characters to factors
+    out = out %>% mutate(across(where(is.character), as.factor))
   }
 
   out %>% droplevels %>% data.frame(check.names = FALSE)

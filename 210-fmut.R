@@ -36,7 +36,7 @@ my_fmut = my_mutation %>%
         mutate( type = 'fmut' )
 
 my_fmut
-tablemaker( my_fmut, categorical = TRUE, sparse = FALSE )
+tablemaker( my_fmut, categorical = TRUE, sparse = FALSE, r_datatype = "character" )
 my_fmut = NULL; gc()
 
 ## add a mutation tested "probe" to tcgai
@@ -51,7 +51,7 @@ mutationtested = data.frame(
     stringsAsFactors = FALSE
     )
 
-tablemaker( mutationtested )
+tablemaker( mutationtested, r_datatype = "factor" )
 
 if(mysql){
     try(dbExecute(  con,  'drop index mutidx on mutation' ), silent = TRUE)

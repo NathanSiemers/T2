@@ -17,6 +17,6 @@ my_mut = read_tsv('Data/mc3.v0.2.8.PUBLIC.nonsilentGene.xena.gz',
 ##        %>% filter( value != 0 )
 my_mut
 
-tablemaker(my_mut, sparse = TRUE)
+tablemaker(my_mut, sparse = TRUE, r_datatype = "factor")
 
 my_mut = NULL; gc()

@@ -11,6 +11,6 @@ my_cnc = my_cnc %>%
                 mutate(type = 'cnc') %>%
                     select( sample, probe, value, type )
 my_cnc
-tablemaker(my_cnc)
+tablemaker(my_cnc, r_datatype = "factor")
 my_cnc = NULL; gc()
 

@@ -76,7 +76,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
     static.labels = 0.25, static.strip = 0.5, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
     condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
-    multi_y = FALSE, ...
+    multi_y = FALSE, zscore_y = FALSE, ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
@@ -116,6 +116,13 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                     apply( 1, median, na.rm = TRUE )
         x = newvar
         ##x = paste(x, sep = '.', collapse = '.')
+    }
+    ## z-score Y probes if requested (useful for putting different-magnitude probes on same scale)
+    if (zscore_y) {
+        y_numeric = y[sapply(y, function(v) is.numeric(data[, v]))]
+        if (length(y_numeric) > 0) {
+            data[, y_numeric] = scale(data[, y_numeric])
+        }
     }
     if(length(y) > 1 && !multi_y) {
         newvar = paste(y, sep = '.', collapse = '.')

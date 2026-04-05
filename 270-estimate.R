@@ -62,7 +62,7 @@ tablemaker( my_load, deleteType = TRUE)
 
 ##sqldf::sqldf('select * from tcgas where probe = "StromalScore.estimate" and type = "estimate" limit 2', con = con )
 
-try(system('rm Data/rna.tmp Data/estimatein.tmp Data/estimateout.tmp'), silent = TRUE)
+##try(system('rm Data/rna.tmp Data/estimatein.tmp Data/estimateout.tmp'), silent = TRUE)
 
 
 

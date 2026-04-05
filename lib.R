@@ -301,14 +301,20 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     if(  !is.null(facet[1])  ) {
         my.formula = as.formula(paste( '~', paste(facet, collapse = ' + ' ) ))
-        p = p + facet_wrap(  my.formula, scales = scales, ncol = ncols ) + theme(strip.text = element_text(size = round(60 * static.strip, digits = 0 ) ) )
+        ## auto-free scales when faceting by a factor that is also on an axis
+        facet_scales = scales
+        if (any(facet %in% c(x, y)) && facet_scales == 'fixed') facet_scales = 'free'
+        p = p + facet_wrap(  my.formula, scales = facet_scales, ncol = ncols, drop = TRUE ) + theme(strip.text = element_text(size = round(60 * static.strip, digits = 0 ) ) )
+        if (is.factor(data[, x])) p = p + scale_x_discrete(drop = TRUE)
+        if (!is.null(y) && is.factor(data[, y])) p = p + scale_y_discrete(drop = TRUE)
         print("FACET FORMULA:")
         print(my.formula)
     }
     if(  !is.null(facet.formula)  ) {
         my.formula = paste( '~', facet.formula)
         print(my.formula)
-        p = p + facet_wrap(  as.formula(my.formula), ncol = ncols, scales = scales  ) + theme(strip.text = element_text(size = 60 * static.strip) )
+        p = p + facet_wrap(  as.formula(my.formula), ncol = ncols, scales = scales, drop = TRUE  ) + theme(strip.text = element_text(size = 60 * static.strip) )
+        if (is.factor(data[, x])) p = p + scale_x_discrete(drop = TRUE)
     }
     if ( !is.null(smooth) ) {
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {

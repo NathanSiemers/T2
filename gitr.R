@@ -21,11 +21,16 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
   clinpheno = collect(tbl(gitrconn, 'clinpheno'))
   clinpheno_cols = colnames(clinpheno)
+  ## synthetic columns created by the phenos=TRUE mutate below
+  virtual_cols = c('subtype', 'cohort', 'lcohort')
 
   ## separate probes that are clinpheno columns vs db probes
+  ## virtual_cols (subtype, cohort, lcohort) are created by the phenos mutate —
+  ## don't look them up in the database or in clinpheno directly
   is_clin = probes %in% clinpheno_cols
-  clin_probes = probes[is_clin]
-  db_probes = unique(probes[!is_clin])
+  is_virtual = probes %in% virtual_cols
+  clin_probes = probes[is_clin & !is_virtual]
+  db_probes = unique(probes[!is_clin & !is_virtual])
 
   ## start with clinpheno sample list
   rout = clinpheno[, 'sample', drop = FALSE]

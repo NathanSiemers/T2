@@ -36,7 +36,7 @@ my_fmut = my_mutation %>%
         mutate( type = 'fmut' )
 
 my_fmut
-tablemaker( my_fmut, categorical = TRUE, sparse = FALSE, r_datatype = "character" )
+tablemaker( my_fmut, categorical = TRUE, sparse = FALSE, r_datatype = "factor" )
 my_fmut = NULL; gc()
 
 ## add a mutation tested "probe" to tcgai

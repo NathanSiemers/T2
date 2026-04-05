@@ -39,9 +39,8 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     probe_sql = paste(sprintf("'%s'", db_probes), collapse = ", ")
 
     ## try numeric view first
-    num_query = sprintf(
-      "SELECT sample, probe, value FROM tcgas WHERE probe IN (%s)", probe_sql)
-    num_result = dbGetQuery(gitrconn, num_query)
+    num_result = dbGetQuery(gitrconn, sprintf(
+      "SELECT sample, probe, value FROM tcgas WHERE probe IN (%s)", probe_sql))
 
     ## try categorical view for any probes not found in numeric
     found_probes = unique(num_result$probe)
@@ -49,30 +48,23 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
     if (length(missing_probes) > 0) {
       cat_sql = paste(sprintf("'%s'", missing_probes), collapse = ", ")
-      cat_query = sprintf(
-        "SELECT sample, probe, value FROM tcgacats WHERE probe IN (%s)", cat_sql)
-      cat_result = dbGetQuery(gitrconn, cat_query)
-      ## categorical values stay as character
+      cat_result = dbGetQuery(gitrconn, sprintf(
+        "SELECT sample, probe, value FROM tcgacats WHERE probe IN (%s)", cat_sql))
     } else {
       cat_result = data.frame(sample = character(0), probe = character(0),
                               value = character(0))
     }
 
-    ## pivot numeric results to wide
+    ## pivot to wide and join
     if (nrow(num_result) > 0) {
-      num_wide = tidyr::spread(num_result, probe, value)
-      rout = left_join(rout, num_wide, by = 'sample')
+      rout = left_join(rout, tidyr::spread(num_result, probe, value), by = 'sample')
     }
-
-    ## pivot categorical results to wide
     if (nrow(cat_result) > 0) {
-      cat_wide = tidyr::spread(cat_result, probe, value)
-      rout = left_join(rout, cat_wide, by = 'sample')
+      rout = left_join(rout, tidyr::spread(cat_result, probe, value), by = 'sample')
     }
 
     ## any probes not found at all get an NA column
-    still_missing = setdiff(db_probes, c(found_probes, unique(cat_result$probe)))
-    for (p in still_missing) {
+    for (p in setdiff(db_probes, c(found_probes, unique(cat_result$probe)))) {
       rout[[p]] = NA
     }
   }
@@ -88,35 +80,29 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   }
 
   ## filters
-  if (nonormal) {
+  if (nonormal)
     out = out %>% dplyr::filter(sample_type != "Solid Tissue Normal")
-  }
-  if (noheme) {
+  if (noheme)
     out = out %>% dplyr::filter(tumtype != "LAML" & tumtype != "THYM" & tumtype != "DLBC")
-  }
-  if (!is.null(cohort)) {
-    if (any(cohort != "all")) {
-      out = out[out$cohort %in% cohort, ]
-    }
-  }
+  if (!is.null(cohort) && any(cohort != "all"))
+    out = out[out$cohort %in% cohort, ]
 
   ## factor levels for sample_type
   if (phenos) {
     out$sample_type = factor(out$sample_type,
-                             levels = c("Primary Tumor",
-                                        "Recurrent Tumor",
-                                        "Metastatic",
-                                        "Additional - New Primary",
-                                        "Additional Metastatic",
+                             levels = c("Primary Tumor", "Recurrent Tumor", "Metastatic",
+                                        "Additional - New Primary", "Additional Metastatic",
                                         "Primary Blood Derived Cancer - Peripheral Blood",
                                         "Solid Tissue Normal"))
   }
 
-  ## make factors
+  ## convert .mut and .cnc columns to factors (numeric 0/1 or -2..2 -> categorical)
+  ## this is needed so ggplot renders boxplots instead of scatterplots
   if (makefactors) {
-    out = out %>% mutate_if(is.character, as.factor)
-    out = out %>% mutate_at(dplyr::vars(ends_with('mut')), ~ as.factor(.))
-    out = out %>% mutate_at(dplyr::vars(ends_with('cnc')), ~ as.factor(.))
+    out = out %>%
+      mutate(across(where(is.character), as.factor)) %>%
+      mutate(across(ends_with('mut'), as.factor)) %>%
+      mutate(across(ends_with('cnc'), as.factor))
   }
 
   out %>% droplevels %>% data.frame(check.names = FALSE)

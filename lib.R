@@ -75,7 +75,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     cohort = 'all', extra = NULL,  facet.formula = NULL, smooth = FALSE, allComplete = FALSE,
     alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
     static.labels = 0.25, static.strip = 0.5, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
-    condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none', ...
+    condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
+    multi_y = FALSE, ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
@@ -116,14 +117,29 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         x = newvar
         ##x = paste(x, sep = '.', collapse = '.')
     }
-    if(length(y) > 1) {
+    if(length(y) > 1 && !multi_y) {
         newvar = paste(y, sep = '.', collapse = '.')
         data[ , newvar] = data %>%
             select( y ) %>%
                 scale %>%
                     apply( 1, median, na.rm = TRUE )
         y = newvar
-
+    }
+    if(length(y) > 1 && multi_y) {
+        ## pivot multiple Y probes to long format for individual plotting
+        y_probes = y
+        data = as.data.frame(tidyr::pivot_longer(data, cols = all_of(y_probes),
+                                   names_to = "probe", values_to = "y_value"),
+                             check.names = FALSE)
+        data$probe = factor(data$probe, levels = y_probes)
+        y = "y_value"
+        ## override color to show probe identity
+        color = "probe"
+        ## if x is continuous, facet by probe for clarity
+        if (is.numeric(data[, x])) {
+            facet = c("probe", facet)
+            facet = facet[!is.null(facet) & facet != ""]
+        }
     }
     cat(file = stderr(), paste(colnames(data), collapse = ';')) ; cat('\n')
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it

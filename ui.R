@@ -14,6 +14,7 @@ shinyUI(
         h4(a.title),
         inline( selectizeInput('x', 'Gene (X)', choices = NULL, options = list(create=TRUE), multiple = TRUE ) ),
         inline( selectizeInput('y', 'Gene (Y)', choices = NULL, options = list(create=TRUE), multiple = TRUE ) ),
+        inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
         inline( selectizeInput('color', 'color', choices = NULL) ),
         inline( selectizeInput('size', 'size', choices = NULL )),
         inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),

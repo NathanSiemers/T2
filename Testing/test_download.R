@@ -4,11 +4,14 @@
 
 cat("=== Testing UCSCXenaTools download ===\n\n")
 
-## Check package availability
+## Install if needed, then load
 if (!require('UCSCXenaTools', quietly = TRUE)) {
-  cat("FAIL: UCSCXenaTools package not installed\n")
-  cat("  Try: install.packages('UCSCXenaTools')\n")
-  quit(status = 1)
+  cat("UCSCXenaTools not found, installing...\n")
+  install.packages('UCSCXenaTools', repos = 'https://cloud.r-project.org')
+  if (!require('UCSCXenaTools', quietly = TRUE)) {
+    cat("FAIL: UCSCXenaTools could not be installed\n")
+    quit(status = 1)
+  }
 }
 cat("UCSCXenaTools version:", as.character(packageVersion("UCSCXenaTools")), "\n")
 

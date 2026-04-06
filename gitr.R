@@ -19,6 +19,8 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   gitrconn = RSQLite::dbConnect(RSQLite::SQLite(), dbname = dbfile, flags = RSQLite::SQLITE_RO )
   on.exit(dbDisconnect(gitrconn), add = TRUE)
 
+  probes = unique(probes)
+
   clinpheno = collect(tbl(gitrconn, 'clinpheno'))
   clinpheno_cols = colnames(clinpheno)
   ## synthetic columns created by the phenos=TRUE mutate below

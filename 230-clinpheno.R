@@ -24,26 +24,31 @@ on clin.sample = tmptable.sample
 
 print(table(clinpheno_intermediate$Subtype_Selected))
 
-## Remove duplicate columns (maybe none) and replace subtype NA values with tumtype.NA
+## Remove duplicate columns (maybe none)
 clinpheno_intermediate = clinpheno_intermediate[ , ! duplicated(colnames(clinpheno_intermediate)) ]
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Selected), "Subtype_Selected" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Selected), "tumtype" ], "NA", sep = '.' )
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_CNA), "Subtype_CNA" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_CNA), "tumtype" ], "NA", sep = '.' )
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_DNAmeth), "Subtype_DNAmeth" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_DNAmeth), "tumtype" ], "NA", sep = '.' )
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Immune_Model_Based), "Subtype_Immune_Model_Based" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Immune_Model_Based), "tumtype" ], "NA", sep = '.' )
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Integrative), "Subtype_Integrative" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_Integrative), "tumtype" ], "NA", sep = '.' )
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_miRNA), "Subtype_miRNA" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_miRNA), "tumtype" ], "NA", sep = '.' )
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_mRNA), "Subtype_mRNA" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_mRNA), "tumtype" ], "NA", sep = '.' )
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_other), "Subtype_other" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_other), "tumtype" ], "NA", sep = '.' )
-clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_protein), "Subtype_protein" ]   =
-    paste( clinpheno_intermediate[ is.na(clinpheno_intermediate$Subtype_protein), "tumtype" ], "NA", sep = '.' )
+
+## Create short-name subtype columns from the suffixed versions
+## and fill NA values with tumtype.NA
+subtype_map = list(
+    Subtype_Selected         = "Subtype_Selected.molec_subtype",
+    Subtype_CNA              = "Subtype_CNA.molec_subtype",
+    Subtype_DNAmeth          = "Subtype_DNAmeth.molec_subtype",
+    Subtype_Immune_Model_Based = "Subtype_Immune_Model_Based.immune_subtype",
+    Subtype_Integrative      = "Subtype_Integrative.molec_subtype",
+    Subtype_miRNA            = "Subtype_miRNA.molec_subtype",
+    Subtype_mRNA             = "Subtype_mRNA.molec_subtype",
+    Subtype_other            = "Subtype_other.molec_subtype",
+    Subtype_protein          = "Subtype_protein.molec_subtype"
+)
+for (short in names(subtype_map)) {
+    long = subtype_map[[short]]
+    if (long %in% colnames(clinpheno_intermediate)) {
+        clinpheno_intermediate[[short]] = clinpheno_intermediate[[long]]
+    }
+    na_rows = is.na(clinpheno_intermediate[[short]])
+    clinpheno_intermediate[na_rows, short] =
+        paste(clinpheno_intermediate[na_rows, "tumtype"], "NA", sep = '.')
+}
 
 print(as.data.frame(table(clinpheno_intermediate$Subtype_Selected), exclude = NULL))
 

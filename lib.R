@@ -354,7 +354,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
 ################################################################
     ## add conditioning text
-    if (! is.null(condition)  & pcortype != 'none') {
+    if (! is.null(condition)  & pcortype != 'none' & is.null(conditioning_msg)) {
         pstring2 = paste(pstring2, '   \n', "Conditioning:",  paste(condition, collapse = ','), 'on', pcortype )
     }
     ## create full aesthetics

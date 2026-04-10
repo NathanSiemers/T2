@@ -29,10 +29,12 @@ cat("MSI raw data:", nrow(msi_raw), "patients\n")
 cat("Score range:", range(msi_raw$MSIsensor_score, na.rm = TRUE), "\n")
 cat("NAs in score:", sum(is.na(msi_raw$MSIsensor_score)), "\n")
 
-## Get non-normal samples from clin table (available at this point in the build)
-## Filter out normals by barcode suffix: -11 = Solid Tissue Normal
-clin_samples = dbGetQuery(con, "SELECT sample FROM clin")
-clin_samples = clin_samples[!grepl("-11$", clin_samples$sample), , drop = FALSE]
+## Get non-normal samples from clinpheno
+clin_samples = dbGetQuery(con, "
+  SELECT sample FROM clinpheno
+  WHERE sample_type IS NOT NULL
+  AND sample_type <> 'Solid Tissue Normal'
+")
 clin_samples$patient = substr(clin_samples$sample, 1, 12)
 
 cat("Non-normal samples in DB:", nrow(clin_samples), "\n")

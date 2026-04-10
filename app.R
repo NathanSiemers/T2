@@ -48,7 +48,7 @@ ui = fluidPage(
     inline(
         radioButtons('pcortype', 'Remove influence on:',
                      choices = c('none', 'x', 'y', 'both'), selected = 'none', inline = TRUE  ) ),
-    submitButton(text = "Plot", icon = NULL, width = NULL),
+    actionButton("plot_btn", "Plot"),
     tags$br(),
     fluidRow(
         column(12, align="center",
@@ -71,7 +71,7 @@ ui = fluidPage(
     inline( selectizeInput('ncols', 'Multi-graph Columns', choices = NULL  ) ),
     inline( selectizeInput('smooth', 'Fit Line', choices = NULL  ) ),
     checkboxInput("allComplete", "Show only results with complete information:", value = TRUE),
-    submitButton(text = "Plot", icon = NULL, width = NULL),
+    actionButton("plot_btn2", "Plot"),
     tags$br(),
     h4("Types of TCGA Data available"),
     tableOutput('datatypes'),
@@ -126,7 +126,7 @@ server = function(input, output, session) {
         }
     }, ignoreInit = TRUE)
 
-    plot_result = reactive({
+    plot_result = eventReactive(input$plot_btn | input$plot_btn2, {
         if( length(input$x) == 0 | length(input$y) == 0 ) { return( NULL ) }
         if( input$x[1] == "" | input$y[1] == "" ) { return(NULL) }
         withProgress(message = 'Working...', value = 0, {

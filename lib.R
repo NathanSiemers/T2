@@ -110,6 +110,75 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     plot_summary = paste(summary_lines, collapse = "\n")
 
+    ################################################################
+    ## input validation — collect warnings, don't error
+    warnings = c()
+
+    ## helper: check if a variable is numeric in the data
+    is_num = function(v) v %in% colnames(data) && is.numeric(data[, v])
+    is_fac = function(v) v %in% colnames(data) && (is.factor(data[, v]) || is.character(data[, v]))
+
+    ## multiple X probes must all be numeric (they get scaled + medianed)
+    if (length(x) > 1) {
+        non_num_x = x[!sapply(x, is_num)]
+        if (length(non_num_x) > 0) {
+            warnings = c(warnings, paste("Multiple X probes require all numeric, but these are not:",
+                                         paste(non_num_x, collapse = ", "), "- dropping non-numeric"))
+            x = setdiff(x, non_num_x)
+            if (length(x) == 0) x = orig_x[1]  # fallback to first
+        }
+    }
+
+    ## multiple Y probes (without multi_y) must all be numeric
+    if (length(y) > 1 && !multi_y) {
+        non_num_y = y[!sapply(y, is_num)]
+        if (length(non_num_y) > 0) {
+            warnings = c(warnings, paste("Multiple Y probes (combined) require all numeric, but these are not:",
+                                         paste(non_num_y, collapse = ", "), "- dropping non-numeric"))
+            y = setdiff(y, non_num_y)
+            if (length(y) == 0) y = orig_y[1]
+        }
+    }
+
+    ## multi_y with mixed types: warn but proceed (pivot handles it)
+    if (length(y) > 1 && multi_y) {
+        y_types = sapply(y, function(v) if (is_num(v)) "numeric" else "factor")
+        if (length(unique(y_types)) > 1) {
+            warnings = c(warnings, paste("Multi-Y probes have mixed types (numeric + categorical):",
+                paste(paste(y, y_types, sep = "="), collapse = ", "),
+                "- results may be unexpected"))
+        }
+    }
+
+    ## facet variables should be categorical
+    if (!is.null(facet[1])) {
+        facet_in_data = facet[facet %in% colnames(data)]
+        numeric_facets = facet_in_data[sapply(facet_in_data, is_num)]
+        if (length(numeric_facets) > 0) {
+            warnings = c(warnings, paste("Facet variables should be categorical, but these are numeric:",
+                paste(numeric_facets, collapse = ", "),
+                "- this may create too many panels"))
+        }
+    }
+
+    ## conditioning validation (replaces the old inline check)
+    conditioning_msg = NULL
+    if (!is.null(condition) && pcortype != 'none') {
+        cond_numeric = sapply(condition, is_num)
+        non_numeric_cond = condition[!cond_numeric]
+        problems = c()
+        if (length(non_numeric_cond) > 0)
+            problems = c(problems, paste("Conditioning variable(s) not numeric:", paste(non_numeric_cond, collapse = ", ")))
+        if ((pcortype == 'x' | pcortype == 'both') && !is_num(x))
+            problems = c(problems, paste("Cannot remove influence on X:", x, "is not numeric"))
+        if ((pcortype == 'y' | pcortype == 'both') && !(is_num(y) || (length(y) == 1 && y %in% colnames(data) && is.numeric(data[, y]))))
+            problems = c(problems, paste("Cannot remove influence on Y:", y, "is not numeric"))
+        if (length(problems) > 0) {
+            conditioning_msg = paste("Conditioning skipped:", paste(problems, collapse = "; "))
+            warnings = c(warnings, conditioning_msg)
+        }
+    }
+
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
     if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
     if(length(x) > 1) {
@@ -181,39 +250,20 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
 
     ################################################################
-    ## subtract conditioning variable(s) from x and/or y
-    conditioning_msg = NULL
-    if (! is.null(condition)  & pcortype != 'none') {
-        ## validate: condition vars, x (if applicable), y (if applicable) must be numeric
-        cond_numeric = sapply(condition, function(v) is.numeric(data[, v]))
-        x_numeric = is.numeric(data[, x])
-        y_numeric = !is.null(y) && is.numeric(data[, y])
-        non_numeric_cond = condition[!cond_numeric]
-        problems = c()
-        if (length(non_numeric_cond) > 0)
-            problems = c(problems, paste("Conditioning variable(s) not numeric:", paste(non_numeric_cond, collapse = ", ")))
-        if ((pcortype == 'x' | pcortype == 'both') && !x_numeric)
-            problems = c(problems, paste("Cannot remove influence on X:", x, "is not numeric"))
-        if ((pcortype == 'y' | pcortype == 'both') && !y_numeric)
-            problems = c(problems, paste("Cannot remove influence on Y:", y, "is not numeric"))
-
-        if (length(problems) > 0) {
-            conditioning_msg = paste("Conditioning skipped:", paste(problems, collapse = "; "))
-        } else {
-            ## all checks passed — apply conditioning
-            data = data[ complete.cases( data[ , c(x,y,condition) ] ), ]
-            if( pcortype == 'y' | pcortype == 'both') {
-                smalldat = data[ , colnames(data) %in% c(y, condition) ]
-                theformula = as.formula(paste(y, " ~ .  - ", y))
-                resid = residuals( lm( theformula, data = smalldat ) )
-                data[, y] = resid
-            }
-            if( pcortype == 'x' | pcortype == 'both') {
-                smalldat = data[ , colnames(data) %in% c(x, condition) ]
-                theformula = as.formula(paste(x, " ~ .  - ", x))
-                resid = residuals( lm( theformula, data = smalldat ) )
-                data[, x] = resid
-            }
+    ## apply conditioning (only if validation passed)
+    if (!is.null(condition) & pcortype != 'none' & is.null(conditioning_msg)) {
+        data = data[ complete.cases( data[ , c(x,y,condition) ] ), ]
+        if( pcortype == 'y' | pcortype == 'both') {
+            smalldat = data[ , colnames(data) %in% c(y, condition) ]
+            theformula = as.formula(paste(y, " ~ .  - ", y))
+            resid = residuals( lm( theformula, data = smalldat ) )
+            data[, y] = resid
+        }
+        if( pcortype == 'x' | pcortype == 'both') {
+            smalldat = data[ , colnames(data) %in% c(x, condition) ]
+            theformula = as.formula(paste(x, " ~ .  - ", x))
+            resid = residuals( lm( theformula, data = smalldat ) )
+            data[, x] = resid
         }
     }
     ## check for waterfall
@@ -414,10 +464,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         plot_summary = paste0(plot_summary, sprintf("\n  Conditioning: %s on %s", paste(orig_condition, collapse = ", "), pcortype))
     if (multi_y) plot_summary = paste0(plot_summary, "\n  Multi-Y: individual probes plotted separately")
     if (zscore_y) plot_summary = paste0(plot_summary, "\n  Z-score Y: enabled")
-    if (!is.null(conditioning_msg))
-        plot_summary = paste0(plot_summary, "\n\n  WARNING: ", conditioning_msg)
+    if (length(warnings) > 0)
+        plot_summary = paste0(plot_summary, "\n\n  WARNINGS:\n  ",
+                              paste(warnings, collapse = "\n  "))
 
-    list(plot = p, summary = plot_summary, warning = conditioning_msg)
+    list(plot = p, summary = plot_summary,
+         warning = if (length(warnings) > 0) paste(warnings, collapse = "\n") else NULL)
 }
 
 

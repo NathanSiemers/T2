@@ -47,8 +47,10 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     probe_sql = paste(sprintf("'%s'", db_probes), collapse = ", ")
 
     ## try numeric view first
-    num_result = dbGetQuery(gitrconn, sprintf(
-      "SELECT sample, probe, value FROM tcgas WHERE probe IN (%s)", probe_sql))
+    num_sql = sprintf("SELECT sample, probe, value FROM tcgas WHERE probe IN (%s)", probe_sql)
+    cat(num_sql, "\n")
+    num_result = dbGetQuery(gitrconn, num_sql)
+    cat(nrow(num_result), "rows returned\n")
 
     ## try categorical view for any probes not found in numeric
     found_probes = unique(num_result$probe)
@@ -56,8 +58,10 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
     if (length(missing_probes) > 0) {
       cat_sql = paste(sprintf("'%s'", missing_probes), collapse = ", ")
-      cat_result = dbGetQuery(gitrconn, sprintf(
-        "SELECT sample, probe, value FROM tcgacats WHERE probe IN (%s)", cat_sql))
+      cat_query = sprintf("SELECT sample, probe, value FROM tcgacats WHERE probe IN (%s)", cat_sql)
+      cat(cat_query, "\n")
+      cat_result = dbGetQuery(gitrconn, cat_query)
+      cat(nrow(cat_result), "rows returned\n")
     } else {
       cat_result = data.frame(sample = character(0), probe = character(0),
                               value = character(0))

@@ -1,12 +1,8 @@
-## need to write a separate file that only destroys...
-sqldestroy = TRUE   # delete datbases before starting!
-
 TESTING = FALSE
 TESTINGLINES = Inf
 mysql  = FALSE
 mysqldb = 'prod'    # dev or prod
 download = FALSE
-sqlvacuum = FALSE
 optimize = FALSE
 xena.force = FALSE
-Sys.setenv("VROOM_CONNECTION_SIZE" = 1e9)  # read_tsv seems to be calling vroom and barfing.  wtf.
+Sys.setenv("VROOM_CONNECTION_SIZE" = 1e9)

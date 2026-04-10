@@ -6,46 +6,8 @@ library(ggplot2); library(ggthemes)
 library(viridis)
 library(tidyverse)
 source('gitr.R')
-## initialize gitr, perhaps it will make it more responsive interactively
-nothing = gitr(c('FOXP3', 'CD8A', 'CD8B', 'TP53', 'cohort', 'sample_type'))
-##source('plotter.R')
-
-##mysql = FALSE
-##con = RSQLite::dbConnect(RSQLite::SQLite(), dbname = db, flags = RSQLite::SQLITE_RW )
-##db = 'tcga.db'
-
-
-
-## con = RMySQL::dbConnect (
-##     drv       = RMySQL::MySQL(),
-##     dbname    = "pancan2018dev",
-##     host      = "pancan2018dev.cbe7mtbvwi2d.us-east-1.rds.amazonaws.com",
-##     port      = 3306,
-##     username  = "admin",
-##     password  = "Adminuser19")
-
-## mysql = TRUE
-## con = RMySQL::dbConnect (
-##     drv       = RMySQL::MySQL(),
-##     dbname    = "pancan2018",
-##     host      = "pancan2018.cbe7mtbvwi2d.us-east-1.rds.amazonaws.com",
-##     port      = 3306,
-##     username  = "admin",
-##     password  = "Adminuser19")
-
-##install.packages('pool')
-##library(pool)
-## con <- dbPool(
-##   drv = RSQLite::SQLite(),
-##   dbname = db
-## )
-## onStop(function() {
-##   poolClose(pool)
-## })
-
 ################################################################
 ## database connections and convenience lists
-##db = 'tcga.db'
 
 tcga = tbl(con, 'tcga')
 tcgacat = tbl(con, 'tcgacat')
@@ -103,11 +65,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(condition)  )
-    print(list.of.markers)
     data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = nonormal, noheme = noheme)
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
     if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
-    cat(file = stderr(), "gitr finished")
     if(length(x) > 1) {
         newvar = paste(x, sep = '.', collapse = '.')
         data[ , newvar]  = data %>%
@@ -148,27 +108,21 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             facet = facet[!is.null(facet) & facet != ""]
         }
     }
-    cat(file = stderr(), paste(colnames(data), collapse = ';')) ; cat('\n')
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
     if( allComplete ) {
         data = data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,size, c(facet))] ), ]
     }
     data = droplevels(data)
-    ## catch plots that would fail
-    cat(file = stderr(), 'entereng error checking\n')
     if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {
         return( ggplot() + ggtitle("Sorry, there seems to be no data associated with your query", subtitle = "Hint: some of the subtype classifications are only applied across some tumor sample, some mutations aren't present, etc" ) )
     }
     ##if ( nrow(data) != 0 & is.factor( data[ , x] ) & length(levels( data[ , x] )) < 1 )  {
     ##    return( ggplot() + ggtitle("Sorry, your x variable seems to be categorical and there seems to be less than two categories to plot") )
     ##}
-    cat(file = stderr(), 'end of error checking\n')
     ## I really need to deal with formulae generally
     if( evaluate_vars ) {
         list.of.markersxy = unlist(strsplit( c(x,y), split = " " ))
-        print(list.of.markersxy)
         list.of.markersxy = list.of.markersxy[! list.of.markersxy  %in% c('+', '-')]
-        print(list.of.markersxy)
     } else {
         list.of.markersxy = c(x,y)
     }
@@ -264,8 +218,6 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     pstring = gsub( '\\.mut', ' mutation', pstring )
     pstring = gsub( '\\.fmut', ' mutation', pstring )
     pstring = gsub( '\\.cnv', ' CNA', pstring )
-    print(paste( 'cohort length:', length(cohort) ))
-    print(paste( 'cohort:', cohort))
     if( !is.null(cohort[1]) ) {
         if( length(cohort) < 6) {
             pstring2 = paste( "Cohorts:",
@@ -286,8 +238,6 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     ## create full aesthetics
     aesfull = modifyList( aesx, c(aesy, aescolor, aesshape, aessize) )
-    print('aesfull')
-    print(aesfull)
     p = ggplot( mapping = aesfull, data = data)
     if( ! grepl('\\+|\\-', x[1] ) ) {
         ##        if(   is.factor(data[, x]) | is.factor(data[, y])   ) {
@@ -331,12 +281,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         p = p + facet_wrap(  my.formula, scales = facet_scales, ncol = ncols, drop = TRUE ) + theme(strip.text = element_text(size = round(60 * static.strip, digits = 0 ) ) )
         if (is.factor(data[, x])) p = p + scale_x_discrete(drop = TRUE)
         if (!is.null(y) && is.factor(data[, y])) p = p + scale_y_discrete(drop = TRUE)
-        print("FACET FORMULA:")
-        print(my.formula)
     }
     if(  !is.null(facet.formula)  ) {
         my.formula = paste( '~', facet.formula)
-        print(my.formula)
         p = p + facet_wrap(  as.formula(my.formula), ncol = ncols, scales = scales, drop = TRUE  ) + theme(strip.text = element_text(size = 60 * static.strip) )
         if (is.factor(data[, x])) p = p + scale_x_discrete(drop = TRUE)
     }
@@ -393,18 +340,14 @@ fun_plot1 = function(input, reactive = TRUE) {
     if(FALSE){
     input =   list(x='ABCA1',y='HLA-E',shape = "",size=NULL,color="",static.size="5")
 }
-    print(str(input))
-    ##cat(file = stderr(), paste('fun_plot1 input', paste(names(input), input, sep = '=', collapse = ',' ) ) )
     ## remove empty input variables and names
     input = input[ ! sapply(input, is.null) ]
    input = input[ input != 'none']
     input = input[ input != '']
     input = input[ names(input) != '']
-     print(str(input))
     numeric_vars = c('static.strip', 'static.size', 'static.titles',
         'static.labels', 'ncols', 'alpha')
     input[ which(names(input) %in% numeric_vars) ] = as.numeric( input[ names(input) %in% numeric_vars ] )
-    print(str(input))
     do.call(plotter, input)
 }
 

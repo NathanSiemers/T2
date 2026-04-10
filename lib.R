@@ -115,7 +115,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     warnings = c()
 
     ## helpers
-    is_num = function(v) v %in% colnames(data) && is.numeric(data[, v])
+    is_num = function(v) length(v) == 1 && v %in% colnames(data) && is.numeric(data[, v])
     var_type = function(v) {
         if (!(v %in% colnames(data))) return("not found")
         col = data[, v]

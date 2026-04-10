@@ -1,6 +1,11 @@
-source ('010-settings.R',echo = TRUE, max.deparse.length = Inf)
+TESTING = FALSE
+TESTINGLINES = Inf
+mysql  = FALSE
+mysqldb = 'prod'
 download = FALSE
 optimize = FALSE
+xena.force = FALSE
+Sys.setenv("VROOM_CONNECTION_SIZE" = 1e9)
 source ('015-destroy_db.R', echo = TRUE, max.deparse.length = Inf)
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
 

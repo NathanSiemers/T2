@@ -1,5 +1,6 @@
 library(sqldf)
-source("010-settings.R", echo = TRUE)
+mysql = FALSE
+mysqldb = 'prod'
 source("020-database_connection.R", echo = TRUE)
 source("030-good.functions.R", echo = TRUE)
 source('gitr.R', echo = TRUE)

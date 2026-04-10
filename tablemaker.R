@@ -47,13 +47,11 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
 
     ## PROBES - add any new probe keys
     uprobe = dat %>%
-        mutate(  probe = case_when(
-                     suffix == TRUE ~ paste( probe, type, sep = tsep ),
-                     TRUE ~ probe ) ) %>%
-                         select ( probe ) %>%
-                             distinct %>%
-                                 mutate( key = NA ) %>%
-                                     select(key, probe)
+        { if(suffix) mutate(., probe = paste(probe, type, sep = tsep)) else . } %>%
+            select ( probe ) %>%
+                distinct %>%
+                    mutate( key = NA ) %>%
+                        select(key, probe)
     cat(sprintf("  probes: %d unique\n", nrow(uprobe)))
     print(head(uprobe, 3))
     allprobe = uprobe %>% select(key, probe)

@@ -66,6 +66,45 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(condition)  )
     data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = nonormal, noheme = noheme)
+
+    ## build data summary before any transformations
+    summary_lines = c()
+    summary_lines = c(summary_lines, sprintf("Total samples after filters: %d", nrow(data)))
+    ## per-variable completeness
+    all_vars = unique(c(x, y, color, shape, size, facet, condition))
+    all_vars = all_vars[!is.null(all_vars) & all_vars != ""]
+    var_counts = sapply(all_vars, function(v) {
+        if (v %in% colnames(data)) sum(!is.na(data[, v])) else NA
+    })
+    summary_lines = c(summary_lines, "", "Samples with data per variable:")
+    for (i in seq_along(all_vars)) {
+        vname = all_vars[i]
+        n = var_counts[i]
+        pct = if (!is.na(n)) sprintf("%.1f%%", 100 * n / nrow(data)) else "not found"
+        summary_lines = c(summary_lines, sprintf("  %-35s %6s / %d  (%s)",
+                                                  vname, ifelse(is.na(n), "?", n), nrow(data), pct))
+    }
+    ## intersection: samples with non-NA for all plotted variables (x + y at minimum)
+    plot_vars = unique(c(x, y))
+    plot_vars = plot_vars[plot_vars %in% colnames(data)]
+    if (length(plot_vars) > 0) {
+        complete_xy = complete.cases(data[, plot_vars, drop = FALSE])
+        n_complete = sum(complete_xy)
+        n_missing = nrow(data) - n_complete
+        summary_lines = c(summary_lines, "",
+            sprintf("Samples with data for both X and Y: %d / %d", n_complete, nrow(data)),
+            sprintf("Samples missing X and/or Y:         %d", n_missing))
+    }
+    ## all aesthetic variables
+    all_aes_vars = unique(c(x, y, color, size, facet))
+    all_aes_vars = all_aes_vars[!is.null(all_aes_vars) & all_aes_vars != "" & all_aes_vars %in% colnames(data)]
+    if (length(all_aes_vars) > length(plot_vars)) {
+        complete_all = sum(complete.cases(data[, all_aes_vars, drop = FALSE]))
+        summary_lines = c(summary_lines,
+            sprintf("Samples with all graph variables:    %d / %d", complete_all, nrow(data)))
+    }
+    plot_summary = paste(summary_lines, collapse = "\n")
+
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
     if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
     if(length(x) > 1) {
@@ -114,7 +153,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     data = droplevels(data)
     if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {
-        return( ggplot() + ggtitle("Sorry, there seems to be no data associated with your query", subtitle = "Hint: some of the subtype classifications are only applied across some tumor sample, some mutations aren't present, etc" ) )
+        return( list(
+            plot = ggplot() + ggtitle("Sorry, there seems to be no data associated with your query",
+                subtitle = "Hint: some of the subtype classifications are only applied across some tumor samples, some mutations aren't present, etc" ),
+            summary = plot_summary
+        ))
     }
     ##if ( nrow(data) != 0 & is.factor( data[ , x] ) & length(levels( data[ , x] )) < 1 )  {
     ##    return( ggplot() + ggtitle("Sorry, your x variable seems to be categorical and there seems to be less than two categories to plot") )
@@ -321,7 +364,18 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         theme(plot.caption = element_text(size = 12),
               axis.text.x = element_text(angle = 90, hjust = 1)
               )
-    p
+
+    ## add final plotted points count to summary
+    plot_summary = paste(plot_summary, sprintf("\nData points in plot: %d", nrow(data)), sep = "\n")
+    plot_summary = paste(plot_summary,
+        sprintf("\nGraph: X = %s, Y = %s", x, ifelse(is.null(y), "none", y)),
+        sep = "\n")
+    if (!is.null(color) && color != "") plot_summary = paste0(plot_summary, sprintf("\nColor: %s", color))
+    if (!is.null(facet[1])) plot_summary = paste0(plot_summary, sprintf("\nFacet: %s", paste(facet, collapse = " + ")))
+    if (!is.null(condition) && pcortype != 'none')
+        plot_summary = paste0(plot_summary, sprintf("\nConditioning: %s on %s", paste(condition, collapse = ", "), pcortype))
+
+    list(plot = p, summary = plot_summary)
 }
 
 

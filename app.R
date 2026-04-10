@@ -55,6 +55,8 @@ ui = fluidPage(
                withSpinner( plotOutput( "main_plot", height = '1800px', width = '95%' ),
                            proxy.height = "200px", color = viridis::plasma(1) )
                ) ),
+    h4("Data Summary"),
+    verbatimTextOutput('plot_summary'),
     h5( paste( 'PI:', a.PI ) ),
     h5( paste('Contributors:', a.credits) ),
     h5( Sys.Date() ),
@@ -113,13 +115,23 @@ server = function(input, output, session) {
                          selected = '0.12', server = TRUE)
     updateSelectizeInput(session, 'ncols',  choices = 1:50,
                          selected = 8, server = TRUE)
-    output$main_plot = renderPlot( {
+    plot_result = reactive({
         if( length(input$x) == 0 | length(input$y) == 0 ) { return( NULL ) }
         if( input$x[1] == "" | input$y[1] == "" ) { return(NULL) }
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
             fun_plot1(input)
         })
+    })
+    output$main_plot = renderPlot({
+        res = plot_result()
+        if (is.null(res)) return(NULL)
+        if (is.list(res) && !is.null(res$plot)) res$plot else res
+    })
+    output$plot_summary = renderText({
+        res = plot_result()
+        if (is.null(res)) return("")
+        if (is.list(res) && !is.null(res$summary)) res$summary else ""
     })
     output$datatypes = renderTable( {
         types %>% select(type)

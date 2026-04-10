@@ -134,6 +134,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                     apply( 1, median, na.rm = TRUE )
         y = newvar
     }
+    multi_y_fill = FALSE
     if(length(y) > 1 && multi_y) {
         ## pivot multiple Y probes to long format for individual plotting
         y_probes = y
@@ -142,12 +143,15 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                              check.names = FALSE)
         data$probe = factor(data$probe, levels = y_probes)
         y = "y_value"
-        ## override color to show probe identity
-        color = "probe"
-        ## if x is continuous, facet by probe for clarity
-        if (is.numeric(data[, x])) {
-            facet = c("probe", facet)
-            facet = facet[!is.null(facet) & facet != ""]
+        ## always facet by probe for multi_y
+        facet = c("probe", facet)
+        facet = facet[!is.null(facet) & facet != ""]
+        if (!is.null(color) && color != "") {
+            ## user has a color variable — use fill=probe on boxplots, color for user's var
+            multi_y_fill = TRUE
+        } else {
+            ## no user color — color by probe identity (original behavior)
+            color = "probe"
         }
     }
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
@@ -286,11 +290,19 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     aesfull = modifyList( aesx, c(aesy, aescolor, aesshape, aessize) )
     p = ggplot( mapping = aesfull, data = data)
     if( ! grepl('\\+|\\-', x[1] ) ) {
-        ##        if(   is.factor(data[, x]) | is.factor(data[, y])   ) {
         if(   is.factor(data[, x])  ) {
-            ##data[,x] = factor(  data[,x], levels = c(0,1) )
-            if(! is.null(size))  {
-                ##p = p + geom_boxplot(mapping = aesxy, inherit.aes = FALSE, outlier.shape = NA) + geom_jitter(width = 0.2, alpha = alpha)
+            ## boxplot + jittered points for categorical x
+            if (multi_y_fill) {
+                ## multi_y with user color: fill boxplots by probe, color points by user's variable
+                box_aes = aes(fill = probe)
+                if(! is.null(size))  {
+                    p = p + geom_boxplot(box_aes, outlier.shape = NA, alpha = 0.3) +
+                        geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha)
+                } else {
+                    p = p + geom_boxplot(box_aes, outlier.shape = NA, alpha = 0.3) +
+                        geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha, size = static.size)
+                }
+            } else if(! is.null(size))  {
                 if(is.null(color)) {
                     p = p + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitter(width = 0.2), alpha = alpha)
                 } else {
@@ -298,7 +310,6 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                 }
             } else {
                 if(is.null(color)){
-                ##p = p + geom_boxplot(mapping = aesxy, inherit.aes = FALSE, outlier.shape = NA) + geom_jitter(width = 0.2, alpha = alpha, size = static.size)
                     p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitter(width = 0.2), alpha = alpha, size = static.size)
                 } else {
                     p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha, size = static.size)
@@ -356,9 +367,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
               )
     if ( is.factor(data[ , color] ) ) {
         p = p + viridis::scale_colour_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
-        ##p = p + scale_colour_gdocs(na.value = 'grey')
     } else {
         p = p + viridis::scale_color_viridis(end = 0.8, discrete = FALSE, option = 'plasma')
+    }
+    if (multi_y_fill) {
+        p = p + viridis::scale_fill_viridis(end = 0.7, discrete = TRUE, option = 'viridis', alpha = 0.3)
     }
     if( coordflip ) {
         p = p + coord_flip()

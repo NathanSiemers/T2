@@ -114,18 +114,25 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## input validation — collect warnings, don't error
     warnings = c()
 
-    ## helper: check if a variable is numeric in the data
+    ## helpers
     is_num = function(v) v %in% colnames(data) && is.numeric(data[, v])
-    is_fac = function(v) v %in% colnames(data) && (is.factor(data[, v]) || is.character(data[, v]))
+    var_type = function(v) {
+        if (!(v %in% colnames(data))) return("not found")
+        col = data[, v]
+        if (is.numeric(col)) "numeric"
+        else if (is.factor(col)) "factor"
+        else if (is.character(col)) "character"
+        else class(col)[1]
+    }
+    label_vars = function(vars) paste(sprintf("%s (%s)", vars, sapply(vars, var_type)), collapse = ", ")
 
     ## multiple X probes must all be numeric (they get scaled + medianed)
     if (length(x) > 1) {
         non_num_x = x[!sapply(x, is_num)]
         if (length(non_num_x) > 0) {
-            warnings = c(warnings, paste("Multiple X probes require all numeric, but these are not:",
-                                         paste(non_num_x, collapse = ", "), "- dropping non-numeric"))
+            warnings = c(warnings, paste("Multiple X requires all numeric. Dropping:", label_vars(non_num_x)))
             x = setdiff(x, non_num_x)
-            if (length(x) == 0) x = orig_x[1]  # fallback to first
+            if (length(x) == 0) x = orig_x[1]
         }
     }
 
@@ -133,8 +140,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if (length(y) > 1 && !multi_y) {
         non_num_y = y[!sapply(y, is_num)]
         if (length(non_num_y) > 0) {
-            warnings = c(warnings, paste("Multiple Y probes (combined) require all numeric, but these are not:",
-                                         paste(non_num_y, collapse = ", "), "- dropping non-numeric"))
+            warnings = c(warnings, paste("Multiple Y (combined) requires all numeric. Dropping:", label_vars(non_num_y)))
             y = setdiff(y, non_num_y)
             if (length(y) == 0) y = orig_y[1]
         }
@@ -142,11 +148,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
     ## multi_y with mixed types: warn but proceed (pivot handles it)
     if (length(y) > 1 && multi_y) {
-        y_types = sapply(y, function(v) if (is_num(v)) "numeric" else "factor")
+        y_types = sapply(y, var_type)
         if (length(unique(y_types)) > 1) {
-            warnings = c(warnings, paste("Multi-Y probes have mixed types (numeric + categorical):",
-                paste(paste(y, y_types, sep = "="), collapse = ", "),
-                "- results may be unexpected"))
+            warnings = c(warnings, paste("Multi-Y has mixed types:", label_vars(y),
+                                         "- results may be unexpected"))
         }
     }
 
@@ -155,25 +160,24 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         facet_in_data = facet[facet %in% colnames(data)]
         numeric_facets = facet_in_data[sapply(facet_in_data, is_num)]
         if (length(numeric_facets) > 0) {
-            warnings = c(warnings, paste("Facet variables must be categorical. Numeric variables removed:",
-                paste(numeric_facets, collapse = ", ")))
+            warnings = c(warnings, paste("Facet requires categorical variables. Removing:", label_vars(numeric_facets)))
             facet = setdiff(facet, numeric_facets)
             if (length(facet) == 0) facet = NULL
         }
     }
 
-    ## conditioning validation (replaces the old inline check)
+    ## conditioning validation
     conditioning_msg = NULL
     if (!is.null(condition) && pcortype != 'none') {
         cond_numeric = sapply(condition, is_num)
         non_numeric_cond = condition[!cond_numeric]
         problems = c()
         if (length(non_numeric_cond) > 0)
-            problems = c(problems, paste("Conditioning variable(s) not numeric:", paste(non_numeric_cond, collapse = ", ")))
+            problems = c(problems, paste("Conditioning variables not numeric:", label_vars(non_numeric_cond)))
         if ((pcortype == 'x' | pcortype == 'both') && !is_num(x))
-            problems = c(problems, paste("Cannot remove influence on X:", x, "is not numeric"))
-        if ((pcortype == 'y' | pcortype == 'both') && !(is_num(y) || (length(y) == 1 && y %in% colnames(data) && is.numeric(data[, y]))))
-            problems = c(problems, paste("Cannot remove influence on Y:", y, "is not numeric"))
+            problems = c(problems, sprintf("Cannot condition on X: %s (%s)", x, var_type(x)))
+        if ((pcortype == 'y' | pcortype == 'both') && !is_num(y))
+            problems = c(problems, sprintf("Cannot condition on Y: %s (%s)", y, var_type(y)))
         if (length(problems) > 0) {
             conditioning_msg = paste("Conditioning skipped:", paste(problems, collapse = "; "))
             warnings = c(warnings, conditioning_msg)

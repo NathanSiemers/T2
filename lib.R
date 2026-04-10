@@ -77,7 +77,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     summary_lines = c(summary_lines, sprintf("Total samples after filters: %d", nrow(data)))
     ## per-variable completeness
     all_vars = unique(c(x, y, color, shape, size, facet, active_condition))
-    all_vars = all_vars[!is.null(all_vars) & all_vars != ""]
+    all_vars = all_vars[!is.null(all_vars) & all_vars != "" & all_vars %in% colnames(data)]
     var_counts = sapply(all_vars, function(v) {
         if (v %in% colnames(data)) sum(!is.na(data[, v])) else NA
     })

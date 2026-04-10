@@ -138,6 +138,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if(length(y) > 1 && multi_y) {
         ## pivot multiple Y probes to long format for individual plotting
         y_probes = y
+        ## drop any existing 'probe' column to avoid name collision in pivot
+        data$probe = NULL
         data = as.data.frame(tidyr::pivot_longer(data, cols = all_of(y_probes),
                                    names_to = "probe", values_to = "y_value"),
                              check.names = FALSE)

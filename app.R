@@ -115,6 +115,17 @@ server = function(input, output, session) {
                          selected = '0.12', server = TRUE)
     updateSelectizeInput(session, 'ncols',  choices = 1:50,
                          selected = 8, server = TRUE)
+    ## when multi_y is toggled on, add "probe" to color choices and select it
+    observeEvent(input$multi_y, {
+        if (input$multi_y) {
+            updateSelectizeInput(session, 'color', choices = c('probe', mygenesplus),
+                                 selected = 'probe', server = TRUE)
+        } else {
+            updateSelectizeInput(session, 'color', choices = mygenesplus,
+                                 selected = 'sample_type', server = TRUE)
+        }
+    }, ignoreInit = TRUE)
+
     plot_result = reactive({
         if( length(input$x) == 0 | length(input$y) == 0 ) { return( NULL ) }
         if( input$x[1] == "" | input$y[1] == "" ) { return(NULL) }

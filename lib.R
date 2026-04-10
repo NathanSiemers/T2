@@ -146,11 +146,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         ## always facet by probe for multi_y
         facet = c("probe", facet)
         facet = facet[!is.null(facet) & facet != ""]
-        if (!is.null(color) && color != "") {
+        if (!is.null(color) && color != "" && color != "probe") {
             ## user has a color variable — use fill=probe on boxplots, color for user's var
             multi_y_fill = TRUE
         } else {
-            ## no user color — color by probe identity (original behavior)
+            ## no user color or color=probe — color by probe identity
             color = "probe"
         }
     }

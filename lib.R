@@ -417,7 +417,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if (!is.null(conditioning_msg))
         plot_summary = paste0(plot_summary, "\n\n  WARNING: ", conditioning_msg)
 
-    list(plot = p, summary = plot_summary)
+    list(plot = p, summary = plot_summary, warning = conditioning_msg)
 }
 
 

@@ -137,6 +137,9 @@ server = function(input, output, session) {
     output$main_plot = renderPlot({
         res = plot_result()
         if (is.null(res)) return(NULL)
+        if (is.list(res) && !is.null(res$warning)) {
+            showNotification(res$warning, type = "warning", duration = 10)
+        }
         if (is.list(res) && !is.null(res$plot)) res$plot else res
     })
     output$plot_summary = renderText({

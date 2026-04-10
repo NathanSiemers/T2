@@ -21,9 +21,6 @@ cran_packages = c(
 ## packages only needed if using MySQL backend (mysql = TRUE)
 mysql_packages = c("RMySQL")
 
-## Bioconductor packages
-bioc_packages = c("estimate")
-
 ## install CRAN packages
 install_if_missing = function(pkgs) {
   missing = pkgs[!sapply(pkgs, requireNamespace, quietly = TRUE)]
@@ -37,11 +34,8 @@ install_if_missing = function(pkgs) {
 
 install_if_missing(cran_packages)
 
-## Bioconductor
-if (!requireNamespace("estimate", quietly = TRUE)) {
-  cat("Installing estimate from R-Forge...\n")
-  install.packages("estimate", repos = "http://r-forge.r-project.org", dependencies = TRUE)
-}
+## estimate package is NOT required — pre-computed scores are in ESTIMATE_copy.csv
+## To regenerate from scratch: install.packages("estimate", repos = "http://r-forge.r-project.org")
 
 cat("\nOptional (MySQL backend only):\n")
 cat("  install.packages('RMySQL')\n")

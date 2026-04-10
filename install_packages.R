@@ -1,5 +1,9 @@
 ## install_packages.R - install all R packages needed for this project
-## Run this once after cloning: Rscript install_packages.R
+## Usage:
+##   Rscript install_packages.R               # SQLite only (default)
+##   Rscript install_packages.R --with-mysql   # also install RMySQL
+
+args = commandArgs(trailingOnly = TRUE)
 
 cran_packages = c(
   "DBI",
@@ -18,9 +22,6 @@ cran_packages = c(
   "devtools"
 )
 
-## packages only needed if using MySQL backend (mysql = TRUE)
-mysql_packages = c("RMySQL")
-
 ## install CRAN packages
 install_if_missing = function(pkgs) {
   missing = pkgs[!sapply(pkgs, requireNamespace, quietly = TRUE)]
@@ -28,16 +29,22 @@ install_if_missing = function(pkgs) {
     cat("Installing:", paste(missing, collapse = ", "), "\n")
     install.packages(missing)
   } else {
-    cat("All CRAN packages already installed.\n")
+    cat("All packages already installed.\n")
   }
 }
 
 install_if_missing(cran_packages)
 
+## MySQL backend (optional, has system-level dependencies)
+if ("--with-mysql" %in% args) {
+  cat("\nInstalling MySQL support...\n")
+  install_if_missing("RMySQL")
+} else {
+  cat("\nSkipping RMySQL (not needed for SQLite).\n")
+  cat("  To install later: Rscript install_packages.R --with-mysql\n")
+}
+
 ## estimate package is NOT required — pre-computed scores are in ESTIMATE_copy.csv
 ## To regenerate from scratch: install.packages("estimate", repos = "http://r-forge.r-project.org")
 
-cat("\nOptional (MySQL backend only):\n")
-cat("  install.packages('RMySQL')\n")
-
-cat("\nDone. Verify with: sapply(c(", paste0('"', cran_packages, '"', collapse = ', '), "), require, character.only = TRUE)\n")
+cat("\nDone.\n")

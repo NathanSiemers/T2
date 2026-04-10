@@ -14,7 +14,7 @@ my_cnv
 dim(my_cnv)
 my_cnv %>% filter(probe == 'CDKN2A')
 dat = my_cnv; suffix = TRUE; categorical = FALSE; tsep = '.'; deleteType = FALSE; connection = con
-tablemaker(my_cnv, sparse = FALSE)
+tablemaker(my_cnv)
 
 my_cnv = NULL; gc()
 

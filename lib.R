@@ -117,6 +117,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## helpers
     is_num = function(v) length(v) == 1 && v %in% colnames(data) && is.numeric(data[, v])
     var_type = function(v) {
+        if (length(v) != 1) return(paste(sapply(v, var_type), collapse = ", "))
         if (!(v %in% colnames(data))) return("not found")
         col = data[, v]
         if (is.numeric(col)) "numeric"
@@ -166,21 +167,34 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
     }
 
-    ## conditioning validation
+    ## conditioning validation — check each variable individually
     conditioning_msg = NULL
+    cond_skip_x = c()  # non-numeric x vars that can't be conditioned
+    cond_skip_y = c()  # non-numeric y vars that can't be conditioned
     if (!is.null(condition) && pcortype != 'none') {
         cond_numeric = sapply(condition, is_num)
         non_numeric_cond = condition[!cond_numeric]
         problems = c()
-        if (length(non_numeric_cond) > 0)
+        if (length(non_numeric_cond) > 0) {
             problems = c(problems, paste("Conditioning variables not numeric:", label_vars(non_numeric_cond)))
-        if ((pcortype == 'x' | pcortype == 'both') && !is_num(x))
-            problems = c(problems, sprintf("Cannot condition on X: %s (%s)", x, var_type(x)))
-        if ((pcortype == 'y' | pcortype == 'both') && !is_num(y))
-            problems = c(problems, sprintf("Cannot condition on Y: %s (%s)", y, var_type(y)))
-        if (length(problems) > 0) {
             conditioning_msg = paste("Conditioning skipped:", paste(problems, collapse = "; "))
             warnings = c(warnings, conditioning_msg)
+        } else {
+            ## condition vars are numeric — check which x/y vars can be conditioned
+            if (pcortype == 'x' | pcortype == 'both') {
+                cond_skip_x = x[!sapply(x, is_num)]
+                if (length(cond_skip_x) > 0)
+                    warnings = c(warnings, paste("Conditioning skipped for non-numeric X:", label_vars(cond_skip_x)))
+                if (length(cond_skip_x) == length(x) && (pcortype == 'x'))
+                    conditioning_msg = "Conditioning skipped: no numeric X variables"
+            }
+            if (pcortype == 'y' | pcortype == 'both') {
+                cond_skip_y = y[!sapply(y, is_num)]
+                if (length(cond_skip_y) > 0)
+                    warnings = c(warnings, paste("Conditioning skipped for non-numeric Y:", label_vars(cond_skip_y)))
+                if (length(cond_skip_y) == length(y) && (pcortype == 'y'))
+                    conditioning_msg = "Conditioning skipped: no numeric Y variables"
+            }
         }
     }
 
@@ -255,20 +269,22 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
 
     ################################################################
-    ## apply conditioning (only if validation passed)
+    ## apply conditioning — individually for each numeric x/y variable
     if (!is.null(condition) & pcortype != 'none' & is.null(conditioning_msg)) {
-        data = data[ complete.cases( data[ , c(x,y,condition) ] ), ]
-        if( pcortype == 'y' | pcortype == 'both') {
-            smalldat = data[ , colnames(data) %in% c(y, condition) ]
-            theformula = as.formula(paste(y, " ~ .  - ", y))
-            resid = residuals( lm( theformula, data = smalldat ) )
-            data[, y] = resid
+        ## get numeric vars to condition (excluding skipped non-numerics)
+        cond_x_vars = if (pcortype == 'x' | pcortype == 'both') setdiff(x, cond_skip_x) else c()
+        cond_y_vars = if (pcortype == 'y' | pcortype == 'both') setdiff(y, cond_skip_y) else c()
+        all_cond_vars = unique(c(cond_x_vars, cond_y_vars, condition))
+        data = data[ complete.cases( data[ , all_cond_vars ] ), ]
+        for (v in cond_y_vars) {
+            smalldat = data[ , c(v, condition) ]
+            theformula = as.formula(paste(v, " ~ .  - ", v))
+            data[, v] = residuals( lm( theformula, data = smalldat ) )
         }
-        if( pcortype == 'x' | pcortype == 'both') {
-            smalldat = data[ , colnames(data) %in% c(x, condition) ]
-            theformula = as.formula(paste(x, " ~ .  - ", x))
-            resid = residuals( lm( theformula, data = smalldat ) )
-            data[, x] = resid
+        for (v in cond_x_vars) {
+            smalldat = data[ , c(v, condition) ]
+            theformula = as.formula(paste(v, " ~ .  - ", v))
+            data[, v] = residuals( lm( theformula, data = smalldat ) )
         }
     }
     ## check for waterfall

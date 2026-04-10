@@ -181,26 +181,39 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
 
     ################################################################
-    ## subtract conditioning variable(s) from x
-    ## ## later, will add y as a possibility too.
+    ## subtract conditioning variable(s) from x and/or y
+    conditioning_msg = NULL
     if (! is.null(condition)  & pcortype != 'none') {
-        ## force complete cases
-        data = data[ complete.cases( data[ , c(x,y,condition) ] ), ]
-        if( pcortype == 'y' | pcortype == 'both') {
-            smalldat = data[ , colnames(data) %in% c(y, condition) ]
-            theformula = as.formula(paste(
-                y, " ~ .  - ", y
-                ))
-            resid = residuals( lm( theformula, data = smalldat ) )
-            data[, y] = resid
-        }
-        if( pcortype == 'x' | pcortype == 'both') {
-            smalldat = data[ , colnames(data) %in% c(x, condition) ]
-            theformula = as.formula(paste(
-                x, " ~ .  - ", x
-                ))
-            resid = residuals( lm( theformula, data = smalldat ) )
-            data[, x] = resid
+        ## validate: condition vars, x (if applicable), y (if applicable) must be numeric
+        cond_numeric = sapply(condition, function(v) is.numeric(data[, v]))
+        x_numeric = is.numeric(data[, x])
+        y_numeric = !is.null(y) && is.numeric(data[, y])
+        non_numeric_cond = condition[!cond_numeric]
+        problems = c()
+        if (length(non_numeric_cond) > 0)
+            problems = c(problems, paste("Conditioning variable(s) not numeric:", paste(non_numeric_cond, collapse = ", ")))
+        if ((pcortype == 'x' | pcortype == 'both') && !x_numeric)
+            problems = c(problems, paste("Cannot remove influence on X:", x, "is not numeric"))
+        if ((pcortype == 'y' | pcortype == 'both') && !y_numeric)
+            problems = c(problems, paste("Cannot remove influence on Y:", y, "is not numeric"))
+
+        if (length(problems) > 0) {
+            conditioning_msg = paste("Conditioning skipped:", paste(problems, collapse = "; "))
+        } else {
+            ## all checks passed — apply conditioning
+            data = data[ complete.cases( data[ , c(x,y,condition) ] ), ]
+            if( pcortype == 'y' | pcortype == 'both') {
+                smalldat = data[ , colnames(data) %in% c(y, condition) ]
+                theformula = as.formula(paste(y, " ~ .  - ", y))
+                resid = residuals( lm( theformula, data = smalldat ) )
+                data[, y] = resid
+            }
+            if( pcortype == 'x' | pcortype == 'both') {
+                smalldat = data[ , colnames(data) %in% c(x, condition) ]
+                theformula = as.formula(paste(x, " ~ .  - ", x))
+                resid = residuals( lm( theformula, data = smalldat ) )
+                data[, x] = resid
+            }
         }
     }
     ## check for waterfall
@@ -401,6 +414,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         plot_summary = paste0(plot_summary, sprintf("\n  Conditioning: %s on %s", paste(orig_condition, collapse = ", "), pcortype))
     if (multi_y) plot_summary = paste0(plot_summary, "\n  Multi-Y: individual probes plotted separately")
     if (zscore_y) plot_summary = paste0(plot_summary, "\n  Z-score Y: enabled")
+    if (!is.null(conditioning_msg))
+        plot_summary = paste0(plot_summary, "\n\n  WARNING: ", conditioning_msg)
 
     list(plot = p, summary = plot_summary)
 }

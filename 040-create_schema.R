@@ -47,7 +47,7 @@ if( mysql ) {
                            probe = 'varchar(35)',
                            value = 'varchar(35) not null',
                            type = 'varchar(35)' ) )
-    try(dbRemoveTable(con, 'tested'))
+    try(dbRemoveTable(con, 'tested'), silent = TRUE)
     dbCreateTable(con, name = 'tested', c(
       sample = 'varchar(35)',
       ##probe = 'varchar(35)',
@@ -141,7 +141,7 @@ if( mysql ) {
     dbCreateTable(con, name = 'datatypes', c(
                            type = 'character primary key',
                            r_datatype = "character not null default 'numeric'") )
-    try(dbRemoveTable(con, 'tested'))
+    try(dbRemoveTable(con, 'tested'), silent = TRUE)
     dbCreateTable(con, name = 'tested', c(
       sample = 'varchar(35)',
       ##probe = 'varchar(35)',

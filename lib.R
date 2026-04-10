@@ -64,7 +64,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if( ! is.null(facet)[1] )  static.size = static.size / 4
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
-    list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(condition)  )
+    ## only include conditioning variables if actually being used
+    active_condition = if (!is.null(condition) && pcortype != 'none') condition else NULL
+    list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(active_condition)  )
     ## save original parameter values before transformations
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
     orig_size = size; orig_facet = facet; orig_condition = condition
@@ -74,7 +76,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     summary_lines = c()
     summary_lines = c(summary_lines, sprintf("Total samples after filters: %d", nrow(data)))
     ## per-variable completeness
-    all_vars = unique(c(x, y, color, shape, size, facet, condition))
+    all_vars = unique(c(x, y, color, shape, size, facet, active_condition))
     all_vars = all_vars[!is.null(all_vars) & all_vars != ""]
     var_counts = sapply(all_vars, function(v) {
         if (v %in% colnames(data)) sum(!is.na(data[, v])) else NA

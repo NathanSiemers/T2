@@ -150,14 +150,15 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
     }
 
-    ## facet variables should be categorical
+    ## facet variables must be categorical — numeric facets would create thousands of panels
     if (!is.null(facet[1])) {
         facet_in_data = facet[facet %in% colnames(data)]
         numeric_facets = facet_in_data[sapply(facet_in_data, is_num)]
         if (length(numeric_facets) > 0) {
-            warnings = c(warnings, paste("Facet variables should be categorical, but these are numeric:",
-                paste(numeric_facets, collapse = ", "),
-                "- this may create too many panels"))
+            warnings = c(warnings, paste("Facet variables must be categorical. Numeric variables removed:",
+                paste(numeric_facets, collapse = ", ")))
+            facet = setdiff(facet, numeric_facets)
+            if (length(facet) == 0) facet = NULL
         }
     }
 

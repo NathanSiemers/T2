@@ -145,14 +145,13 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                              check.names = FALSE)
         data$probe = factor(data$probe, levels = y_probes)
         y = "y_value"
-        ## always facet by probe for multi_y
-        facet = c("probe", facet)
-        facet = facet[!is.null(facet) & facet != ""]
         if (!is.null(color) && color != "" && color != "probe") {
-            ## user has a color variable — use fill=probe on boxplots, color for user's var
+            ## user has a different color variable — facet by probe, fill boxes by probe
             multi_y_fill = TRUE
+            facet = c("probe", facet)
+            facet = facet[!is.null(facet) & facet != ""]
         } else {
-            ## no user color or color=probe — color by probe identity
+            ## color by probe identity, no auto-faceting
             color = "probe"
         }
     }

@@ -65,6 +65,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(condition)  )
+    ## save original parameter values before transformations
+    orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
+    orig_size = size; orig_facet = facet; orig_condition = condition
     data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = nonormal, noheme = noheme)
 
     ## build data summary before any transformations
@@ -365,15 +368,23 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
               axis.text.x = element_text(angle = 90, hjust = 1)
               )
 
-    ## add final plotted points count to summary
+    ## add graph parameters and final stats to summary (use original values)
     plot_summary = paste(plot_summary, sprintf("\nData points in plot: %d", nrow(data)), sep = "\n")
-    plot_summary = paste(plot_summary,
-        sprintf("\nGraph: X = %s, Y = %s", x, ifelse(is.null(y), "none", y)),
-        sep = "\n")
-    if (!is.null(color) && color != "") plot_summary = paste0(plot_summary, sprintf("\nColor: %s", color))
-    if (!is.null(facet[1])) plot_summary = paste0(plot_summary, sprintf("\nFacet: %s", paste(facet, collapse = " + ")))
-    if (!is.null(condition) && pcortype != 'none')
-        plot_summary = paste0(plot_summary, sprintf("\nConditioning: %s on %s", paste(condition, collapse = ", "), pcortype))
+    plot_summary = paste0(plot_summary, sprintf("\n\nGraph parameters:"))
+    plot_summary = paste0(plot_summary, sprintf("\n  X:     %s", paste(orig_x, collapse = ", ")))
+    plot_summary = paste0(plot_summary, sprintf("\n  Y:     %s", paste(orig_y, collapse = ", ")))
+    if (!is.null(orig_color) && any(orig_color != ""))
+        plot_summary = paste0(plot_summary, sprintf("\n  Color: %s", paste(orig_color, collapse = ", ")))
+    if (!is.null(orig_shape) && any(orig_shape != ""))
+        plot_summary = paste0(plot_summary, sprintf("\n  Shape: %s", paste(orig_shape, collapse = ", ")))
+    if (!is.null(orig_size) && any(orig_size != ""))
+        plot_summary = paste0(plot_summary, sprintf("\n  Size:  %s", paste(orig_size, collapse = ", ")))
+    if (!is.null(orig_facet[1]))
+        plot_summary = paste0(plot_summary, sprintf("\n  Facet: %s", paste(orig_facet, collapse = " + ")))
+    if (!is.null(orig_condition) && pcortype != 'none')
+        plot_summary = paste0(plot_summary, sprintf("\n  Conditioning: %s on %s", paste(orig_condition, collapse = ", "), pcortype))
+    if (multi_y) plot_summary = paste0(plot_summary, "\n  Multi-Y: individual probes plotted separately")
+    if (zscore_y) plot_summary = paste0(plot_summary, "\n  Z-score Y: enabled")
 
     list(plot = p, summary = plot_summary)
 }

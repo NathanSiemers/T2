@@ -7,4 +7,5 @@ if(mysql) {
 } else {
     dbExecute(con, 'CREATE INDEX IF NOT EXISTS tcgaiidx_pts ON tcgai(probekey, type, samplekey)')
     dbExecute(con, 'CREATE INDEX IF NOT EXISTS tested_type ON tested(type)')
+    dbExecute(con, 'CREATE INDEX IF NOT EXISTS tested_type_sample ON tested(type, sample)')
 }

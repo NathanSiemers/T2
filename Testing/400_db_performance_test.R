@@ -19,7 +19,7 @@ cat(sprintf("Iterations per test: %d\n\n", iterations))
 
 ## get all probes by type for sampling
 all_probes = dbGetQuery(con, "SELECT p.probe, pt.type FROM probes p JOIN probe_types pt ON p.key = pt.probekey")
-all_probes_cat = dbGetQuery(con, "SELECT p.probe, pt.type FROM probes p JOIN probe_types_cat pt ON p.key = pt.probekey")
+all_probes_cat = dbGetQuery(con, "SELECT DISTINCT p.probe, d.type FROM probes p JOIN tcgacati d ON p.key = d.probekey")
 types_num = sort(unique(all_probes$type))
 types_cat = sort(unique(all_probes_cat$type))
 

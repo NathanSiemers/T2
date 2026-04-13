@@ -58,10 +58,27 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
     if (length(missing_probes) > 0) {
       cat_sql = paste(sprintf("'%s'", missing_probes), collapse = ", ")
+      ## try dense categorical view first
       cat_query = sprintf("SELECT sample, probe, value FROM tcgacats WHERE probe IN (%s)", cat_sql)
       cat(cat_query, "\n")
       cat_result = dbGetQuery(gitrconn, cat_query)
       cat(nrow(cat_result), "rows returned\n")
+
+      ## for probes not in the dense view, try sparse fallback (direct tcgacati query)
+      cat_found = unique(cat_result$probe)
+      still_missing = setdiff(missing_probes, cat_found)
+      if (length(still_missing) > 0) {
+        sparse_sql = paste(sprintf("'%s'", still_missing), collapse = ", ")
+        sparse_query = sprintf(
+          "SELECT s.sample, p.probe, d.value FROM tcgacati d
+           JOIN samples s ON s.key = d.samplekey
+           JOIN probes p ON p.key = d.probekey
+           WHERE p.probe IN (%s)", sparse_sql)
+        cat(sparse_query, "\n")
+        sparse_result = dbGetQuery(gitrconn, sparse_query)
+        cat(nrow(sparse_result), "rows returned (sparse)\n")
+        cat_result = rbind(cat_result, sparse_result)
+      }
     } else {
       cat_result = data.frame(sample = character(0), probe = character(0),
                               value = character(0))

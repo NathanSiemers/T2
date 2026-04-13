@@ -20,9 +20,18 @@ dbExecute(con, 'CREATE INDEX probe_types_pk ON probe_types(probekey, type)')
 dbExecute(con, 'CREATE INDEX probe_types_tp ON probe_types(type, probekey)')
 
 print("creating probe_types_cat lookup table from tcgacati")
+## exclude high-cardinality types (fmut: 21K probes × 9K samples = 194M view rows)
+## these are queried directly from tcgacati via gitr's sparse fallback
 dbExecute(con, 'DROP TABLE IF EXISTS probe_types_cat')
-dbExecute(con, 'CREATE TABLE probe_types_cat AS SELECT DISTINCT probekey, type FROM tcgacati')
+dbExecute(con, 'CREATE TABLE probe_types_cat AS
+  SELECT DISTINCT probekey, type FROM tcgacati WHERE type <> "fmut"')
 dbExecute(con, 'CREATE INDEX probe_types_cat_pk ON probe_types_cat(probekey, type)')
+## keep a list of sparse categorical types for gitr's fallback
+dbExecute(con, 'DROP TABLE IF EXISTS sparse_cat_types')
+dbExecute(con, 'CREATE TABLE sparse_cat_types AS
+  SELECT DISTINCT type FROM tcgacati WHERE type NOT IN (SELECT DISTINCT type FROM probe_types_cat)')
+print("sparse categorical types (excluded from dense view):")
+print(dbGetQuery(con, 'SELECT * FROM sparse_cat_types'))
 
 ## index on tcgacati if not already present
 try(dbExecute(con, 'CREATE INDEX IF NOT EXISTS tcgacatiidx_pts ON tcgacati(probekey, type, samplekey)'), silent = TRUE)

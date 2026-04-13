@@ -58,27 +58,10 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
     if (length(missing_probes) > 0) {
       cat_sql = paste(sprintf("'%s'", missing_probes), collapse = ", ")
-      ## try dense categorical view first
       cat_query = sprintf("SELECT sample, probe, value FROM tcgacats WHERE probe IN (%s)", cat_sql)
       cat(cat_query, "\n")
       cat_result = dbGetQuery(gitrconn, cat_query)
       cat(nrow(cat_result), "rows returned\n")
-
-      ## for probes not in the dense view, try sparse fallback (direct tcgacati query)
-      cat_found = unique(cat_result$probe)
-      still_missing = setdiff(missing_probes, cat_found)
-      if (length(still_missing) > 0) {
-        sparse_sql = paste(sprintf("'%s'", still_missing), collapse = ", ")
-        sparse_query = sprintf(
-          "SELECT s.sample, p.probe, d.value FROM tcgacati d
-           JOIN samples s ON s.key = d.samplekey
-           JOIN probes p ON p.key = d.probekey
-           WHERE p.probe IN (%s)", sparse_sql)
-        cat(sparse_query, "\n")
-        sparse_result = dbGetQuery(gitrconn, sparse_query)
-        cat(nrow(sparse_result), "rows returned (sparse)\n")
-        cat_result = rbind(cat_result, sparse_result)
-      }
     } else {
       cat_result = data.frame(sample = character(0), probe = character(0),
                               value = character(0))
@@ -154,9 +137,10 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
            JOIN probe_types pt ON pt.probekey = pr.key
            WHERE pr.probe IN (%s)
            UNION
-           SELECT pr.probe, pt.type FROM probes pr
-           JOIN probe_types_cat pt ON pt.probekey = pr.key
-           WHERE pr.probe IN (%s)", uq_sql, uq_sql))
+           SELECT pr.probe, dat.type FROM probes pr
+           JOIN tcgacati dat ON dat.probekey = pr.key
+           WHERE pr.probe IN (%s)
+           GROUP BY pr.probe, dat.type", uq_sql, uq_sql))
         for (i in seq_len(nrow(ns_types))) {
           idx = which(probe_cols == ns_types$probe[i])
           if (length(idx) > 0 && ns_types$type[i] %in% names(dtype_lookup)) {

@@ -1,17 +1,14 @@
 ################################################################
-## create dense views
-## these views handle sparse data correctly:
-##   - tested sample with no row in tcgai → 0 (sparse zero)
-##   - tested sample with NULL in tcgai   → NA (genuine missing)
-##   - untested sample                    → not returned (true NA at caller level)
+## Create views
 ##
-## requires: probe_types and probe_types_cat lookup tables
-## requires: tcgaiidx_pts index on tcgai(probekey, type, samplekey)
-## requires: tcgacatiidx_pts index on tcgacati(probekey, type, samplekey)
+## tcgas/tcga: dense numeric views using tested table + probe_types
+##   to distinguish 0 (tested, sparse zero) from NA (untested)
+##
+## tcgacats/tcgacat: simple categorical views (denormalized tcgacati)
+##   absent = NA at the R level via left_join in gitr
 
 ################################################################
-## build probe_types lookup tables (small, ~100K rows)
-## these map each probekey to its type(s) in tcgai/tcgacati
+## probe_types lookup table for numeric views
 
 print("creating probe_types lookup table from tcgai")
 dbExecute(con, 'DROP TABLE IF EXISTS probe_types')
@@ -19,22 +16,9 @@ dbExecute(con, 'CREATE TABLE probe_types AS SELECT DISTINCT probekey, type FROM 
 dbExecute(con, 'CREATE INDEX probe_types_pk ON probe_types(probekey, type)')
 dbExecute(con, 'CREATE INDEX probe_types_tp ON probe_types(type, probekey)')
 
-print("creating probe_types_cat lookup table from tcgacati")
-## exclude high-cardinality types (fmut: 21K probes × 9K samples = 194M view rows)
-## these are queried directly from tcgacati via gitr's sparse fallback
+## probe_types_cat no longer needed — tcgacats is a simple denormalized view
 dbExecute(con, 'DROP TABLE IF EXISTS probe_types_cat')
-dbExecute(con, 'CREATE TABLE probe_types_cat AS
-  SELECT DISTINCT probekey, type FROM tcgacati WHERE type <> "fmut"')
-dbExecute(con, 'CREATE INDEX probe_types_cat_pk ON probe_types_cat(probekey, type)')
-## keep a list of sparse categorical types for gitr's fallback
 dbExecute(con, 'DROP TABLE IF EXISTS sparse_cat_types')
-dbExecute(con, 'CREATE TABLE sparse_cat_types AS
-  SELECT DISTINCT type FROM tcgacati WHERE type NOT IN (SELECT DISTINCT type FROM probe_types_cat)')
-print("sparse categorical types (excluded from dense view):")
-print(dbGetQuery(con, 'SELECT * FROM sparse_cat_types'))
-
-## index on tcgacati if not already present
-try(dbExecute(con, 'CREATE INDEX IF NOT EXISTS tcgacatiidx_pts ON tcgacati(probekey, type, samplekey)'), silent = TRUE)
 
 ################################################################
 ## tcgas: dense numeric view (sample, probe, value, type)
@@ -62,7 +46,8 @@ LEFT JOIN tcgai dat
 print("created view: tcgas (dense numeric)")
 
 ################################################################
-## tcgacats: dense categorical view (sample, probe, value, type)
+## tcgacats: simple categorical view (denormalized tcgacati)
+## No cross-join needed: absent = NA at the R level via left_join
 
 dbExecute(con, 'DROP VIEW IF EXISTS tcgacats')
 dbExecute(con, '
@@ -71,17 +56,12 @@ SELECT
   sa.sample,
   pr.probe,
   dat.value,
-  pt.type
-FROM probes pr
-JOIN probe_types_cat pt ON pt.probekey = pr.key
-JOIN tested t ON t.type = pt.type
-JOIN samples sa ON sa.sample = t.sample
-LEFT JOIN tcgacati dat
-  ON dat.probekey   = pr.key
-  AND dat.samplekey = sa.key
-  AND dat.type      = pt.type
+  dat.type
+FROM tcgacati dat
+JOIN samples sa ON sa.key = dat.samplekey
+JOIN probes pr ON pr.key = dat.probekey
 ')
-print("created view: tcgacats (dense categorical)")
+print("created view: tcgacats (simple categorical)")
 
 ################################################################
 ## tcga: dense numeric + clinpheno join
@@ -110,7 +90,7 @@ LEFT JOIN tcgai dat
 print("created view: tcga (dense numeric + clinpheno)")
 
 ################################################################
-## tcgacat: dense categorical + clinpheno join
+## tcgacat: simple categorical + clinpheno join
 
 dbExecute(con, 'DROP VIEW IF EXISTS tcgacat')
 dbExecute(con, '
@@ -119,15 +99,10 @@ SELECT
   cp.*,
   pr.probe,
   dat.value,
-  pt.type
-FROM probes pr
-JOIN probe_types_cat pt ON pt.probekey = pr.key
-JOIN tested t ON t.type = pt.type
-JOIN samples sa ON sa.sample = t.sample
+  dat.type
+FROM tcgacati dat
+JOIN samples sa ON sa.key = dat.samplekey
+JOIN probes pr ON pr.key = dat.probekey
 JOIN clinpheno cp ON cp.sample = sa.sample
-LEFT JOIN tcgacati dat
-  ON dat.probekey   = pr.key
-  AND dat.samplekey = sa.key
-  AND dat.type      = pt.type
 ')
-print("created view: tcgacat (dense categorical + clinpheno)")
+print("created view: tcgacat (simple categorical + clinpheno)")

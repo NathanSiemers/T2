@@ -106,3 +106,11 @@ JOIN probes pr ON pr.key = dat.probekey
 JOIN clinpheno cp ON cp.sample = sa.sample
 ')
 print("created view: tcgacat (simple categorical + clinpheno)")
+
+################################################################
+## mutationsamples: exome-sequenced samples (derived from mutation table)
+
+dbExecute(con, 'DROP VIEW IF EXISTS mutationsamples')
+dbExecute(con, 'DROP TABLE IF EXISTS mutationsamples')
+dbExecute(con, 'CREATE VIEW mutationsamples AS SELECT DISTINCT sample FROM mutation')
+print("created view: mutationsamples")

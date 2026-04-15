@@ -21,9 +21,7 @@ unique(my_mutation$effect)
 ##try(dbRemoveTable(con, 'mutation'), silent = TRUE)
 dbWriteTable(con, 'mutation', my_mutation, overwrite = TRUE, row.names = FALSE)
 
-## mutationsamples: view of all exome-sequenced samples
-dbExecute(con, 'DROP VIEW IF EXISTS mutationsamples')
-dbExecute(con, 'CREATE VIEW mutationsamples AS SELECT DISTINCT sample FROM mutation')
+## mutationsamples view is created in 250-create_views.R
 
 ## 2. add abbreviated data to tcga
 

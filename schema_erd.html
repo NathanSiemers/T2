@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Database Schema</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Database Schema</h1>
+</header>
+<h1 id="database-schema-erd">Database Schema (ERD)</h1>
+<p>Generated: 2026-04-15 03:33:49.314464</p>
+<h2 id="entity-relationships">Entity Relationships</h2>
+<p><em>(Interactive diagram renders on GitHub — see
+schema_erd.md)</em></p>
+<pre><code>samples ||--o{ tcgai : samplekey
+probes ||--o{ tcgai : probekey
+samples ||--o{ tcgacati : samplekey
+probes ||--o{ tcgacati : probekey
+types ||--o{ tcgai : type
+types ||--o{ tcgacati : type
+probes ||--o{ probe_types : probekey
+probes ||--o{ allprobes : probe
+types ||--o{ datatypes : type
+types ||--o{ nosuffix : type
+types ||--o{ tested : type
+clin ||--|| clinpheno : sample
+clinpheno ||--o{ cohorts : tumtype
+probe_types }o--|| tcgas : &quot;probekey+type&quot;
+tested }o--|| tcgas : &quot;type+sample&quot;
+tcgai }o--|| tcgas : &quot;probekey+type+samplekey&quot;
+clinpheno ||--o{ tcga : sample
+tcgas }o--|| tcga : &quot;sample+probe&quot;
+tcgacati }o--|| tcgacats : &quot;samplekey+probekey&quot;
+clinpheno ||--o{ tcgacat : sample
+tcgacati }o--|| tcgacat : &quot;samplekey+probekey&quot;
+mutation ||--o{ mutationsamples : sample
+cnv ||--o{ geo : gene</code></pre>
+<h2 id="indexes">Indexes</h2>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Index</th>
+<th>Columns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>clinpheno</td>
+<td>clinphenoidx</td>
+<td>sample</td>
+</tr>
+<tr>
+<td>mutation</td>
+<td>mutidx</td>
+<td>gene</td>
+</tr>
+<tr>
+<td>mutationsamples</td>
+<td>mutationsamplesidx</td>
+<td>sample</td>
+</tr>
+<tr>
+<td>probe_types</td>
+<td>probe_types_pk</td>
+<td>probekey, type</td>
+</tr>
+<tr>
+<td>probe_types</td>
+<td>probe_types_tp</td>
+<td>type, probekey</td>
+</tr>
+<tr>
+<td>probes</td>
+<td>probesidx</td>
+<td>probe</td>
+</tr>
+<tr>
+<td>samples</td>
+<td>samplesidx</td>
+<td>sample</td>
+</tr>
+<tr>
+<td>tcgacati</td>
+<td>tcgacatiidx_pts</td>
+<td>probekey, type, samplekey</td>
+</tr>
+<tr>
+<td>tcgai</td>
+<td>typeidx</td>
+<td>type</td>
+</tr>
+<tr>
+<td>tcgai</td>
+<td>tcgaiidx_pts</td>
+<td>probekey, type, samplekey</td>
+</tr>
+<tr>
+<td>tested</td>
+<td>tested_type</td>
+<td>type</td>
+</tr>
+<tr>
+<td>tested</td>
+<td>tested_type_sample</td>
+<td>type, sample</td>
+</tr>
+</tbody>
+</table>
+<h2 id="table-sizes">Table Sizes</h2>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Type</th>
+<th style="text-align: right;">Rows</th>
+<th style="text-align: right;">Columns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>allprobes</td>
+<td>table</td>
+<td style="text-align: right;">135,640</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td>clin</td>
+<td>table</td>
+<td style="text-align: right;">12,804</td>
+<td style="text-align: right;">37</td>
+</tr>
+<tr>
+<td>clinpheno</td>
+<td>table</td>
+<td style="text-align: right;">12,804</td>
+<td style="text-align: right;">55</td>
+</tr>
+<tr>
+<td>cnv</td>
+<td>table</td>
+<td style="text-align: right;">1,790,483</td>
+<td style="text-align: right;">5</td>
+</tr>
+<tr>
+<td>cohorts</td>
+<td>table</td>
+<td style="text-align: right;">33</td>
+<td style="text-align: right;">3</td>
+</tr>
+<tr>
+<td>datatypes</td>
+<td>table</td>
+<td style="text-align: right;">19</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td>geo</td>
+<td>table</td>
+<td style="text-align: right;">43,254</td>
+<td style="text-align: right;">11</td>
+</tr>
+<tr>
+<td>mutation</td>
+<td>table</td>
+<td style="text-align: right;">2,907,335</td>
+<td style="text-align: right;">14</td>
+</tr>
+<tr>
+<td>mutationsamples</td>
+<td>table</td>
+<td style="text-align: right;">9,104</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td>nosuffix</td>
+<td>table</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">1</td>
+</tr>
+<tr>
+<td>probe_types</td>
+<td>table</td>
+<td style="text-align: right;">91,175</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td>probes</td>
+<td>table</td>
+<td style="text-align: right;">135,603</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td>samples</td>
+<td>table</td>
+<td style="text-align: right;">13,054</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td>tcgacati</td>
+<td>table</td>
+<td style="text-align: right;">2,978,333</td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr>
+<td>tcgai</td>
+<td>table</td>
+<td style="text-align: right;">577,415,719</td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr>
+<td>tested</td>
+<td>table</td>
+<td style="text-align: right;">188,044</td>
+<td style="text-align: right;">3</td>
+</tr>
+<tr>
+<td>types</td>
+<td>table</td>
+<td style="text-align: right;">19</td>
+<td style="text-align: right;">2</td>
+</tr>
+<tr>
+<td>tcga</td>
+<td>view</td>
+<td style="text-align: right;">(view)</td>
+<td style="text-align: right;">58</td>
+</tr>
+<tr>
+<td>tcgacat</td>
+<td>view</td>
+<td style="text-align: right;">(view)</td>
+<td style="text-align: right;">58</td>
+</tr>
+<tr>
+<td>tcgacats</td>
+<td>view</td>
+<td style="text-align: right;">(view)</td>
+<td style="text-align: right;">4</td>
+</tr>
+<tr>
+<td>tcgas</td>
+<td>view</td>
+<td style="text-align: right;">(view)</td>
+<td style="text-align: right;">4</td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>

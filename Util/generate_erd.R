@@ -127,3 +127,38 @@ DBI::dbDisconnect(con2)
 lines = c(lines, "")
 writeLines(lines, "schema_erd.md")
 cat("ERD written to schema_erd.md\n")
+
+## generate PDF or HTML if pandoc is available
+if (Sys.which("pandoc") != "") {
+  ## build a print-friendly version (mermaid blocks don't render in pandoc)
+  print_lines = lines
+  mermaid_start = grep("^```mermaid", print_lines)
+  mermaid_end = grep("^```$", print_lines)
+  if (length(mermaid_start) > 0 && length(mermaid_end) > 0) {
+    mermaid_end = mermaid_end[mermaid_end > mermaid_start[1]][1]
+    block = print_lines[(mermaid_start[1]+1):(mermaid_end-1)]
+    rels = block[grepl("\\|", block) & !grepl("^\\s*%%", block)]
+    rels = trimws(rels)
+    replacement = c(
+      "## Entity Relationships",
+      "*(Interactive diagram renders on GitHub — see schema_erd.md)*",
+      "", "```", rels, "```"
+    )
+    print_lines = c(print_lines[1:(mermaid_start[1]-1)], replacement,
+                    print_lines[(mermaid_end+1):length(print_lines)])
+  }
+  tmp_md = tempfile(fileext = ".md")
+  writeLines(print_lines, tmp_md)
+  ## try PDF first (needs LaTeX), fall back to standalone HTML
+  pdf_cmd = sprintf('pandoc "%s" -o schema_erd.pdf -V geometry:margin=1in -V fontsize=10pt 2>/dev/null', tmp_md)
+  pdf_ok = suppressWarnings(system(pdf_cmd, ignore.stdout = TRUE) == 0)
+  if (pdf_ok && file.exists("schema_erd.pdf")) {
+    cat("PDF written to schema_erd.pdf\n")
+  } else {
+    try(file.remove("schema_erd.pdf"), silent = TRUE)
+    html_cmd = sprintf('pandoc "%s" -o schema_erd.html -s --metadata title="Database Schema" 2>/dev/null', tmp_md)
+    system(html_cmd, ignore.stdout = TRUE)
+    if (file.exists("schema_erd.html")) cat("HTML written to schema_erd.html\n")
+  }
+  unlink(tmp_md)
+}

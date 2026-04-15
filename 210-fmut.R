@@ -21,13 +21,9 @@ unique(my_mutation$effect)
 ##try(dbRemoveTable(con, 'mutation'), silent = TRUE)
 dbWriteTable(con, 'mutation', my_mutation, overwrite = TRUE, row.names = FALSE)
 
-## create table of all samples with mutations called
-## hopefully this is all samples exome sequenced
-try(dbRemoveTable(con, 'mutationsamples'), silent = TRUE)
-dbExecute(con, 'create table mutationsamples as select distinct sample from mutation')
-## LOOK HERE?
-dbGetQuery(con, 'select * from mutationsamples limit 10')
-dim(dbGetQuery(con, 'select * from mutationsamples' ))
+## mutationsamples: view of all exome-sequenced samples
+dbExecute(con, 'DROP VIEW IF EXISTS mutationsamples')
+dbExecute(con, 'CREATE VIEW mutationsamples AS SELECT DISTINCT sample FROM mutation')
 
 ## 2. add abbreviated data to tcga
 
@@ -55,14 +51,10 @@ tablemaker( mutationtested, r_datatype = "factor" )
 
 if(mysql){
     try(dbExecute(  con,  'drop index mutidx on mutation' ), silent = TRUE)
-    try(dbExecute(  con, 'drop index mutationsamplesidx on mutationsamples' ), silent = TRUE)
     dbExecute( con, 'alter table mutation modify gene varchar(35)')
-    dbExecute( con, 'alter table mutationsamples modify sample varchar(35)')
 } else {
     dbExecute(  con,  'drop index if exists mutidx' )
-    dbExecute(  con, 'drop index if exists mutationsamplesidx' )
 }
 
-
 dbExecute(  con, 'create index mutidx on mutation (gene)' )
-dbExecute(  con, 'create index mutationsamplesidx on mutationsamples(sample)' )
+## mutationsamples is a view — no index needed, uses mutation's sample column

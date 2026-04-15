@@ -60,6 +60,7 @@ run('280-add_signatures_to_db.R')
 run('300-final_indexing.R')
 run('250-create_views.R')
 run('290-record_environment.R')
+run('295-type_descriptions.R')
 if(optimize) run('310-optimize.R')
 run('Util/generate_erd.R')
 

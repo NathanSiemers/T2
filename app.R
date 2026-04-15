@@ -73,9 +73,9 @@ ui = fluidPage(
     checkboxInput("allComplete", "Show only results with complete information:", value = TRUE),
     actionButton("plot_btn2", "Plot"),
     tags$br(),
-    h4("Types of TCGA Data available"),
-    tableOutput('datatypes'),
-    tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),tags$br(),
+    h4("Types of TCGA Data Available"),
+    htmlOutput('datatypes'),
+    tags$br(),tags$br(),
     h5('Below is an area for my notes, you can ignore...'),
     verbatimTextOutput('print1')
 )
@@ -147,8 +147,45 @@ server = function(input, output, session) {
         if (is.null(res)) return("")
         if (is.list(res) && !is.null(res$summary)) res$summary else ""
     })
-    output$datatypes = renderTable( {
-        types %>% select(type)
+    output$datatypes = renderUI({
+        type_con = RSQLite::dbConnect(RSQLite::SQLite(), "tcga.db", flags = RSQLite::SQLITE_RO)
+        type_df = DBI::dbGetQuery(type_con, "SELECT type, description, example, reference, source_file, source_url FROM types ORDER BY type")
+        DBI::dbDisconnect(type_con)
+        ## convert PMID references to clickable PubMed links
+        type_df$reference = sapply(type_df$reference, function(ref) {
+            pmid = regmatches(ref, regexpr("PMID:\\d+", ref))
+            if (length(pmid) > 0) {
+                pmid_num = sub("PMID:", "", pmid)
+                url = paste0("https://pubmed.ncbi.nlm.nih.gov/", pmid_num)
+                sub(pmid, paste0('<a href="', url, '" target="_blank">', pmid, '</a>'), ref, fixed = TRUE)
+            } else ref
+        })
+        ## make source_url clickable
+        type_df$source_link = sapply(type_df$source_url, function(url) {
+            if (!is.na(url) && url != "") paste0('<a href="', url, '" target="_blank">Xena</a>')
+            else ""
+        })
+        header = tags$tr(
+            tags$th("Type"), tags$th("Description"),
+            tags$th("Example Probes"), tags$th("Source File"),
+            tags$th("Reference"), tags$th("Data")
+        )
+        rows = lapply(seq_len(nrow(type_df)), function(i) {
+            tags$tr(
+                tags$td(tags$code(type_df$type[i])),
+                tags$td(type_df$description[i]),
+                tags$td(tags$code(type_df$example[i])),
+                tags$td(tags$small(type_df$source_file[i])),
+                tags$td(HTML(type_df$reference[i])),
+                tags$td(HTML(type_df$source_link[i]))
+            )
+        })
+        tags$table(
+            class = "table table-striped table-condensed",
+            style = "font-size: 85%;",
+            tags$thead(header),
+            tags$tbody(rows)
+        )
     })
     output$dlknitr = downloadHandler(
         filename =  function() {

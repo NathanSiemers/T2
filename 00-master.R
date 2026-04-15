@@ -6,9 +6,11 @@ download = FALSE
 optimize = FALSE
 xena.force = FALSE
 Sys.setenv("VROOM_CONNECTION_SIZE" = 1e9)
+## comment out the line below if you don't want to delete
+## the old db and start from scratch
 source ('015-destroy_db.R', echo = TRUE, max.deparse.length = Inf)
+##
 source ('020-database_connection.R', echo = TRUE, max.deparse.length = Inf)
-
 source ('030-good.functions.R',echo = TRUE, max.deparse.length = Inf)
 source( 'tablemaker.R')
 source( 'ensure_con.R')
@@ -59,6 +61,6 @@ run('300-final_indexing.R')
 run('250-create_views.R')
 run('290-record_environment.R')
 if(optimize) run('310-optimize.R')
-
+run('Util/generate_erd.R')
 
 sessionInfo()

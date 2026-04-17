@@ -5,6 +5,16 @@
 ##   4b0a2cb 2809b6f b67ed0d 2b0ecd2 3cacb04 f5af0e7 245f470 0eb4ca9
 ##   e3ae465 a760cf2
 
+## check all required packages before starting
+required_pkgs = c("shiny", "shinythemes", "shinycssloaders", "rmarkdown",
+                  "DBI", "RSQLite", "sqldf", "ggplot2", "ggthemes",
+                  "viridis", "tidyverse", "dplyr")
+missing = required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
+if (length(missing) > 0) {
+  stop("Missing R packages: ", paste(missing, collapse = ", "),
+       "\nRun: install.packages(c('", paste(missing, collapse = "', '"), "'))")
+}
+
 library(shiny)
 library(shinythemes)
 library(shinycssloaders)

@@ -21,6 +21,7 @@ library(shinycssloaders)
 library(rmarkdown)
 library(DBI)
 
+source('global.R')
 source('database_connection_shiny.R')
 source("lib.R")
 

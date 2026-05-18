@@ -78,9 +78,9 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
         dbExecute(connection, paste0( 'delete from nosuffix where type = "', thistype, '"' ))
     }
     if(mysql){
-        dbExecute(connection, paste0('insert ignore into types values ( NULL, "', thistype, '" )' ) )
+        dbExecute(connection, paste0('insert ignore into types (key, type) values ( NULL, "', thistype, '" )' ) )
     } else {
-        dbExecute(connection, paste0('insert OR ignore into types values ( NULL, "', thistype, '" )' ) )
+        dbExecute(connection, paste0('insert OR ignore into types (key, type) values ( NULL, "', thistype, '" )' ) )
     }
     if( ! suffix ) {
         if(mysql){

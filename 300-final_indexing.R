@@ -8,4 +8,6 @@ if(mysql) {
     dbExecute(con, 'CREATE INDEX IF NOT EXISTS tcgaiidx_pts ON tcgai(probekey, type, samplekey)')
     dbExecute(con, 'CREATE INDEX IF NOT EXISTS tested_type ON tested(type)')
     dbExecute(con, 'CREATE INDEX IF NOT EXISTS tested_type_sample ON tested(type, sample)')
+    ## speeds up tumtype filters on tcga/tcgacat views (e.g. WHERE tumtype = "STAD")
+    dbExecute(con, 'CREATE INDEX IF NOT EXISTS clinpheno_tumtype_sample ON clinpheno(tumtype, sample)')
 }

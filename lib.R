@@ -6,26 +6,86 @@ library(ggplot2); library(ggthemes)
 library(viridis)
 library(tidyverse)
 source('gitr.R')
+source('dataset_registry.R')
 ################################################################
-## database connections and convenience lists
+## Multi-dataset bundle
+##
+## load_dataset_bundle(name) opens the chosen dataset's db (read-only) and
+## computes every dataset-anchored object the app needs: the probe/gene choice
+## lists, the cohort list, the clinical role map, the db path, default
+## selections, and a display title. The app calls this once at startup and
+## again on every dataset switch, then repopulates all selectize inputs from
+## the returned bundle. This is the single point that "understands" which
+## dataset is active — analogous to LimmaViewer's load_namespace_bundle().
+################################################################
+
+load_dataset_bundle = function(name) {
+  info  = dataset_info(name)
+  roles = info$roles
+  con_ds = open_dataset_con(info$path)
+
+  mygenes = pull( tbl(con_ds, 'allprobes'), probe )
+  probes  = pull( tbl(con_ds, 'probes'),    probe )
+  samples = pull( tbl(con_ds, 'samples'),   sample )
+  mutationsamples = tryCatch(pull(tbl(con_ds, 'mutationsamples'), sample),
+                             error = function(e) character(0))
+
+  ## cohort choices: prefer the cohorts table (with pretty names); otherwise
+  ## derive from the distinct values of the dataset's cohort role column.
+  mycohorts = tryCatch({
+    co = collect(tbl(con_ds, 'cohorts'))
+    v = co$cohort
+    if (!is.null(co$cohortstring)) names(v) = co$cohortstring
+    v
+  }, error = function(e) {
+    cc = roles$cohort_col
+    if (!is.null(cc) && !is.na(cc)) {
+      vals = tryCatch(
+        sort(unique(DBI::dbGetQuery(con_ds,
+          sprintf('SELECT DISTINCT "%s" AS v FROM clinpheno', cc))$v)),
+        error = function(e2) character(0))
+      stats::setNames(vals, vals)
+    } else character(0)
+  })
+
+  ## Selectable variable list: virtual handles (subtype, cohort) + all probes +
+  ## the sample-type role column when the dataset has one. Preserves the exact
+  ## TCGA ordering: subtype, cohort, <genes>, sample_type.
+  pheno_handles = c('subtype', 'cohort')
+  tail_handle   = if (!is.null(roles$sampletype_col) && !is.na(roles$sampletype_col))
+                    roles$sampletype_col else character(0)
+  mygenesplus = c(pheno_handles, mygenes, tail_handle)
+
+  list(
+    name = info$name, path = info$path, title = info$title,
+    label = info$label, roles = roles, defaults = info$defaults, con = con_ds,
+    mygenes = mygenes, probes = probes, samples = samples,
+    mutationsamples = mutationsamples, mycohorts = mycohorts,
+    mygenesplus = mygenesplus
+  )
+}
+
+################################################################
+## database connections and convenience lists (DEFAULT dataset, for startup /
+## backward compatibility — the app overrides these per selected dataset).
+
+.default_bundle = load_dataset_bundle(default_dataset())
 
 tcga = tbl(con, 'tcga')
 tcgacat = tbl(con, 'tcgacat')
-samples = pull(tbl(con, 'samples'), sample)
-mutationsamples = pull( tbl(con, 'mutationsamples'), sample )
-mygenes = pull( tbl(con, 'allprobes') , probe )
-probes = pull( tbl(con, 'probes') , probe )
+samples = .default_bundle$samples
+mutationsamples = .default_bundle$mutationsamples
+mygenes = .default_bundle$mygenes
+probes = .default_bundle$probes
 types = tbl(con, 'types')
 cohorts = tbl(con, 'cohorts')
-mycohorts = pull( cohorts, cohort )
-cohortstrings = cohorts %>% pull(cohortstring)
-names(mycohorts) = cohortstrings
+mycohorts = .default_bundle$mycohorts
 tcgas = tbl(con, 'tcgas')
 tcgai = tbl(con, 'tcgai')
 tcgacati = tbl(con, 'tcgacati')
 tcgacats = tbl(con, 'tcgacats')
 clin = tbl(con, 'clinpheno')
-mygenesplus = c( 'subtype', 'cohort', mygenes, 'sample_type')
+mygenesplus = .default_bundle$mygenesplus
 
 ################################################################
 ## make a plotter function
@@ -38,7 +98,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
     static.labels = 0.25, static.strip = 0.5, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
     condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
-    multi_y = FALSE, zscore_y = FALSE, ...
+    multi_y = FALSE, zscore_y = FALSE,
+    dbfile = gitrdb, roles = gitr_default_roles,
+    dataset_label = "TCGA Pan-Cancer 2018", ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
@@ -70,7 +132,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## save original parameter values before transformations
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
     orig_size = size; orig_facet = facet; orig_condition = condition
-    data = gitr(list.of.markers, db = db, cohort = cohort, nonormal = nonormal, noheme = noheme)
+    data = gitr(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
+                dbfile = dbfile, roles = roles)
 
     ## build data summary before any transformations
     summary_lines = c()
@@ -247,7 +310,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
     if( allComplete ) {
-        data = data[ complete.cases( data[ , c("sample","cohort", "sample_type",x,y,color,size, c(facet))] ), ]
+        ## only require completeness on columns that actually exist for this
+        ## dataset (sample_type / cohort may be absent in non-TCGA datasets)
+        complete_cols = intersect(c("sample", "cohort", "sample_type", x, y, color, size, c(facet)),
+                                  colnames(data))
+        data = data[ complete.cases( data[ , complete_cols, drop = FALSE] ), ]
     }
     data = droplevels(data)
     if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {
@@ -350,8 +417,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
     aesxy = modifyList( aesx,aesy )
     psub = paste0(psub, " Data points: ", nrow(data), '.' )
-    psub = paste(psub, "TCGA Pan-Cancer 2018.")
-    pstring = paste( "Relationship of", x, "and", y, "across TCGA" )
+    psub = paste(psub, paste0(dataset_label, "."))
+    pstring = paste( "Relationship of", x, "and", y, "across", dataset_label )
     pstring = gsub( '\\.mut', ' mutation', pstring )
     pstring = gsub( '\\.fmut', ' mutation', pstring )
     pstring = gsub( '\\.cnv', ' CNA', pstring )
@@ -494,15 +561,17 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 }
 
 
-fun_table1 = function ( input ) {
+fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles ) {
     ##    my.input = paste ('~', paste(input$x, input$y, input$color,
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
     my.input = c( input$x, input$y, input$color, input$size, input$facet )
-    gitr( my.input, nonormal = FALSE)
+    gitr( my.input, nonormal = FALSE, dbfile = dbfile, roles = roles )
 }
 
 
-fun_plot1 = function(input, reactive = TRUE) {
+fun_plot1 = function(input, reactive = TRUE,
+                     dbfile = gitrdb, roles = gitr_default_roles,
+                     dataset_label = "TCGA Pan-Cancer 2018") {
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
     }
@@ -517,6 +586,13 @@ fun_plot1 = function(input, reactive = TRUE) {
     numeric_vars = c('static.strip', 'static.size', 'static.titles',
         'static.labels', 'ncols', 'alpha')
     input[ which(names(input) %in% numeric_vars) ] = as.numeric( input[ names(input) %in% numeric_vars ] )
+    ## drop the dataset selector itself (not a plotter argument) and inject the
+    ## active dataset's db path + role map AFTER the scalar-cleaning filters
+    ## above (roles is a list and must not hit `input != ''`).
+    input[['dataset']] = NULL
+    input$dbfile = dbfile
+    input$roles = roles
+    input$dataset_label = dataset_label
     do.call(plotter, input)
 }
 

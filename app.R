@@ -38,7 +38,9 @@ inline = function (x) {  shiny::tags$div(style="display:inline-block;", x)  }
 ui = fluidPage(
     theme = shinytheme('flatly'),
     tags$head(tags$style("h6 {font-size: 75%; }")),
-    h4(a.title),
+    uiOutput('app_title'),
+    inline( selectizeInput('dataset', 'Data set', choices = NULL ) ),
+    tags$br(),
     inline( selectizeInput('x', 'Gene (X)', choices = NULL, options = list(create=TRUE), multiple = TRUE ) ),
     inline( selectizeInput('y', 'Gene (Y)', choices = NULL, options = list(create=TRUE), multiple = TRUE ) ),
     inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
@@ -96,20 +98,52 @@ ui = fluidPage(
 ################################################################
 
 server = function(input, output, session) {
-    updateSelectizeInput(session, 'condition',  choices = mygenesplus,
-                         selected = c('StromalScore.estimate'), server = TRUE)
-    updateSelectizeInput(session, 'x',  choices = mygenesplus,
-                         selected = 'cohort', server = TRUE)
-    updateSelectizeInput(session, 'y',  choices = mygenesplus,
-                         selected = 'CD8A', server = TRUE)
-    updateSelectizeInput(session, 'color',  choices = mygenesplus,
-                         selected = 'sample_type', server = TRUE)
-    updateSelectizeInput(session, 'size',  choices = mygenesplus,
-                         selected = "", server = TRUE)
-    updateSelectizeInput(session, 'cohort',  choices = c('all', mycohorts ),
-                         selected = NULL, server = TRUE)
-    updateSelectizeInput(session, 'facet',  choices = mygenesplus,
-                         selected = NULL, server = TRUE)
+    ## ---- active dataset bundle (the single object that "knows" the dataset) ----
+    bundle = reactiveVal(load_dataset_bundle(default_dataset()))
+
+    ## populate the dataset selector itself
+    updateSelectizeInput(session, 'dataset', choices = list_datasets(),
+                         selected = default_dataset(), server = TRUE)
+
+    output$app_title = renderUI(h4(bundle()$title))
+
+    ## (re)populate every dataset-dependent selectize from a bundle. Defaults
+    ## that aren't valid choices for the selected dataset fall back gracefully.
+    apply_bundle_choices = function(b) {
+        mgp = b$mygenesplus
+        d   = b$defaults
+        pick = function(sel, choices, fallback = "") {
+            sel = sel[sel %in% choices]
+            if (length(sel)) sel else fallback
+        }
+        updateSelectizeInput(session, 'condition', choices = mgp,
+                             selected = pick(d$condition, mgp), server = TRUE)
+        updateSelectizeInput(session, 'x', choices = mgp,
+                             selected = pick(d$x, mgp, if (length(mgp)) mgp[1] else ""), server = TRUE)
+        updateSelectizeInput(session, 'y', choices = mgp,
+                             selected = pick(d$y, mgp, if (length(b$mygenes)) b$mygenes[1] else ""), server = TRUE)
+        updateSelectizeInput(session, 'color', choices = mgp,
+                             selected = pick(d$color, mgp), server = TRUE)
+        updateSelectizeInput(session, 'size', choices = mgp,
+                             selected = pick(d$size, mgp), server = TRUE)
+        updateSelectizeInput(session, 'cohort', choices = c('all', b$mycohorts),
+                             selected = NULL, server = TRUE)
+        updateSelectizeInput(session, 'facet', choices = mgp,
+                             selected = NULL, server = TRUE)
+    }
+    apply_bundle_choices(bundle())
+
+    ## switching datasets: rebuild the bundle (new connection + choice lists)
+    ## and repopulate all inputs from it.
+    observeEvent(input$dataset, {
+        req(input$dataset)
+        if (identical(input$dataset, bundle()$name)) return()
+        b = load_dataset_bundle(input$dataset)
+        bundle(b)
+        apply_bundle_choices(b)
+    }, ignoreInit = TRUE)
+
+    ## ---- dataset-independent fixed-choice inputs (set once) ----
     updateSelectizeInput(session, 'smooth',  choices = c("TRUE", "FALSE"),
                          selected = 'TRUE', server = TRUE)
     updateSelectizeInput(session, 'scales',  choices = c("free", "fixed", "free_x", "free_y"),
@@ -128,21 +162,25 @@ server = function(input, output, session) {
                          selected = 8, server = TRUE)
     ## when multi_y is toggled on, add "probe" to color choices and select it
     observeEvent(input$multi_y, {
+        mgp = bundle()$mygenesplus
+        stc = bundle()$roles$sampletype_col
         if (input$multi_y) {
-            updateSelectizeInput(session, 'color', choices = c('probe', mygenesplus),
+            updateSelectizeInput(session, 'color', choices = c('probe', mgp),
                                  selected = 'probe', server = TRUE)
         } else {
-            updateSelectizeInput(session, 'color', choices = mygenesplus,
-                                 selected = 'sample_type', server = TRUE)
+            updateSelectizeInput(session, 'color', choices = mgp,
+                                 selected = if (!is.null(stc) && !is.na(stc)) stc else "",
+                                 server = TRUE)
         }
     }, ignoreInit = TRUE)
 
     plot_result = eventReactive(input$plot_btn | input$plot_btn2, {
         if( length(input$x) == 0 | length(input$y) == 0 ) { return( NULL ) }
         if( input$x[1] == "" | input$y[1] == "" ) { return(NULL) }
+        b = bundle()
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
-            fun_plot1(input)
+            fun_plot1(input, dbfile = b$path, roles = b$roles, dataset_label = b$label)
         })
     })
     output$main_plot = renderPlot({
@@ -159,9 +197,18 @@ server = function(input, output, session) {
         if (is.list(res) && !is.null(res$summary)) res$summary else ""
     })
     output$datatypes = renderUI({
-        type_con = RSQLite::dbConnect(RSQLite::SQLite(), "tcga.db", flags = RSQLite::SQLITE_RO)
-        type_df = DBI::dbGetQuery(type_con, "SELECT type, description, example, reference, source_file, source_url FROM types ORDER BY type")
-        DBI::dbDisconnect(type_con)
+        b = bundle()
+        type_con = RSQLite::dbConnect(RSQLite::SQLite(), b$path, flags = RSQLite::SQLITE_RO)
+        on.exit(DBI::dbDisconnect(type_con), add = TRUE)
+        ## description columns are optional; fall back to a bare type list
+        type_df = tryCatch(
+            DBI::dbGetQuery(type_con, "SELECT type, description, example, reference, source_file, source_url FROM types ORDER BY type"),
+            error = function(e) {
+                tdf = DBI::dbGetQuery(type_con, "SELECT type FROM types ORDER BY type")
+                tdf$description = ""; tdf$example = ""; tdf$reference = ""
+                tdf$source_file = ""; tdf$source_url = ""
+                tdf
+            })
         ## convert PMID references to clickable PubMed links
         type_df$reference = sapply(type_df$reference, function(ref) {
             pmid = regmatches(ref, regexpr("PMID:\\d+", ref))
@@ -214,7 +261,8 @@ server = function(input, output, session) {
     output$downloadData = downloadHandler(
         filename = "csvdownload.csv",
         content = function(file) {
-            write.csv(fun_table1(input), file)
+            b = bundle()
+            write.csv(fun_table1(input, dbfile = b$path, roles = b$roles), file)
         })
     output$print1 = renderPrint({
         print( str( reactiveValuesToList(input) ) )

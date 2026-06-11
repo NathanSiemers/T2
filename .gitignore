@@ -1,2 +1,4 @@
 tcga.db
 restart.txt
+*.db.backup
+datasets/*.db

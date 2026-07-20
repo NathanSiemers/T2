@@ -100,13 +100,14 @@ DATASETS_DIR <- "datasets"
       cohort_col        = meta$cohort_col     %||% NA_character_,
       subtype_col       = meta$subtype_col    %||% NA_character_,
       sampletype_col    = (meta$sampletype_col %||% "") ,
-      normal_label      = (meta$normal_label   %||% "") ,
+      ## normal_label may be a comma-separated LIST of non-tumor sample types
+      normal_label      = .split_meta(meta$normal_label),
       heme_values       = .split_meta(meta$heme_values),
       sampletype_levels = .split_meta(meta$sampletype_levels)
     )
     ## normalise empty strings to NA for the role columns
     if (!nzchar(roles$sampletype_col %||% "")) roles$sampletype_col <- NA_character_
-    if (!nzchar(roles$normal_label   %||% "")) roles$normal_label   <- NA_character_
+    if (length(roles$normal_label) == 0)       roles$normal_label   <- NA_character_
     if (length(roles$sampletype_levels) == 0)  roles$sampletype_levels <- NULL
     defaults <- list(
       x         = meta$default_x         %||% "cohort",

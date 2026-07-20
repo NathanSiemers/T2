@@ -5,6 +5,8 @@ library(DBI)
 
 ## Open a read-only connection to a specific dataset db file.
 ## (Multi-dataset support: the app opens one of these per selected dataset.)
+## The dbs are served in WAL journal mode (set at build time), so these
+## read-only connections never block an external writer and vice-versa.
 open_dataset_con = function(dbfile = 'tcga.db') {
     RSQLite::dbConnect(RSQLite::SQLite(), dbname = dbfile,
                        flags = RSQLite::SQLITE_RO)

@@ -134,9 +134,14 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## filters — each is a no-op when its role column is absent for this dataset
   stc = roles$sampletype_col
   ccol = roles$cohort_col
+  ## normal_label may name ONE or SEVERAL "non-tumor" sample-type values
+  ## (e.g. TCGA-TARGET-GTEX has Solid Tissue Normal + Normal Tissue + Cell
+  ## Line). Use %in% so a single string and a vector both work.
+  nl = roles$normal_label
+  nl = nl[!is.na(nl)]
   if (nonormal && role_has('sampletype_col') && stc %in% colnames(out) &&
-      !is.null(roles$normal_label) && !is.na(roles$normal_label))
-    out = out %>% dplyr::filter(.data[[stc]] != roles$normal_label)
+      length(nl) > 0)
+    out = out %>% dplyr::filter(! .data[[stc]] %in% nl)
   if (noheme && role_has('cohort_col') && ccol %in% colnames(out) &&
       length(roles$heme_values) > 0)
     out = out %>% dplyr::filter(!.data[[ccol]] %in% roles$heme_values)

@@ -225,6 +225,9 @@ JOIN samples sa ON sa.key = dat.samplekey
 JOIN probes pr ON pr.key = dat.probekey
 JOIN clinpheno cp ON cp.sample = sa.sample")
 
+## Serve in WAL mode so read-only app connections never block a writer.
+dbExecute(con, "PRAGMA journal_mode=WAL")
+
 cat("Built", dbpath, "\n")
 cat("  samples:", nrow(samples_tbl),
     " probes:", nrow(probes_tbl),

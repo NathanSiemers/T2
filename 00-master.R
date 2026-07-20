@@ -64,4 +64,15 @@ run('295-type_descriptions.R')
 if(optimize) run('310-optimize.R')
 run('Util/generate_erd.R')
 
+## ---- SQL-level validation of the freshly built db -------------------------
+## Reusable suite (sql_tests.R) that mimics what the Shiny app, gitr, and a
+## human analyst ask for. Runs against the canonical tcga.db and any sibling
+## datasets/*.db that exist, so a rebuild fails loudly if the schema/data drift.
+source('sql_tests.R')
+.tcga_tests = run_sql_tests('tcga.db', 'TCGA')
+for (.db in list.files('datasets', pattern='\\.db$', full.names=TRUE)) {
+  try(run_sql_tests(.db))
+}
+if (!isTRUE(.tcga_tests$ok)) warning('tcga.db SQL test suite reported FAILs')
+
 sessionInfo()

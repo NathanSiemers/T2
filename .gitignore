@@ -2,3 +2,12 @@ tcga.db
 restart.txt
 *.db.backup
 datasets/*.db
+datasets/*.db.building
+TCGATARGETGTEX/Data/
+## SQLite WAL/shared-memory sidecars (created at runtime, never commit)
+*.db-wal
+*.db-shm
+*.db-journal
+## secrets / credentials -- never commit
+*.token
+github.token

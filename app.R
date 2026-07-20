@@ -99,7 +99,8 @@ ui = fluidPage(
 
 server = function(input, output, session) {
     ## ---- active dataset bundle (the single object that "knows" the dataset) ----
-    bundle = reactiveVal(load_dataset_bundle(default_dataset()))
+    init_bundle = load_dataset_bundle(default_dataset())
+    bundle = reactiveVal(init_bundle)
 
     ## populate the dataset selector itself
     updateSelectizeInput(session, 'dataset', choices = list_datasets(),
@@ -131,7 +132,7 @@ server = function(input, output, session) {
         updateSelectizeInput(session, 'facet', choices = mgp,
                              selected = NULL, server = TRUE)
     }
-    apply_bundle_choices(bundle())
+    apply_bundle_choices(init_bundle)
 
     ## switching datasets: rebuild the bundle (new connection + choice lists)
     ## and repopulate all inputs from it.

@@ -21,7 +21,13 @@ unique(my_mutation$effect)
 ##try(dbRemoveTable(con, 'mutation'), silent = TRUE)
 dbWriteTable(con, 'mutation', my_mutation, overwrite = TRUE, row.names = FALSE)
 
-## mutationsamples view is created in 250-create_views.R
+## mutationsamples = exome-sequenced samples. Create it HERE, right after the
+## mutation table, because this script (and 260-tmb.R) query it during the
+## build. 250-create_views.R also (re)creates it for the app after the final
+## view rebuild — both are idempotent (DROP ... IF EXISTS).
+dbExecute(con, 'DROP VIEW IF EXISTS mutationsamples')
+dbExecute(con, 'DROP TABLE IF EXISTS mutationsamples')
+dbExecute(con, 'CREATE VIEW mutationsamples AS SELECT DISTINCT sample FROM mutation')
 
 ## 2. add abbreviated data to tcga
 

@@ -83,6 +83,9 @@ ui = fluidPage(
     inline( selectizeInput('static.labels', 'Axis Label Multiplier', choices = NULL  ) ),
     inline( selectizeInput('ncols', 'Multi-graph Columns', choices = NULL  ) ),
     inline( selectizeInput('smooth', 'Fit Line', choices = NULL  ) ),
+    ## survival (Kaplan-Meier) options — used when X is a time-to-event endpoint
+    inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = c(2, 3, 4, 5, 6), selected = 3) ),
+    inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = 365 * 5, min = 30, step = 30) ),
     checkboxInput("allComplete", "Show only results with complete information:", value = TRUE),
     actionButton("plot_btn2", "Plot"),
     tags$br(),

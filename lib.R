@@ -7,6 +7,7 @@ library(viridis)
 library(tidyverse)
 source('gitr.R')
 source('dataset_registry.R')
+source('marker_ops.R')           # shared: combine_markers_median_z, residualize_on
 source('survival_prototype.R')   # Kaplan-Meier survival mode (T2_ENDPOINTS, survival_km)
 ################################################################
 ## Multi-dataset bundle
@@ -282,10 +283,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     if(length(y) > 1 && !multi_y) {
         newvar = paste(y, sep = '.', collapse = '.')
-        data[ , newvar] = data %>%
-            select( y ) %>%
-                scale %>%
-                    apply( 1, median, na.rm = TRUE )
+        ## combine probes into one marker = median of per-probe z-scores (shared)
+        data[ , newvar] = combine_markers_median_z(data[ , y])
         y = newvar
     }
     multi_y_fill = FALSE
@@ -344,15 +343,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         cond_y_vars = if (pcortype == 'y' | pcortype == 'both') setdiff(y, cond_skip_y) else c()
         all_cond_vars = unique(c(cond_x_vars, cond_y_vars, condition))
         data = data[ complete.cases( data[ , all_cond_vars ] ), ]
-        for (v in cond_y_vars) {
-            smalldat = data[ , c(v, condition) ]
-            theformula = as.formula(paste(v, " ~ .  - ", v))
-            data[, v] = residuals( lm( theformula, data = smalldat ) )
-        }
-        for (v in cond_x_vars) {
-            smalldat = data[ , c(v, condition) ]
-            theformula = as.formula(paste(v, " ~ .  - ", v))
-            data[, v] = residuals( lm( theformula, data = smalldat ) )
+        ## residualize each conditioned var on the covariates (shared helper)
+        for (v in c(cond_y_vars, cond_x_vars)) {
+            data[, v] = residualize_on( data[, v], data[ , condition, drop = FALSE] )
         }
     }
     ## check for waterfall
@@ -599,11 +592,15 @@ fun_plot1 = function(input, reactive = TRUE,
     ## Kaplan-Meier plot of the Y marker's tertiles instead of a scatter.
     if (length(input$x) && input$x[1] %in% names(T2_ENDPOINTS)) {
         if (!length(input$y) || !nzchar(input$y[1]))
-            return(list(warning = "Survival plot: pick a Y marker to stratify into tertiles."))
+            return(list(warning = "Survival plot: pick a Y marker to stratify into groups."))
         return(tryCatch(
-            survival_km(y = input$y[1], endpoint = input$x[1],
+            survival_km(y = input$y, endpoint = input$x[1],
                         cohort = if (length(input$cohort)) input$cohort else "all",
                         facet  = input$facet,
+                        n_groups = if (length(input$km_groups)) as.integer(input$km_groups[1]) else 3,
+                        max_time = if (length(input$surv_max_days)) suppressWarnings(as.numeric(input$surv_max_days[1])) else 365 * 5,
+                        condition = input$condition,
+                        pcortype  = if (!is.null(input$pcortype)) input$pcortype else "none",
                         nonormal = if (!is.null(input$nonormal)) as.logical(input$nonormal)[1] else TRUE,
                         dbfile = dbfile, roles = roles),
             error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))

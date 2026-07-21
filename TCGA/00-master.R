@@ -6,6 +6,14 @@ download = FALSE
 optimize = FALSE
 xena.force = FALSE
 Sys.setenv("VROOM_CONNECTION_SIZE" = 1e9)
+## Run from THIS script's own directory (TCGA/) so pipeline-relative paths —
+## sibling scripts, Data/, ../tcga.db, ../gitr.R — all resolve. Works for
+## `Rscript TCGA/00-master.R` from anywhere; for interactive use, setwd() into
+## TCGA/ before sourcing.
+local({
+  f <- grep('^--file=', commandArgs(FALSE), value = TRUE)
+  if (length(f)) setwd(dirname(normalizePath(sub('^--file=', '', f[1]))))
+})
 ## comment out the line below if you don't want to delete
 ## the old db and start from scratch
 source ('015-destroy_db.R', echo = TRUE, max.deparse.length = Inf)
@@ -62,15 +70,20 @@ run('250-create_views.R')
 run('290-record_environment.R')
 run('295-type_descriptions.R')
 if(optimize) run('310-optimize.R')
-run('Util/generate_erd.R')
+## ERD generator is common (../Util); run it from the repo root so it finds
+## tcga.db and writes schema_erd.* alongside it — no changes to the shared file.
+local({ owd <- getwd(); on.exit(setwd(owd)); setwd('..'); source('Util/generate_erd.R') })
 
 ## ---- SQL-level validation of the freshly built db -------------------------
-## Reusable suite (sql_tests.R) that mimics what the Shiny app, gitr, and a
+## Reusable suite (../sql_tests.R) that mimics what the Shiny app, gitr, and a
 ## human analyst ask for. Runs against the canonical tcga.db and any sibling
-## datasets/*.db that exist, so a rebuild fails loudly if the schema/data drift.
-source('sql_tests.R')
-.tcga_tests = run_sql_tests('tcga.db', 'TCGA')
-for (.db in list.files('datasets', pattern='\\.db$', full.names=TRUE)) {
+## datasets/*.db, so a rebuild fails loudly if the schema/data drift. Pre-source
+## gitr + dataset_registry from the common root so sql_tests' own load guards skip.
+source('../gitr.R')
+source('../dataset_registry.R')
+source('../sql_tests.R')
+.tcga_tests = run_sql_tests('../tcga.db', 'TCGA')
+for (.db in list.files('../datasets', pattern='\\.db$', full.names=TRUE)) {
   try(run_sql_tests(.db))
 }
 if (!isTRUE(.tcga_tests$ok)) warning('tcga.db SQL test suite reported FAILs')

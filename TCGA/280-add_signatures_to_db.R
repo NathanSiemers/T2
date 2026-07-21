@@ -1,5 +1,5 @@
 library(tidyverse)
-source('gitr.R')
+source('../gitr.R')
 source('signatures.R')
 source('apply_signatures.R')
 source('tablemaker.R')

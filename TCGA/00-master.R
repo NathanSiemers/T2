@@ -1,5 +1,9 @@
-TESTING = FALSE
-TESTINGLINES = Inf
+## Config is env-overridable so the pipeline can be run against a SCRATCH db for
+## testing without ever touching the live tcga.db. Defaults reproduce the
+## production build exactly (TESTING off, full data, ../tcga.db).
+##   TCGA_TESTING=TRUE  TCGA_TESTINGLINES=2000  TCGA_DB=/path/scratch.db
+TESTING = as.logical(Sys.getenv('TCGA_TESTING', 'FALSE'))
+TESTINGLINES = local({ v <- Sys.getenv('TCGA_TESTINGLINES', ''); if (nzchar(v)) as.numeric(v) else Inf })
 mysql  = FALSE
 mysqldb = 'prod'
 download = FALSE
@@ -82,7 +86,7 @@ local({ owd <- getwd(); on.exit(setwd(owd)); setwd('..'); source('Util/generate_
 source('../gitr.R')
 source('../dataset_registry.R')
 source('../sql_tests.R')
-.tcga_tests = run_sql_tests('../tcga.db', 'TCGA')
+.tcga_tests = run_sql_tests(Sys.getenv('TCGA_DB', '../tcga.db'), 'TCGA')
 for (.db in list.files('../datasets', pattern='\\.db$', full.names=TRUE)) {
   try(run_sql_tests(.db))
 }

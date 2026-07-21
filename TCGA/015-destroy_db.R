@@ -2,6 +2,7 @@
 ## Only sourced by 00-master.R
 if (!mysql) {
   cat("Destroying old database...\n")
-  try(file.remove('../tcga.db'), silent = TRUE)
-  file.create('../tcga.db')
+  .dbp = Sys.getenv('TCGA_DB', '../tcga.db')
+  try(file.remove(.dbp), silent = TRUE)
+  file.create(.dbp)
 }

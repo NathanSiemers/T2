@@ -18,6 +18,28 @@ local({
   f <- grep('^--file=', commandArgs(FALSE), value = TRUE)
   if (length(f)) setwd(dirname(normalizePath(sub('^--file=', '', f[1]))))
 })
+
+## ---- build to a "<final>.building" file, promote atomically after tests ----
+## The whole pipeline writes to <final>.building; the live db is untouched until
+## the freshly built db passes the SQL suite, then a same-filesystem rename
+## swaps it in. A failed build leaves the live db exactly as it was.
+.final_db = Sys.getenv('TCGA_DB', '../tcga.db')
+.build_db = paste0(.final_db, '.building')
+Sys.setenv(TCGA_DB = .build_db)          # 015/020/280/310/validation all target this
+for (.s in c('', '-wal', '-shm')) try(file.remove(paste0(.build_db, .s)), silent = TRUE)
+message('Building to ', .build_db, '  (live ', .final_db, ' stays until tests pass)')
+
+promote_db = function(build, final) {
+  cc = DBI::dbConnect(RSQLite::SQLite(), build)          # fold WAL into main file
+  try(DBI::dbExecute(cc, 'PRAGMA wal_checkpoint(TRUNCATE)'), silent = TRUE)
+  DBI::dbDisconnect(cc)
+  for (sfx in c('-wal', '-shm')) {
+    try(file.remove(paste0(build, sfx)), silent = TRUE)
+    try(file.remove(paste0(final, sfx)), silent = TRUE) # stale sidecars of old db
+  }
+  file.rename(build, final)                              # atomic (same filesystem)
+}
+
 ## comment out the line below if you don't want to delete
 ## the old db and start from scratch
 source ('015-destroy_db.R', echo = TRUE, max.deparse.length = Inf)
@@ -74,22 +96,28 @@ run('250-create_views.R')
 run('290-record_environment.R')
 run('295-type_descriptions.R')
 if(optimize) run('310-optimize.R')
-## ERD generator is common (../Util); run it from the repo root so it finds
-## tcga.db and writes schema_erd.* alongside it — no changes to the shared file.
-local({ owd <- getwd(); on.exit(setwd(owd)); setwd('..'); source('Util/generate_erd.R') })
-
-## ---- SQL-level validation of the freshly built db -------------------------
-## Reusable suite (../sql_tests.R) that mimics what the Shiny app, gitr, and a
-## human analyst ask for. Runs against the canonical tcga.db and any sibling
-## datasets/*.db, so a rebuild fails loudly if the schema/data drift. Pre-source
-## gitr + dataset_registry from the common root so sql_tests' own load guards skip.
+## ---- SQL validation against the freshly built (.building) db --------------
+## Reusable suite (../sql_tests.R). Pre-source gitr + dataset_registry from the
+## common root so sql_tests' own load guards skip.
 source('../gitr.R')
 source('../dataset_registry.R')
 source('../sql_tests.R')
-.tcga_tests = run_sql_tests(Sys.getenv('TCGA_DB', '../tcga.db'), 'TCGA')
+try(dbDisconnect(con), silent = TRUE)         # release the build's RW handle
+.tcga_tests = run_sql_tests(.build_db, 'TCGA')
 for (.db in list.files('../datasets', pattern='\\.db$', full.names=TRUE)) {
   try(run_sql_tests(.db))
 }
-if (!isTRUE(.tcga_tests$ok)) warning('tcga.db SQL test suite reported FAILs')
+
+## ---- atomic promote: swap the new db in ONLY if it passed -----------------
+if (isTRUE(.tcga_tests$ok)) {
+  promote_db(.build_db, .final_db)
+  message('PROMOTED ', .build_db, ' -> ', .final_db)
+  ## regenerate the schema ERD from the promoted canonical db (repo root)
+  if (identical(.final_db, '../tcga.db'))
+    local({ owd <- getwd(); on.exit(setwd(owd)); setwd('..'); source('Util/generate_erd.R') })
+} else {
+  warning('SQL tests FAILED — live ', .final_db,
+          ' left untouched; inspect ', .build_db)
+}
 
 sessionInfo()

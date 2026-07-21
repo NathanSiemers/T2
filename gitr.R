@@ -2,6 +2,22 @@ library(DBI)
 library(dplyr)
 gitrdb = 'tcga.db'
 
+## Default (TCGA) role map. Any dataset can pass its own `roles` list to make
+## gitr dataset-agnostic; the keys below name which clinpheno columns play the
+## roles of cohort / subtype / sample-type and how the nonormal/noheme filters
+## should behave. A NULL/NA role column simply disables the corresponding
+## synthetic column or filter for that dataset.
+gitr_default_roles = list(
+  cohort_col        = "tumtype",
+  subtype_col       = "Subtype_Selected",
+  sampletype_col    = "sample_type",
+  normal_label      = "Solid Tissue Normal",
+  heme_values       = c("LAML", "THYM", "DLBC"),
+  sampletype_levels = c("Primary Tumor", "Recurrent Tumor", "Metastatic",
+                        "Additional - New Primary", "Additional Metastatic",
+                        "Primary Blood Derived Cancer - Peripheral Blood",
+                        "Solid Tissue Normal")
+)
 
 ## gitr - data retriever function
 ## Uses dense views (tcgas, tcgacats) which handle sparse data:
@@ -9,17 +25,30 @@ gitrdb = 'tcga.db'
 ##   tested + NULL in tcgai     = NA (genuine missing)
 ##   not tested                 = NA (sample not in view)
 ## Uses datatypes table to determine R class for each probe column.
+##
+## `dbfile` selects which dataset db to query; `roles` provides the dataset's
+## clinical role map (see gitr_default_roles). Together they make gitr work
+## against any T2-shaped dataset, not just TCGA.
 gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 cohort = 'all', conn = con,
                 makefactors = TRUE,
                 dbfile = gitrdb,
+                roles = gitr_default_roles,
                 db = 'tcga',
                 dbcat = 'tcgacat') {
+
+  if (is.null(roles)) roles = gitr_default_roles
+  role_has = function(key) {
+    v = roles[[key]]
+    !is.null(v) && length(v) == 1 && !is.na(v) && nzchar(v)
+  }
 
   gitrconn = RSQLite::dbConnect(RSQLite::SQLite(), dbname = dbfile, flags = RSQLite::SQLITE_RO )
   on.exit(dbDisconnect(gitrconn), add = TRUE)
 
+  ## drop empty / NA markers (e.g. an unset size/color selector arriving as "")
   probes = unique(probes)
+  probes = probes[!is.na(probes) & nzchar(probes)]
 
   clinpheno = collect(tbl(gitrconn, 'clinpheno'))
   clinpheno_cols = colnames(clinpheno)
@@ -83,31 +112,46 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     }
   }
 
-  ## join with full clinpheno if phenos requested
+  ## join with full clinpheno if phenos requested.
+  ## Synthesise the virtual columns (subtype / cohort / lcohort) from the
+  ## dataset's role map, guarded by column presence so non-TCGA datasets that
+  ## lack these columns simply don't get the corresponding virtual column.
   if (phenos) {
     probe_cols = setdiff(colnames(rout), clinpheno_cols)
-    out = clinpheno %>%
-      mutate(subtype = Subtype_Selected, lcohort = cohort, cohort = tumtype) %>%
+    out = clinpheno
+    if (role_has('subtype_col') && roles$subtype_col %in% colnames(out))
+      out$subtype = out[[roles$subtype_col]]
+    if (role_has('cohort_col') && roles$cohort_col %in% colnames(out)) {
+      if ('cohort' %in% colnames(out)) out$lcohort = out$cohort
+      out$cohort = out[[roles$cohort_col]]
+    }
+    out = out %>%
       left_join(rout[, c('sample', probe_cols), drop = FALSE], by = 'sample')
   } else {
     out = rout
   }
 
-  ## filters
-  if (nonormal)
-    out = out %>% dplyr::filter(sample_type != "Solid Tissue Normal")
-  if (noheme)
-    out = out %>% dplyr::filter(tumtype != "LAML" & tumtype != "THYM" & tumtype != "DLBC")
-  if (!is.null(cohort) && any(cohort != "all"))
+  ## filters — each is a no-op when its role column is absent for this dataset
+  stc = roles$sampletype_col
+  ccol = roles$cohort_col
+  ## normal_label may name ONE or SEVERAL "non-tumor" sample-type values
+  ## (e.g. TCGA-TARGET-GTEX has Solid Tissue Normal + Normal Tissue + Cell
+  ## Line). Use %in% so a single string and a vector both work.
+  nl = roles$normal_label
+  nl = nl[!is.na(nl)]
+  if (nonormal && role_has('sampletype_col') && stc %in% colnames(out) &&
+      length(nl) > 0)
+    out = out %>% dplyr::filter(! .data[[stc]] %in% nl)
+  if (noheme && role_has('cohort_col') && ccol %in% colnames(out) &&
+      length(roles$heme_values) > 0)
+    out = out %>% dplyr::filter(!.data[[ccol]] %in% roles$heme_values)
+  if (!is.null(cohort) && any(cohort != "all") && 'cohort' %in% colnames(out))
     out = out[out$cohort %in% cohort, ]
 
-  ## factor levels for sample_type
-  if (phenos) {
-    out$sample_type = factor(out$sample_type,
-                             levels = c("Primary Tumor", "Recurrent Tumor", "Metastatic",
-                                        "Additional - New Primary", "Additional Metastatic",
-                                        "Primary Blood Derived Cancer - Peripheral Blood",
-                                        "Solid Tissue Normal"))
+  ## factor levels for the sample-type role column (if present + declared)
+  if (phenos && role_has('sampletype_col') && stc %in% colnames(out) &&
+      !is.null(roles$sampletype_levels)) {
+    out[[stc]] = factor(out[[stc]], levels = roles$sampletype_levels)
   }
 
   ## apply R datatypes from the datatypes table

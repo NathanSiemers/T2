@@ -26,12 +26,28 @@ T2_ENDPOINTS <- c(OS  = "Overall Survival",
 
 ## Ordered cool->warm palette (Low -> High). Chosen so the translucent CI bands
 ## read as a low/high gradient and stay distinguishable where they overlap.
+## Ordered cool->warm colours for any number of groups. Hand-tuned pairs/triples
+## for the common small cases; for larger n an interpolated blue->teal->amber->red
+## ramp keeps the low/high gradient readable and the translucent CI fills clean.
 t2_km_palette <- function(n) {
-  switch(as.character(n),
-    "2" = c("#3B7DB4", "#C0392B"),
-    "3" = c("#3B7DB4", "#E3A93A", "#C0392B"),
-    "4" = c("#2C6FAD", "#2E9E88", "#E3A93A", "#C0392B"),
-    grDevices::colorRampPalette(c("#2C6FAD", "#E3A93A", "#C0392B"))(n))
+  if (n <= 1) return("#3B7DB4")
+  if (n == 2) return(c("#3B7DB4", "#C0392B"))
+  if (n == 3) return(c("#3B7DB4", "#E3A93A", "#C0392B"))
+  grDevices::colorRampPalette(c("#2C6FAD", "#2E9E88", "#E3A93A", "#C0392B"))(n)
+}
+
+## remove the outline from CI ribbons (keep only the translucent fill) so the
+## plot isn't cluttered with extra step-lines around every band.
+.km_strip_ci_border <- function(p) {
+  for (i in seq_along(p$layers)) {
+    gm <- p$layers[[i]]$geom
+    if (inherits(gm, "GeomRibbon") || grepl("ribbon|confint", tolower(class(gm)[1]))) {
+      p$layers[[i]]$aes_params$colour <- NA
+      p$layers[[i]]$aes_params$linewidth <- 0
+      if (!is.null(p$layers[[i]]$mapping)) p$layers[[i]]$mapping[["colour"]] <- NULL
+    }
+  }
+  p
 }
 
 fmtp <- function(p) {
@@ -43,7 +59,9 @@ fmtp <- function(p) {
 
 survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                         dbfile = "tcga.db", roles = NULL, nonormal = TRUE,
-                        facet = NULL, ci = TRUE, title = NULL) {
+                        facet = NULL, ci = TRUE, title = NULL,
+                        max_time = 365 * 5) {
+  n_groups <- max(2L, as.integer(n_groups))
   stopifnot(endpoint %in% names(T2_ENDPOINTS))
   y  <- y[1]; ev <- endpoint; tm <- paste0(endpoint, ".time")
   facet <- facet[!is.na(facet) & nzchar(facet)]
@@ -62,10 +80,21 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   df <- df[keep, , drop = FALSE]
   if (nrow(df) < 20) stop("too few complete cases (", nrow(df), ") for ", y, " / ", endpoint)
 
-  ## tertiles (equal-count bins) of the marker
-  labs <- switch(as.character(n_groups),
-                 "2" = c("Low", "High"), "3" = c("Low", "Mid", "High"),
-                 "4" = c("Q1", "Q2", "Q3", "Q4"), paste0("G", seq_len(n_groups)))
+  ## Restrict follow-up: administratively censor at max_time. Long, often
+  ## unreliable late TTE values are trimmed by capping every subject's follow-up
+  ## at max_time (event past it -> censored there) rather than dropping subjects.
+  capped <- !is.null(max_time) && is.finite(max_time) && max_time > 0
+  if (capped) {
+    past <- df$time > max_time
+    df$event[past] <- 0
+    df$time[past]  <- max_time
+  }
+  xmax <- if (capped) max_time else max(df$time)
+
+  ## equal-count bins (groups) of the marker
+  labs <- if (n_groups == 2) c("Low", "High")
+          else if (n_groups == 3) c("Low", "Mid", "High")
+          else paste0("Q", seq_len(n_groups))
   br <- unique(quantile(df$marker, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE))
   br[1] <- -Inf; br[length(br)] <- Inf
   df$grp <- droplevels(cut(df$marker, breaks = br, labels = labs[seq_len(length(br) - 1)],
@@ -80,14 +109,17 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
     g <- ggsurvplot_facet(fit, data = df, facet.by = facet, palette = pal,
                           conf.int = ci, conf.int.alpha = 0.15, pval = TRUE, pval.size = 3.2,
                           censor = FALSE, short.panel.labs = TRUE, nrow = NULL,
-                          legend.title = paste(y, "tertile"),
+                          xlim = c(0, xmax), break.time.by = 365,
+                          legend.title = paste(y, "group"),
                           xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
                           ggtheme = theme_minimal(base_size = 11)) +
-      ggtitle(title %||% sprintf("%s by %s tertiles — faceted by %s",
-                                 T2_ENDPOINTS[[endpoint]], y, paste(facet, collapse = " × ")))
+      ggtitle(title %||% sprintf("%s by %s %s-groups — faceted by %s",
+                                 T2_ENDPOINTS[[endpoint]], y, n_groups, paste(facet, collapse = " × ")))
+    g <- .km_strip_ci_border(g)                      # no outline on CI bands
     attr(g, "t2summary") <- sprintf(
-      "Faceted KM: %s by %s tertiles, faceted by %s (n=%d). Per-panel log-rank p shown on each panel.",
-      endpoint, y, paste(facet, collapse = " x "), nrow(df))
+      "Faceted KM: %s by %s %d-groups, faceted by %s (n=%d%s). Per-panel log-rank p shown.",
+      endpoint, y, n_groups, paste(facet, collapse = " x "), nrow(df),
+      if (capped) sprintf(", follow-up <=%dd", as.integer(max_time)) else "")
     return(g)
   }
 
@@ -108,26 +140,33 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   leglabs <- sprintf("%s  (med %s)", levels(df$grp), medlab)
   med_txt <- paste(sprintf("%s %s", levels(df$grp), medlab), collapse = "  |  ")
 
+  grp_desc <- switch(as.character(n_groups), "2" = "halves", "3" = "tertiles",
+                     "4" = "quartiles", "5" = "quintiles", sprintf("%d groups", n_groups))
+  cap_txt <- if (capped) sprintf("  •  follow-up ≤ %dd", as.integer(max_time)) else ""
+
   stat_txt <- sprintf("Log-rank p = %s\nCox HR/SD = %.2f (%.2f–%.2f), p = %s",
                       fmtp(lp), hr, lo, hi, fmtp(cp))
-  ttl <- title %||% sprintf("%s by %s tertiles%s", T2_ENDPOINTS[[endpoint]], y,
+  ttl <- title %||% sprintf("%s by %s %s%s", T2_ENDPOINTS[[endpoint]], y, grp_desc,
            if (!identical(cohort, "all")) paste0("  [", paste(cohort, collapse = ","), "]") else "  [pan-cancer]")
 
   g <- ggsurvplot(fit, data = df, pval = stat_txt, pval.size = 4.2,
-                  pval.coord = c(0.02 * max(df$time), 0.07),
+                  pval.coord = c(0.02 * xmax, 0.07),
                   conf.int = ci, conf.int.alpha = 0.16,
+                  xlim = c(0, xmax), break.time.by = 365,
                   risk.table = TRUE, risk.table.height = 0.26, tables.y.text = FALSE,
                   tables.theme = theme_cleantable(), censor.size = 2, palette = pal,
-                  legend.title = paste(y, "tertile"), legend.labs = leglabs,
+                  legend.title = paste(y, "group"), legend.labs = leglabs,
                   xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
                   title = ttl,
-                  subtitle = sprintf("n = %d    median %s:  %s", nrow(df), endpoint, med_txt),
+                  subtitle = sprintf("n = %d    median %s:  %s%s", nrow(df), endpoint, med_txt, cap_txt),
                   ggtheme = theme_minimal(base_size = 12))
+  g$plot <- .km_strip_ci_border(g$plot)              # no outline on CI bands
   attr(g, "stats") <- list(n = nrow(df), logrank_p = lp, HR_per_SD = hr, HR_CI = c(lo, hi),
-                           cox_p = cp, medians = medv)
+                           cox_p = cp, medians = medv, n_groups = n_groups, max_time = if (capped) max_time else NA)
   attr(g, "t2summary") <- sprintf(
-    "%s ~ %s tertiles (n=%d).  Median %s: %s.  Log-rank p=%s.  Cox HR/SD=%.2f (%.2f-%.2f), p=%s.",
-    endpoint, y, nrow(df), endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
+    "%s ~ %s %s (n=%d%s).  Median %s: %s.  Log-rank p=%s.  Cox HR/SD=%.2f (%.2f-%.2f), p=%s.",
+    endpoint, y, grp_desc, nrow(df), if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "",
+    endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
   g
 }
 `%||%` <- function(a, b) if (is.null(a)) b else a

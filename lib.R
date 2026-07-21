@@ -599,11 +599,13 @@ fun_plot1 = function(input, reactive = TRUE,
     ## Kaplan-Meier plot of the Y marker's tertiles instead of a scatter.
     if (length(input$x) && input$x[1] %in% names(T2_ENDPOINTS)) {
         if (!length(input$y) || !nzchar(input$y[1]))
-            return(list(warning = "Survival plot: pick a Y marker to stratify into tertiles."))
+            return(list(warning = "Survival plot: pick a Y marker to stratify into groups."))
         return(tryCatch(
             survival_km(y = input$y[1], endpoint = input$x[1],
                         cohort = if (length(input$cohort)) input$cohort else "all",
                         facet  = input$facet,
+                        n_groups = if (length(input$km_groups)) as.integer(input$km_groups[1]) else 3,
+                        max_time = if (length(input$surv_max_days)) suppressWarnings(as.numeric(input$surv_max_days[1])) else 365 * 5,
                         nonormal = if (!is.null(input$nonormal)) as.logical(input$nonormal)[1] else TRUE,
                         dbfile = dbfile, roles = roles),
             error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))

@@ -1,5 +1,10 @@
 library(tidyverse)
 source('../gitr.R')
+## Point gitr at the db being built. gitr connects to `gitrdb` (default
+## 'tcga.db') and queries the tcgas/tcgacats views, which exist by this step.
+## From the TCGA/ working directory 'tcga.db' would not resolve — use the same
+## db path the rest of the build uses.
+gitrdb = Sys.getenv('TCGA_DB', '../tcga.db')
 source('signatures.R')
 source('apply_signatures.R')
 source('tablemaker.R')

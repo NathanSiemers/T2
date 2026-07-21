@@ -332,10 +332,20 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
     ## indexed SEARCH; a SCAN means the type-leading index is missing.
     plan <- .qdf(con, sprintf(
       "EXPLAIN QUERY PLAN SELECT sample,probe,value FROM tcgacats WHERE type='%s'", ctype))
-    drives_tcgacati <- grepl("tcgacati|SEARCH dat|SCAN dat", paste(plan$detail, collapse=" "))
     scans <- any(grepl("^SCAN", plan$detail) & grepl("\\bdat\\b", plan$detail))
     if (scans) FAIL(sprintf("tcgacats WHERE type='%s' SCANs tcgacati -- add tcgacatiidx_tsp(type,...)", ctype))
     else PASS(sprintf("type='%s' indexed", ctype))
+  })
+  add("performance", "categorical PROBE query uses an index (not full SCAN)", function() {
+    ## gitr looks up categorical data BY PROBE (mutations/subtypes) via tcgacats;
+    ## this must be an indexed SEARCH, else the probekey-leading index is missing.
+    cp <- .q1(con, "SELECT pr.probe FROM probes pr JOIN tcgacati d ON d.probekey=pr.key LIMIT 1")
+    if (is.na(cp)) return(SKIP("no categorical data"))
+    plan <- .qdf(con, sprintf(
+      "EXPLAIN QUERY PLAN SELECT sample,probe,value FROM tcgacats WHERE probe='%s'", cp))
+    scans <- any(grepl("^SCAN", plan$detail) & grepl("\\bdat\\b", plan$detail))
+    if (scans) FAIL(sprintf("tcgacats WHERE probe='%s' SCANs tcgacati -- add tcgacatiidx_pts(probekey,...)", cp))
+    else PASS(sprintf("probe='%s' indexed", cp))
   })
 
   ## ---- run ------------------------------------------------------------------

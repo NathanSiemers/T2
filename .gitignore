@@ -2,7 +2,10 @@ tcga.db
 restart.txt
 *.db.backup
 datasets/*.db
-datasets/*.db.building
+## in-progress rebuilds (promoted atomically on success) + their WAL sidecars
+*.db.building
+*.db.building-wal
+*.db.building-shm
 TCGATARGETGTEX/Data/
 TCGA/Data/
 TCGA/microbe.csv

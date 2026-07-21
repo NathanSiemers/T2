@@ -18,6 +18,7 @@
 
 suppressMessages({ library(survival); library(survminer); library(ggplot2) })
 if (!exists("gitr")) source("gitr.R")
+if (!exists("combine_markers_median_z")) source("marker_ops.R")
 
 T2_ENDPOINTS <- c(OS  = "Overall Survival",
                   PFI = "Progression-Free Interval",
@@ -60,25 +61,47 @@ fmtp <- function(p) {
 survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                         dbfile = "tcga.db", roles = NULL, nonormal = TRUE,
                         facet = NULL, ci = TRUE, title = NULL,
-                        max_time = 365 * 5) {
+                        max_time = 365 * 5, condition = NULL, pcortype = "none") {
   n_groups <- max(2L, as.integer(n_groups))
   stopifnot(endpoint %in% names(T2_ENDPOINTS))
-  y  <- y[1]; ev <- endpoint; tm <- paste0(endpoint, ".time")
-  facet <- facet[!is.na(facet) & nzchar(facet)]
-  facet <- head(setdiff(facet, c(y, ev, tm)), 2)          # up to two facet vars
+  ev <- endpoint; tm <- paste0(endpoint, ".time")
+  y <- unique(y[!is.na(y) & nzchar(y)])
+  if (!length(y)) stop("no Y marker selected")
+  facet <- head(setdiff(facet[!is.na(facet) & nzchar(facet)], c(y, ev, tm)), 2)
+  ## "Remove influences of" adjusts the Y marker when pcortype includes y/both
+  condition <- unique(condition[!is.na(condition) & nzchar(condition)])
+  do_cond <- length(condition) > 0 && pcortype %in% c("y", "both")
 
-  ## pull marker + full clinical (gitr joins clinpheno, so event/time/facet come along)
-  d <- suppressWarnings(gitr(y, cohort = cohort, nonormal = nonormal,
-                             dbfile = dbfile, roles = roles))
-  miss <- setdiff(c(y, ev, tm, facet), names(d))
+  ## pull marker probe(s) + covariates + clinical (gitr joins clinpheno)
+  d <- suppressWarnings(gitr(unique(c(y, if (do_cond) condition)),
+                             cohort = cohort, nonormal = nonormal, dbfile = dbfile, roles = roles))
+  miss <- setdiff(c(y, ev, tm, facet, if (do_cond) condition), names(d))
   if (length(miss)) stop("column(s) not found: ", paste(miss, collapse = ", "))
-
   num <- function(x) suppressWarnings(as.numeric(as.character(x)))
-  df <- data.frame(marker = num(d[[y]]), time = num(d[[tm]]), event = num(d[[ev]]))
+
+  ## combine multiple Y probes into ONE marker = median of per-probe z-scores
+  ymat   <- vapply(y, function(p) num(d[[p]]), numeric(nrow(d)))
+  marker <- combine_markers_median_z(ymat)
+  ylab   <- if (length(y) > 1) sprintf("median-z(%s)", paste(y, collapse = ", ")) else y
+
+  df <- data.frame(marker = marker, time = num(d[[tm]]), event = num(d[[ev]]))
   for (fv in facet) df[[fv]] <- as.character(d[[fv]])
-  keep <- stats::complete.cases(df[, c("marker", "time", "event")]) & df$time > 0
+  cond_cols <- character(0)
+  if (do_cond) for (cv in condition) {
+    cn <- num(d[[cv]])
+    df[[cv]] <- if (mean(is.na(cn)) > 0.5) as.factor(as.character(d[[cv]])) else cn
+    cond_cols <- c(cond_cols, cv)
+  }
+  core <- c("marker", "time", "event", cond_cols)
+  keep <- stats::complete.cases(df[, core, drop = FALSE]) & df$time > 0
   df <- df[keep, , drop = FALSE]
-  if (nrow(df) < 20) stop("too few complete cases (", nrow(df), ") for ", y, " / ", endpoint)
+  if (nrow(df) < 20) stop("too few complete cases (", nrow(df), ") for ", ylab, " / ", endpoint)
+
+  ## remove the influence of covariates from the marker (shared helper), then
+  ## stratify the adjusted marker
+  if (do_cond && length(cond_cols))
+    df$marker <- residualize_on(df$marker, df[, cond_cols, drop = FALSE])
+  cond_note <- if (do_cond && length(cond_cols)) sprintf("  •  adj: %s", paste(cond_cols, collapse = ", ")) else ""
 
   ## Restrict follow-up: administratively censor at max_time. Long, often
   ## unreliable late TTE values are trimmed by capping every subject's follow-up
@@ -110,16 +133,16 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                           conf.int = ci, conf.int.alpha = 0.15, pval = TRUE, pval.size = 3.2,
                           censor = FALSE, short.panel.labs = TRUE, nrow = NULL,
                           xlim = c(0, xmax), break.time.by = 365,
-                          legend.title = paste(y, "group"),
+                          legend.title = paste(ylab, "group"),
                           xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
                           ggtheme = theme_minimal(base_size = 11)) +
       ggtitle(title %||% sprintf("%s by %s %s-groups — faceted by %s",
-                                 T2_ENDPOINTS[[endpoint]], y, n_groups, paste(facet, collapse = " × ")))
+                                 T2_ENDPOINTS[[endpoint]], ylab, n_groups, paste(facet, collapse = " × ")))
     g <- .km_strip_ci_border(g)                      # no outline on CI bands
     attr(g, "t2summary") <- sprintf(
-      "Faceted KM: %s by %s %d-groups, faceted by %s (n=%d%s). Per-panel log-rank p shown.",
-      endpoint, y, n_groups, paste(facet, collapse = " x "), nrow(df),
-      if (capped) sprintf(", follow-up <=%dd", as.integer(max_time)) else "")
+      "Faceted KM: %s by %s %d-groups, faceted by %s (n=%d%s%s). Per-panel log-rank p shown.",
+      endpoint, ylab, n_groups, paste(facet, collapse = " x "), nrow(df),
+      if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "", cond_note)
     return(g)
   }
 
@@ -146,7 +169,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
 
   stat_txt <- sprintf("Log-rank p = %s\nCox HR/SD = %.2f (%.2f–%.2f), p = %s",
                       fmtp(lp), hr, lo, hi, fmtp(cp))
-  ttl <- title %||% sprintf("%s by %s %s%s", T2_ENDPOINTS[[endpoint]], y, grp_desc,
+  ttl <- title %||% sprintf("%s by %s %s%s", T2_ENDPOINTS[[endpoint]], ylab, grp_desc,
            if (!identical(cohort, "all")) paste0("  [", paste(cohort, collapse = ","), "]") else "  [pan-cancer]")
 
   g <- ggsurvplot(fit, data = df, pval = stat_txt, pval.size = 4.2,
@@ -155,18 +178,20 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                   xlim = c(0, xmax), break.time.by = 365,
                   risk.table = TRUE, risk.table.height = 0.26, tables.y.text = FALSE,
                   tables.theme = theme_cleantable(), censor.size = 2, palette = pal,
-                  legend.title = paste(y, "group"), legend.labs = leglabs,
+                  legend.title = paste(ylab, "group"), legend.labs = leglabs,
                   xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
                   title = ttl,
-                  subtitle = sprintf("n = %d    median %s:  %s%s", nrow(df), endpoint, med_txt, cap_txt),
+                  subtitle = sprintf("n = %d    median %s:  %s%s%s", nrow(df), endpoint, med_txt, cap_txt, cond_note),
                   ggtheme = theme_minimal(base_size = 12))
   g$plot <- .km_strip_ci_border(g$plot)              # no outline on CI bands
   attr(g, "stats") <- list(n = nrow(df), logrank_p = lp, HR_per_SD = hr, HR_CI = c(lo, hi),
-                           cox_p = cp, medians = medv, n_groups = n_groups, max_time = if (capped) max_time else NA)
+                           cox_p = cp, medians = medv, n_groups = n_groups,
+                           max_time = if (capped) max_time else NA,
+                           markers = y, adjusted_for = if (do_cond) cond_cols else NULL)
   attr(g, "t2summary") <- sprintf(
-    "%s ~ %s %s (n=%d%s).  Median %s: %s.  Log-rank p=%s.  Cox HR/SD=%.2f (%.2f-%.2f), p=%s.",
-    endpoint, y, grp_desc, nrow(df), if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "",
-    endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
+    "%s ~ %s %s (n=%d%s%s).  Median %s: %s.  Log-rank p=%s.  Cox HR/SD=%.2f (%.2f-%.2f), p=%s.",
+    endpoint, ylab, grp_desc, nrow(df), if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "",
+    cond_note, endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
   g
 }
 `%||%` <- function(a, b) if (is.null(a)) b else a

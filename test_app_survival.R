@@ -30,14 +30,26 @@ testServer(shiny::shinyAppDir("."), {
   r2 <- plot_result()
   ok(inherits(r2, "ggplot") && !inherits(r2, "ggsurvplot"), "faceted endpoint -> KM grid (ggplot)")
 
-  ## ---- missing Y marker -> empty (app guards it), no crash ----
-  session$setInputs(y = "", cohort = "all", facet = "", plot_btn = 3)
+  ## ---- multiple Y probes -> median-z signature ----
+  session$setInputs(x = "OS", y = c("MKI67", "TOP2A"), cohort = "all", facet = "", plot_btn = 3)
   r3 <- plot_result()
-  ok(is.null(r3), "no Y marker -> empty plot (guarded), not a crash")
+  ok(inherits(r3, "ggsurvplot") && length(attr(r3, "stats")$markers) == 2,
+     "multiple Y -> median-z signature")
+
+  ## ---- 'Remove influences of' adjusts the marker (covariate residualization) ----
+  session$setInputs(y = "CD8A", condition = "StromalScore.estimate", pcortype = "y", plot_btn = 4)
+  r4 <- plot_result()
+  ok(inherits(r4, "ggsurvplot") && !is.null(attr(r4, "stats")$adjusted_for),
+     "Remove influences of -> covariate-adjusted marker")
+
+  ## ---- missing Y marker -> empty (app guards it), no crash ----
+  session$setInputs(y = "", condition = "", pcortype = "none", plot_btn = 5)
+  r5 <- plot_result()
+  ok(is.null(r5), "no Y marker -> empty plot (guarded), not a crash")
 
   ## ---- scatter still works when X is a normal gene ----
-  session$setInputs(x = "CD8A", y = "MKI67", plot_btn = 4)
-  r4 <- plot_result()
-  ok(is.list(r4) && !is.null(r4$plot), "normal scatter still builds")
+  session$setInputs(x = "CD8A", y = "MKI67", plot_btn = 6)
+  r6 <- plot_result()
+  ok(is.list(r6) && !is.null(r6$plot), "normal scatter still builds")
 })
 cat("== survival app-server test done ==\n")

@@ -79,12 +79,15 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   if (length(miss)) stop("column(s) not found: ", paste(miss, collapse = ", "))
   num <- function(x) suppressWarnings(as.numeric(as.character(x)))
 
-  ## combine multiple Y probes into ONE marker = median of per-probe z-scores
-  ymat   <- vapply(y, function(p) num(d[[p]]), numeric(nrow(d)))
-  marker <- combine_markers_median_z(ymat)
-  ylab   <- if (length(y) > 1) sprintf("median-z(%s)", paste(y, collapse = ", ")) else y
-
-  df <- data.frame(marker = marker, time = num(d[[tm]]), event = num(d[[ev]]))
+  ## Keep the RAW probe columns (+ covariates) so the median-z signature AND the
+  ## group cut-points can be computed WITHIN each facet group. If we z-scored /
+  ## binned over the whole pull and then faceted, a panel would show that cohort's
+  ## samples binned against the PAN-CANCER distribution — so "cohort=HNSC" and
+  ## "cohort=all, facet=cohort -> HNSC panel" would disagree.
+  ylab <- if (length(y) > 1) sprintf("median-z(%s)", paste(y, collapse = ", ")) else y
+  df <- data.frame(sample = as.character(d[["sample"]]),
+                   time = num(d[[tm]]), event = num(d[[ev]]), check.names = FALSE)
+  for (p in y)      df[[p]]  <- num(d[[p]])
   for (fv in facet) df[[fv]] <- as.character(d[[fv]])
   cond_cols <- character(0)
   if (do_cond) for (cv in condition) {
@@ -92,43 +95,48 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
     df[[cv]] <- if (mean(is.na(cn)) > 0.5) as.factor(as.character(d[[cv]])) else cn
     cond_cols <- c(cond_cols, cv)
   }
-  core <- c("marker", "time", "event", cond_cols)
-  keep <- stats::complete.cases(df[, core, drop = FALSE]) & df$time > 0
-  df <- df[keep, , drop = FALSE]
+  core <- c("time", "event", y, cond_cols)
+  df <- df[stats::complete.cases(df[, core, drop = FALSE]) & df$time > 0, , drop = FALSE]
   if (nrow(df) < 20) stop("too few complete cases (", nrow(df), ") for ", ylab, " / ", endpoint)
 
-  ## remove the influence of covariates from the marker (shared helper), then
-  ## stratify the adjusted marker
-  if (do_cond && length(cond_cols))
-    df$marker <- residualize_on(df$marker, df[, cond_cols, drop = FALSE])
+  ## restrict follow-up: administratively censor at max_time (trim long/unreliable
+  ## late TTE by capping every subject's follow-up rather than dropping subjects)
+  capped <- !is.null(max_time) && is.finite(max_time) && max_time > 0
+  if (capped) { past <- df$time > max_time; df$event[past] <- 0; df$time[past] <- max_time }
+  xmax <- if (capped) max_time else max(df$time)
   cond_note <- if (do_cond && length(cond_cols)) sprintf("  •  adj: %s", paste(cond_cols, collapse = ", ")) else ""
 
-  ## Restrict follow-up: administratively censor at max_time. Long, often
-  ## unreliable late TTE values are trimmed by capping every subject's follow-up
-  ## at max_time (event past it -> censored there) rather than dropping subjects.
-  capped <- !is.null(max_time) && is.finite(max_time) && max_time > 0
-  if (capped) {
-    past <- df$time > max_time
-    df$event[past] <- 0
-    df$time[past]  <- max_time
-  }
-  xmax <- if (capped) max_time else max(df$time)
-
-  ## equal-count bins (groups) of the marker
   labs <- if (n_groups == 2) c("Low", "High")
           else if (n_groups == 3) c("Low", "Mid", "High")
           else paste0("Q", seq_len(n_groups))
-  br <- unique(quantile(df$marker, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE))
-  br[1] <- -Inf; br[length(br)] <- Inf
-  df$grp <- droplevels(cut(df$marker, breaks = br, labels = labs[seq_len(length(br) - 1)],
-                           include.lowest = TRUE))
-  if (nlevels(df$grp) < 2) stop("marker has too few distinct values to stratify")
-  pal <- t2_km_palette(nlevels(df$grp))
 
-  fit <- survfit(Surv(time, event) ~ grp, data = df)
+  ## Build the marker (median-z of the Y probes, optionally covariate-adjusted)
+  ## and equal-count groups on a SUBSET of samples — used over the whole cohort
+  ## for a single panel, or within each facet group so a panel matches selecting
+  ## that group as the cohort.
+  add_marker_grp <- function(sub) {
+    m <- combine_markers_median_z(sub[, y, drop = FALSE])
+    if (do_cond && length(cond_cols)) m <- residualize_on(m, sub[, cond_cols, drop = FALSE])
+    br <- unique(stats::quantile(m, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE))
+    if (length(br) < 2) return(NULL)
+    br[1] <- -Inf; br[length(br)] <- Inf
+    sub$marker <- m
+    sub$grp <- cut(m, breaks = br, labels = labs[seq_len(length(br) - 1)], include.lowest = TRUE)
+    sub
+  }
 
-  ## ---------------- faceted grid ----------------
+  ## ---------------- faceted grid: signature + groups WITHIN each panel --------
   if (length(facet)) {
+    parts <- split(df, df[facet], drop = TRUE, sep = " | ")
+    keep_part <- vapply(parts, function(s) nrow(s) >= 2L * n_groups, logical(1))
+    dropped <- sum(!keep_part)
+    parts <- lapply(parts[keep_part], add_marker_grp)
+    parts <- parts[!vapply(parts, is.null, logical(1))]
+    df <- if (length(parts)) do.call(rbind, parts) else NULL
+    if (is.null(df) || nrow(df) < 20) stop("too few samples per facet group to form ", n_groups, " groups")
+    df <- df[!is.na(df$grp), , drop = FALSE]; df$grp <- droplevels(df$grp)
+    fit <- survfit(Surv(time, event) ~ grp, data = df)
+    pal <- t2_km_palette(nlevels(df$grp))
     g <- ggsurvplot_facet(fit, data = df, facet.by = facet, palette = pal,
                           conf.int = ci, conf.int.alpha = 0.15, pval = TRUE, pval.size = 3.2,
                           censor = FALSE, short.panel.labs = TRUE, nrow = NULL,
@@ -136,15 +144,25 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                           legend.title = paste(ylab, "group"),
                           xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
                           ggtheme = theme_minimal(base_size = 11)) +
-      ggtitle(title %||% sprintf("%s by %s %s-groups — faceted by %s",
+      ggtitle(title %||% sprintf("%s by %s %s-groups (within panel) — faceted by %s",
                                  T2_ENDPOINTS[[endpoint]], ylab, n_groups, paste(facet, collapse = " × ")))
     g <- .km_strip_ci_border(g)                      # no outline on CI bands
     attr(g, "t2summary") <- sprintf(
-      "Faceted KM: %s by %s %d-groups, faceted by %s (n=%d%s%s). Per-panel log-rank p shown.",
+      "Faceted KM: %s by %s %d-groups computed WITHIN each %s panel (n=%d%s%s%s). Per-panel log-rank p shown.",
       endpoint, ylab, n_groups, paste(facet, collapse = " x "), nrow(df),
-      if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "", cond_note)
+      if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "", cond_note,
+      if (dropped) sprintf(", %d small panel(s) dropped", dropped) else "")
+    attr(g, "km_data") <- df                          # sample, grp, facet — for tests
     return(g)
   }
+
+  ## ---------------- single panel: signature + groups over the whole cohort ----
+  df <- add_marker_grp(df)
+  if (is.null(df)) stop("marker has too few distinct values to stratify")
+  df <- df[!is.na(df$grp), , drop = FALSE]; df$grp <- droplevels(df$grp)
+  if (nlevels(df$grp) < 2) stop("marker has too few distinct values to stratify")
+  pal <- t2_km_palette(nlevels(df$grp))
+  fit <- survfit(Surv(time, event) ~ grp, data = df)
 
   ## ---------------- single panel: stats + median + shaded CIs ----------------
   lr <- survdiff(Surv(time, event) ~ grp, data = df)
@@ -192,6 +210,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
     "%s ~ %s %s (n=%d%s%s).  Median %s: %s.  Log-rank p=%s.  Cox HR/SD=%.2f (%.2f-%.2f), p=%s.",
     endpoint, ylab, grp_desc, nrow(df), if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "",
     cond_note, endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
+  attr(g, "km_data") <- df                            # sample, grp — for tests
   g
 }
 `%||%` <- function(a, b) if (is.null(a)) b else a

@@ -244,11 +244,40 @@ server = function(input, output, session) {
                 tags$td(HTML(type_df$source_link[i]))
             )
         })
-        tags$table(
-            class = "table table-striped table-condensed",
-            style = "font-size: 85%;",
-            tags$thead(header),
-            tags$tbody(rows)
+        ## Survival endpoints are clinical columns (not `types` rows), so note
+        ## them explicitly: selecting one as X switches to time-to-event analysis.
+        survival_note <- tags$div(
+            style = "margin-top: 16px; padding: 12px 16px; border-left: 4px solid #3B7DB4; background: #f6f8fa; font-size: 90%;",
+            tags$b("Survival endpoints — time-to-event analysis (Kaplan–Meier + Cox)"),
+            tags$p(style = "margin: 6px 0 4px",
+                "Select ", tags$code("OS"), " (Overall Survival), ", tags$code("PFI"),
+                " (Progression-Free Interval), ", tags$code("DSS"),
+                " (Disease-Specific Survival), or ", tags$code("DFI"),
+                " (Disease-Free Interval) as the ", tags$b("Gene (X)"),
+                " variable to switch from a scatter plot to a ", tags$b("Kaplan–Meier"),
+                " survival plot: the ", tags$b("Gene (Y)"),
+                " marker is split into tertiles (Low / Mid / High), with shaded confidence bands, ",
+                "median survival per tertile, and the ", tags$b("log-rank"), " p-value plus a ",
+                tags$b("Cox proportional-hazards"), " hazard ratio (per 1 SD, with 95% CI) embedded in the plot. ",
+                "Faceting via ", tags$b("“Graph for each”"), " produces a grid of per-group KM plots."),
+            tags$p(style = "margin: 2px 0 0; color: #666",
+                "Each endpoint pairs an event indicator (1 = event, 0 = censored) with its time in days ",
+                "(", tags$code("OS.time"), ", ", tags$code("PFI.time"), ", ",
+                tags$code("DSS.time"), ", ", tags$code("DFI.time"), "). Source: Liu ",
+                tags$i("et al."), " 2018, ",
+                tags$i("An Integrated TCGA Pan-Cancer Clinical Data Resource"),
+                " (Cell 173:400–416, ",
+                tags$a(href = "https://pubmed.ncbi.nlm.nih.gov/29625055", target = "_blank", "PMID:29625055"),
+                ").")
+        )
+        tagList(
+            tags$table(
+                class = "table table-striped table-condensed",
+                style = "font-size: 85%;",
+                tags$thead(header),
+                tags$tbody(rows)
+            ),
+            survival_note
         )
     })
     output$dlknitr = downloadHandler(

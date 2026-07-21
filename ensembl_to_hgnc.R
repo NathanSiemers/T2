@@ -44,7 +44,12 @@ load_ensembl_hgnc_map <- function(probemap, verbose = TRUE) {
     pm <- pm[!id %in% amb]
   }
   if (verbose) cat(sprintf("load_ensembl_hgnc_map: %d Ensembl->HGNC entries\n", nrow(pm)))
-  setNames(pm$gene, pm$id)
+  out <- setNames(pm$gene, pm$id)
+  ## carry the ambiguous ids so collapse_ensembl_to_hgnc can DROP those rows
+  ## (an ambiguous id is absent from the map, otherwise indistinguishable from a
+  ## genuinely unmapped id, which is instead kept as-is).
+  attr(out, "ambiguous") <- amb
+  out
 }
 
 ## Collapse an Ensembl-gene expression matrix to HGNC symbols.
@@ -68,6 +73,18 @@ collapse_ensembl_to_hgnc <- function(expr, map,
   idcol   <- names(dt)[1]
   samples <- setdiff(names(dt), idcol)
   ids     <- as.character(dt[[idcol]])
+
+  ## DROP Ensembl ids that map to >1 HGNC symbol (ambiguous) entirely.
+  amb <- attr(map, "ambiguous")
+  if (!is.null(amb) && length(amb)) {
+    strip  <- function(x) sub("\\.[0-9]+$", "", x)
+    is_amb <- ids %in% amb | strip(ids) %in% strip(amb)
+    if (any(is_amb)) {
+      if (verbose) cat(sprintf("collapse_ensembl_to_hgnc: dropping %d ambiguous rows\n", sum(is_amb)))
+      dt  <- dt[!is_amb]
+      ids <- ids[!is_amb]
+    }
+  }
 
   ## resolve label: HGNC symbol if mapped, else keep the Ensembl id. Try a
   ## version-stripped fallback for ids absent from the (versioned) map.

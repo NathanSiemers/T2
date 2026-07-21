@@ -189,12 +189,17 @@ server = function(input, output, session) {
         if (is.null(res)) return(NULL)
         if (is.list(res) && !is.null(res$warning)) {
             showNotification(res$warning, type = "warning", duration = 10)
+            if (is.null(res$plot)) return(NULL)
         }
+        ## Survival mode returns a ggsurvplot (a list with $plot + $table); print
+        ## the whole object so the risk table renders too, not just the curve.
+        if (inherits(res, "ggsurvplot")) return(res)
         if (is.list(res) && !is.null(res$plot)) res$plot else res
     })
     output$plot_summary = renderText({
         res = plot_result()
         if (is.null(res)) return("")
+        if (!is.null(attr(res, "t2summary"))) return(attr(res, "t2summary"))
         if (is.list(res) && !is.null(res$summary)) res$summary else ""
     })
     output$datatypes = renderUI({

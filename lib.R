@@ -7,6 +7,7 @@ library(viridis)
 library(tidyverse)
 source('gitr.R')
 source('dataset_registry.R')
+source('survival_prototype.R')   # Kaplan-Meier survival mode (T2_ENDPOINTS, survival_km)
 ################################################################
 ## Multi-dataset bundle
 ##
@@ -593,6 +594,21 @@ fun_plot1 = function(input, reactive = TRUE,
     input$dbfile = dbfile
     input$roles = roles
     input$dataset_label = dataset_label
+
+    ## Survival mode: if X is a time-to-event endpoint (OS/PFI/DSS/DFI), draw a
+    ## Kaplan-Meier plot of the Y marker's tertiles instead of a scatter.
+    if (length(input$x) && input$x[1] %in% names(T2_ENDPOINTS)) {
+        if (!length(input$y) || !nzchar(input$y[1]))
+            return(list(warning = "Survival plot: pick a Y marker to stratify into tertiles."))
+        return(tryCatch(
+            survival_km(y = input$y[1], endpoint = input$x[1],
+                        cohort = if (length(input$cohort)) input$cohort else "all",
+                        facet  = input$facet,
+                        nonormal = if (!is.null(input$nonormal)) as.logical(input$nonormal)[1] else TRUE,
+                        dbfile = dbfile, roles = roles),
+            error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))
+    }
+
     do.call(plotter, input)
 }
 

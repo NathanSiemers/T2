@@ -1,7 +1,7 @@
 sqlvacuum = TRUE
 if( ! mysql) {
       if( sqlvacuum ) {
-	    system('sqlite3 tcga.db "VACUUM;"')
+	    system(paste0('sqlite3 ', Sys.getenv('TCGA_DB','../tcga.db'), ' "VACUUM;"'))
 	}
   } else {
       if( optimize ) {

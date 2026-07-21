@@ -4,7 +4,7 @@ try(dbDisconnect(con), silent = TRUE)
 
 get_db_con = function(){
   if( ! mysql ) {
-    db = 'tcga.db'
+    db = Sys.getenv('TCGA_DB', '../tcga.db')
     RSQLite::dbConnect(RSQLite::SQLite(), dbname = db, flags = RSQLite::SQLITE_RW )
   } else {
     if ( ! require( 'RMySQL' ) ) {  install.packages('RMySQL')  }

@@ -4,6 +4,8 @@ restart.txt
 datasets/*.db
 datasets/*.db.building
 TCGATARGETGTEX/Data/
+TCGA/Data/
+TCGA/microbe.csv
 ## SQLite WAL/shared-memory sidecars (created at runtime, never commit)
 *.db-wal
 *.db-shm
@@ -11,3 +13,6 @@ TCGATARGETGTEX/Data/
 ## secrets / credentials -- never commit
 *.token
 github.token
+## build logs + editor lockfiles (regenerable / transient)
+rebuild*.log
+.#*

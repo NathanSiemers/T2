@@ -20,8 +20,8 @@ if(mysql) {
     dbExecute(con, 'CREATE INDEX IF NOT EXISTS tested_type_sample ON tested(type, sample)')
     ## speeds up tumtype filters on tcga/tcgacat views (e.g. WHERE tumtype = "STAD")
     dbExecute(con, 'CREATE INDEX IF NOT EXISTS clinpheno_tumtype_sample ON clinpheno(tumtype, sample)')
-    ## Serve in WAL journal mode: read-only app connections never block an
-    ## external writer (e.g. adding an index) and vice-versa. WAL is a
-    ## persistent property of the db file, so setting it once here is enough.
+    ## WAL while building (faster writes, readers never block the builder).
+    ## promote_db() in 00-master.R switches the finished db back to
+    ## rollback-journal mode for serving (single file, no -wal/-shm).
     dbExecute(con, 'PRAGMA journal_mode=WAL')
 }

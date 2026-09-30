@@ -29,10 +29,17 @@ Sys.setenv(TCGA_DB = .build_db)          # 015/020/280/310/validation all target
 for (.s in c('', '-wal', '-shm')) try(file.remove(paste0(.build_db, .s)), silent = TRUE)
 message('Building to ', .build_db, '  (live ', .final_db, ' stays until tests pass)')
 
+## The finished db is switched from WAL (used while building) to classic
+## rollback-journal mode, so it is ONE self-contained file: it can be copied to
+## /scratch/shinyusb/T2 and read by the read-only app containers with no
+## -wal/-shm sidecar files. The served copy is never written to.
 promote_db = function(build, final) {
   cc = DBI::dbConnect(RSQLite::SQLite(), build)          # fold WAL into main file
   try(DBI::dbExecute(cc, 'PRAGMA wal_checkpoint(TRUNCATE)'), silent = TRUE)
+  jm = DBI::dbGetQuery(cc, 'PRAGMA journal_mode=DELETE')[[1]]
   DBI::dbDisconnect(cc)
+  if (!identical(tolower(jm), 'delete'))
+    stop('could not switch ', build, ' to rollback-journal mode (got ', jm, ')')
   for (sfx in c('-wal', '-shm')) {
     try(file.remove(paste0(build, sfx)), silent = TRUE)
     try(file.remove(paste0(final, sfx)), silent = TRUE) # stale sidecars of old db

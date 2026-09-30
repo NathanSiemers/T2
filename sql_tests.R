@@ -320,10 +320,12 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
     t <- system.time(.qdf(con, sprintf("SELECT sample,value FROM tcgas WHERE probe='%s'", gene)))[["elapsed"]]
     if (t > 60) FAIL(sprintf("%.1fs (>60s) -- check indexes", t)) else PASS(sprintf("%.2fs", t))
   })
-  add("serving", "db is in WAL journal mode (readers never block writers)", function() {
+  add("serving", "db is a single file (rollback-journal mode, no -wal/-shm needed)", function() {
     jm <- .q1(con, "PRAGMA journal_mode")
-    if (identical(tolower(jm), "wal")) PASS(jm)
-    else WARN(sprintf("journal_mode=%s (not WAL: a held read lock can block a maintenance writer)", jm))
+    if (identical(tolower(jm), "delete")) PASS(jm)
+    else if (identical(tolower(jm), "wal"))
+      WARN("journal_mode=wal: read-only app containers need its -wal/-shm files; run PRAGMA journal_mode=DELETE before copying it into place (00-master.R's promote_db does this for tcga.db)")
+    else WARN(sprintf("journal_mode=%s", jm))
   })
   add("performance", "categorical type filter uses an index (not full SCAN)", function() {
     ctype <- .q1(con, "SELECT type FROM tcgacati LIMIT 1")

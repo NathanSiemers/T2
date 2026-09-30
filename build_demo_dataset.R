@@ -225,8 +225,9 @@ JOIN samples sa ON sa.key = dat.samplekey
 JOIN probes pr ON pr.key = dat.probekey
 JOIN clinpheno cp ON cp.sample = sa.sample")
 
-## Serve in WAL mode so read-only app connections never block a writer.
-dbExecute(con, "PRAGMA journal_mode=WAL")
+## Serve in rollback-journal mode: a single file, readable by the read-only
+## app containers without -wal/-shm sidecars (see finalize_t2_core).
+dbExecute(con, "PRAGMA journal_mode=DELETE")
 
 cat("Built", dbpath, "\n")
 cat("  samples:", nrow(samples_tbl),

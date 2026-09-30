@@ -96,7 +96,8 @@ finalize_t2_core <- function(con) {
   build_t2_probe_types(con)
   create_t2_core_indexes(con)
   create_t2_core_views(con)
-  ## Serve in WAL mode so read-only app connections never block an external
-  ## writer (and vice-versa). Persistent property of the db file.
-  DBI::dbExecute(con, "PRAGMA journal_mode=WAL")
+  ## Serve in rollback-journal mode: the db is built elsewhere and copied into
+  ## place, never written while served, and read by read-only containers that
+  ## can't create -wal/-shm files. Persistent property of the db file.
+  DBI::dbExecute(con, "PRAGMA journal_mode=DELETE")
 }

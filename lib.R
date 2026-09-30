@@ -25,6 +25,7 @@ load_dataset_bundle = function(name) {
   info  = dataset_info(name)
   roles = info$roles
   con_ds = open_dataset_con(info$path)
+  on.exit(DBI::dbDisconnect(con_ds), add = TRUE)   # choice lists are collected; don't leak a handle per switch
 
   mygenes = pull( tbl(con_ds, 'allprobes'), probe )
   probes  = pull( tbl(con_ds, 'probes'),    probe )
@@ -60,7 +61,7 @@ load_dataset_bundle = function(name) {
 
   list(
     name = info$name, path = info$path, title = info$title,
-    label = info$label, roles = roles, defaults = info$defaults, con = con_ds,
+    label = info$label, roles = roles, defaults = info$defaults,
     mygenes = mygenes, probes = probes, samples = samples,
     mutationsamples = mutationsamples, mycohorts = mycohorts,
     mygenesplus = mygenesplus
@@ -478,7 +479,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
     }
     if(  !is.null(facet[1])  ) {
-        my.formula = as.formula(paste( '~', paste(facet, collapse = ' + ' ) ))
+        ## facet names are used as symbols, never parsed as R code
+        my.formula = vars(!!!rlang::syms(facet))
         ## when x is categorical, upgrade to free_x so each panel drops empty levels
         facet_scales = scales
         if (is.factor(data[, x]) && facet_scales == 'fixed') facet_scales = 'free_x'
@@ -569,6 +571,9 @@ fun_plot1 = function(input, reactive = TRUE,
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
     }
+    ## only whitelisted plotter arguments (see input_validation.R); anything a
+    ## client invents (facet.formula, extra, evaluate_vars, ...) is dropped
+    input = input[ names(input) %in% T2_INPUT_ARGS ]
     if(FALSE){
     input =   list(x='ABCA1',y='HLA-E',shape = "",size=NULL,color="",static.size="5")
 }

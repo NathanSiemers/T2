@@ -73,12 +73,12 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
   ## fetch db probes in a single query using the dense views
   if (length(db_probes) > 0) {
-    probe_sql = paste(sprintf("'%s'", db_probes), collapse = ", ")
+    ## bound parameters, never pasted into the SQL text
+    in_list = function(n) paste(rep('?', n), collapse = ", ")
 
     ## try numeric view first
-    num_sql = sprintf("SELECT sample, probe, value FROM tcgas WHERE probe IN (%s)", probe_sql)
-    cat(num_sql, "\n")
-    num_result = dbGetQuery(gitrconn, num_sql)
+    num_sql = sprintf("SELECT sample, probe, value FROM tcgas WHERE probe IN (%s)", in_list(length(db_probes)))
+    num_result = dbGetQuery(gitrconn, num_sql, params = as.list(db_probes))
     cat(nrow(num_result), "rows returned\n")
 
     ## try categorical view for any probes not found in numeric
@@ -86,10 +86,8 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     missing_probes = setdiff(db_probes, found_probes)
 
     if (length(missing_probes) > 0) {
-      cat_sql = paste(sprintf("'%s'", missing_probes), collapse = ", ")
-      cat_query = sprintf("SELECT sample, probe, value FROM tcgacats WHERE probe IN (%s)", cat_sql)
-      cat(cat_query, "\n")
-      cat_result = dbGetQuery(gitrconn, cat_query)
+      cat_query = sprintf("SELECT sample, probe, value FROM tcgacats WHERE probe IN (%s)", in_list(length(missing_probes)))
+      cat_result = dbGetQuery(gitrconn, cat_query, params = as.list(missing_probes))
       cat(nrow(cat_result), "rows returned\n")
     } else {
       cat_result = data.frame(sample = character(0), probe = character(0),
@@ -175,7 +173,7 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
       ## batch lookup for nosuffix probes (rna, tmb, sig, estimate)
       unknown = probe_cols[is.na(probe_dtypes)]
       if (length(unknown) > 0) {
-        uq_sql = paste(sprintf("'%s'", unknown), collapse = ", ")
+        uq_sql = paste(rep('?', length(unknown)), collapse = ", ")
         ns_types = dbGetQuery(gitrconn, sprintf(
           "SELECT pr.probe, pt.type FROM probes pr
            JOIN probe_types pt ON pt.probekey = pr.key
@@ -184,7 +182,8 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
            SELECT pr.probe, dat.type FROM probes pr
            JOIN tcgacati dat ON dat.probekey = pr.key
            WHERE pr.probe IN (%s)
-           GROUP BY pr.probe, dat.type", uq_sql, uq_sql))
+           GROUP BY pr.probe, dat.type", uq_sql, uq_sql),
+          params = as.list(c(unknown, unknown)))
         for (i in seq_len(nrow(ns_types))) {
           idx = which(probe_cols == ns_types$probe[i])
           if (length(idx) > 0 && ns_types$type[i] %in% names(dtype_lookup)) {

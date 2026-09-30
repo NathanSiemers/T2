@@ -24,6 +24,7 @@ library(DBI)
 source('global.R')
 source('database_connection_shiny.R')
 source("lib.R")
+source("input_validation.R")
 
 ## convenience functions
 nbsp = function(n) {
@@ -41,8 +42,8 @@ ui = fluidPage(
     uiOutput('app_title'),
     inline( selectizeInput('dataset', 'Data set', choices = NULL ) ),
     tags$br(),
-    inline( selectizeInput('x', 'Gene (X)', choices = NULL, options = list(create=TRUE), multiple = TRUE ) ),
-    inline( selectizeInput('y', 'Gene (Y)', choices = NULL, options = list(create=TRUE), multiple = TRUE ) ),
+    inline( selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE ) ),
+    inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE ) ),
     inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
     inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
     inline( selectizeInput('color', 'color', choices = NULL) ),
@@ -179,12 +180,13 @@ server = function(input, output, session) {
     }, ignoreInit = TRUE)
 
     plot_result = eventReactive(input$plot_btn | input$plot_btn2, {
-        if( length(input$x) == 0 | length(input$y) == 0 ) { return( NULL ) }
-        if( input$x[1] == "" | input$y[1] == "" ) { return(NULL) }
         b = bundle()
+        ## whitelist + validate every input before it reaches the plotter/SQL
+        inp = sanitize_t2_input(input, b)
+        if( length(inp$x) == 0 | length(inp$y) == 0 ) { return( NULL ) }
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
-            fun_plot1(input, dbfile = b$path, roles = b$roles, dataset_label = b$label)
+            fun_plot1(inp, reactive = FALSE, dbfile = b$path, roles = b$roles, dataset_label = b$label)
         })
     })
     output$main_plot = renderPlot({
@@ -283,24 +285,11 @@ server = function(input, output, session) {
             survival_note
         )
     })
-    output$dlknitr = downloadHandler(
-        filename =  function() {
-            paste0( input$x, '.', input$y, '.', 'tcgareport.', Sys.Date(),  '.pptx' )
-        },
-        content = function(file) {
-            ofile = file.path( tempdir(), "report.pptx" )
-            rmarkdown::render('report.R',
-                              intermediates_dir = tempdir(),
-                              output_file = ofile,
-                              powerpoint_presentation(reference_doc = file.path(getwd(), 'template.pptx') )
-                              )
-            file.copy( ofile, file, overwrite = TRUE )
-        }  )
     output$downloadData = downloadHandler(
         filename = "csvdownload.csv",
         content = function(file) {
             b = bundle()
-            write.csv(fun_table1(input, dbfile = b$path, roles = b$roles), file)
+            write.csv(fun_table1(sanitize_t2_input(input, b), dbfile = b$path, roles = b$roles), file)
         })
     output$print1 = renderPrint({
         print( str( reactiveValuesToList(input) ) )

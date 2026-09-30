@@ -1,6 +1,6 @@
 # Database Schema (ERD)
 
-Generated: 2026-04-15 03:33:49.314464
+Generated: 2026-07-21 05:13:15.768165
 
 ```mermaid
 erDiagram
@@ -76,9 +76,6 @@ erDiagram
         string DNA_VAF
         string _plus_4_more_columns
     }
-    mutationsamples {
-        string sample
-    }
     nosuffix {
         string type
     }
@@ -114,6 +111,14 @@ erDiagram
     types {
         string key
         string type
+        string description
+        string example
+        string reference
+        string source_url
+        string source_file
+    }
+    mutationsamples {
+        string sample
     }
     tcga {
         string sample
@@ -195,13 +200,13 @@ erDiagram
 | Table | Index | Columns |
 |-------|-------|---------|
 | clinpheno | clinphenoidx | sample |
+| clinpheno | clinpheno_tumtype_sample | tumtype, sample |
 | mutation | mutidx | gene |
-| mutationsamples | mutationsamplesidx | sample |
 | probe_types | probe_types_pk | probekey, type |
 | probe_types | probe_types_tp | type, probekey |
 | probes | probesidx |  probe  |
 | samples | samplesidx |  sample  |
-| tcgacati | tcgacatiidx_pts | probekey, type, samplekey |
+| tcgacati | tcgacatiidx_tsp | type, samplekey, probekey |
 | tcgai | typeidx |  type  |
 | tcgai | tcgaiidx_pts | probekey, type, samplekey |
 | tested | tested_type | type |
@@ -219,7 +224,6 @@ erDiagram
 | datatypes | table | 19 | 2 |
 | geo | table | 43,254 | 11 |
 | mutation | table | 2,907,335 | 14 |
-| mutationsamples | table | 9,104 | 1 |
 | nosuffix | table | 3 | 1 |
 | probe_types | table | 91,175 | 2 |
 | probes | table | 135,603 | 2 |
@@ -227,7 +231,8 @@ erDiagram
 | tcgacati | table | 2,978,333 | 4 |
 | tcgai | table | 577,415,719 | 4 |
 | tested | table | 188,044 | 3 |
-| types | table | 19 | 2 |
+| types | table | 19 | 7 |
+| mutationsamples | view | (view) | 1 |
 | tcga | view | (view) | 58 |
 | tcgacat | view | (view) | 58 |
 | tcgacats | view | (view) | 4 |

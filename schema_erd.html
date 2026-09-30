@@ -176,7 +176,7 @@
 <h1 class="title">Database Schema</h1>
 </header>
 <h1 id="database-schema-erd">Database Schema (ERD)</h1>
-<p>Generated: 2026-04-15 03:33:49.314464</p>
+<p>Generated: 2026-07-21 05:13:15.768165</p>
 <h2 id="entity-relationships">Entity Relationships</h2>
 <p><em>(Interactive diagram renders on GitHub — see
 schema_erd.md)</em></p>
@@ -219,14 +219,14 @@ cnv ||--o{ geo : gene</code></pre>
 <td>sample</td>
 </tr>
 <tr>
+<td>clinpheno</td>
+<td>clinpheno_tumtype_sample</td>
+<td>tumtype, sample</td>
+</tr>
+<tr>
 <td>mutation</td>
 <td>mutidx</td>
 <td>gene</td>
-</tr>
-<tr>
-<td>mutationsamples</td>
-<td>mutationsamplesidx</td>
-<td>sample</td>
 </tr>
 <tr>
 <td>probe_types</td>
@@ -250,8 +250,8 @@ cnv ||--o{ geo : gene</code></pre>
 </tr>
 <tr>
 <td>tcgacati</td>
-<td>tcgacatiidx_pts</td>
-<td>probekey, type, samplekey</td>
+<td>tcgacatiidx_tsp</td>
+<td>type, samplekey, probekey</td>
 </tr>
 <tr>
 <td>tcgai</td>
@@ -335,12 +335,6 @@ cnv ||--o{ geo : gene</code></pre>
 <td style="text-align: right;">14</td>
 </tr>
 <tr>
-<td>mutationsamples</td>
-<td>table</td>
-<td style="text-align: right;">9,104</td>
-<td style="text-align: right;">1</td>
-</tr>
-<tr>
 <td>nosuffix</td>
 <td>table</td>
 <td style="text-align: right;">3</td>
@@ -386,7 +380,13 @@ cnv ||--o{ geo : gene</code></pre>
 <td>types</td>
 <td>table</td>
 <td style="text-align: right;">19</td>
-<td style="text-align: right;">2</td>
+<td style="text-align: right;">7</td>
+</tr>
+<tr>
+<td>mutationsamples</td>
+<td>view</td>
+<td style="text-align: right;">(view)</td>
+<td style="text-align: right;">1</td>
 </tr>
 <tr>
 <td>tcga</td>

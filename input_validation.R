@@ -49,7 +49,8 @@ T2_INPUT_ARGS = c('x', 'y', 'color', 'size', 'cohort', 'facet', 'condition',
 
 ## input: shiny input (reactivevalues) or a plain list; b: dataset bundle
 sanitize_t2_input = function(input, b) {
-    if (shiny::is.reactivevalues(input)) input = shiny::reactiveValuesToList(input)
+    ## read only the named inputs below: converting all of `input` to a list
+    ## makes an output depend on every input (e.g. DT table state) and re-render forever
     vars = b$mygenesplus
     list(
         x         = .t2_pick(input$x, c(vars, names(T2_ENDPOINTS)), 20),

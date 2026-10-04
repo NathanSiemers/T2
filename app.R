@@ -259,7 +259,7 @@ server = function(input, output, session) {
     th_for = function(b) {
         if (!HAVE_THANOS || !(b$name %in% T2_DATASETS)) return(NULL)
         if (!is.null(th_env[[b$name]])) return(th_env[[b$name]])
-        be = backend_t2(b)
+        be = backend_t2_shared(b)
         ds = b$name
         ## the Select tab's pre-filters as this instance's universe; NULL (no
         ## restriction, nothing to recompute) while another dataset is active

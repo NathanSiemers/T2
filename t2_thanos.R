@@ -168,6 +168,17 @@ backend_t2 = function(bundle) {
     )
 }
 
+## Backends are shared by every session of this R process, one per dataset
+## file: the served databases are read-only, so the cached clinical frame and
+## fetched columns are the same for everyone and a new session starts without
+## re-reading them.
+.t2_backends = new.env(parent = emptyenv())
+backend_t2_shared = function(bundle) {
+    key = normalizePath(bundle$path, mustWork = FALSE)
+    if (is.null(.t2_backends[[key]])) .t2_backends[[key]] = backend_t2(bundle)
+    .t2_backends[[key]]
+}
+
 ## One-line description of the active Thanos filters, for the plot summary:
 ## `filters` is th$filters() (column -> c(lo, hi) or a set of values),
 ## `backend` supplies each column's levels so "everything ticked" is skipped.

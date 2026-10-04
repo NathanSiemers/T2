@@ -14,5 +14,26 @@ data type gets a build file.
 The repetitive database connection calls in 00-master are likely not
 needed, only intended to ensure that database connection doesn't drop.
 
+## The Shiny app: tabs and the Filter tab
 
+`app.R` is organised as five tabs: **Select** (data set, variables, cohort),
+**Plot** (every Plot button lands here), **Filter**, **Appearance** (plot
+cosmetics and survival options) and **About** (data types).
 
+The **Filter** tab embeds [Thanos](https://github.com/NathanSiemers/Thanos),
+an interactive cross-filter: one histogram plus slider/checkboxes per variable.
+Variables chosen on the Select tab appear there automatically and any other
+variable can be added. Cohort and the two Exclude checkboxes on the Select tab
+decide which samples the Filter tab shows; the Filter tab's survivors are what
+gets plotted (and downloaded) the next time Plot is pressed. Each data set has
+its own set of filters.
+
+Thanos is loaded from source: `T2_THANOS` names its loader file (default
+`../Thanos/thanos.R`); version 0.3.0 or later is required. Without it the app
+runs normally and the Filter tab says so. The bridge is `t2_thanos.R`.
+
+Tests (run from this directory):
+
+    Rscript test_t2_backend.R     # Thanos backend == gitr(), pre-filter predicate
+    Rscript test_app_thanos.R     # which samples reach the plot / KM / download
+    CHROMOTE_CHROME=/path/to/chrome NOT_CRAN=true Rscript test_app_browser.R   # real-browser UI checks

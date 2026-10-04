@@ -19,6 +19,55 @@ gitr_default_roles = list(
                         "Solid Tissue Normal")
 )
 
+## Synthesise the virtual columns (subtype / cohort / lcohort) on a clinpheno
+## frame from the dataset's role map, guarded by column presence so datasets
+## that lack a role simply don't get the corresponding virtual column.
+## Shared by gitr() and the Thanos backend (t2_thanos.R).
+t2_add_virtual_cols = function(clin, roles = gitr_default_roles) {
+  role_has = function(key) {
+    v = roles[[key]]
+    !is.null(v) && length(v) == 1 && !is.na(v) && nzchar(v)
+  }
+  if (role_has('subtype_col') && roles$subtype_col %in% colnames(clin))
+    clin$subtype = clin[[roles$subtype_col]]
+  if (role_has('cohort_col') && roles$cohort_col %in% colnames(clin)) {
+    if ('cohort' %in% colnames(clin)) clin$lcohort = clin$cohort
+    clin$cohort = clin[[roles$cohort_col]]
+  }
+  clin
+}
+
+## The sample pre-filters (Exclude Non-tumor / Exclude heme / Cohort) as ONE
+## predicate: logical(nrow(df)), TRUE = keep. `df` must carry the RAW role
+## columns (before the sample-type column is re-levelled into a factor) plus
+## the virtual `cohort` column. Each filter is a no-op when its role column is
+## absent for this dataset. gitr() and the Thanos base mask both call this, so
+## what the Filter tab shows and what gets plotted can never disagree.
+t2_sample_keep = function(df, roles = gitr_default_roles, cohort = 'all',
+                          nonormal = FALSE, noheme = FALSE) {
+  role_has = function(key) {
+    v = roles[[key]]
+    !is.null(v) && length(v) == 1 && !is.na(v) && nzchar(v)
+  }
+  keep = rep(TRUE, nrow(df))
+  stc = roles$sampletype_col
+  ccol = roles$cohort_col
+  ## normal_label may name ONE or SEVERAL "non-tumor" sample-type values
+  ## (e.g. TCGA-TARGET-GTEX has Solid Tissue Normal + Normal Tissue + Cell
+  ## Line). Use %in% so a single string and a vector both work.
+  nl = roles$normal_label
+  nl = nl[!is.na(nl)]
+  if (isTRUE(nonormal) && role_has('sampletype_col') && stc %in% colnames(df) &&
+      length(nl) > 0)
+    keep = keep & !(df[[stc]] %in% nl)
+  if (isTRUE(noheme) && role_has('cohort_col') && ccol %in% colnames(df) &&
+      length(roles$heme_values) > 0)
+    keep = keep & !(df[[ccol]] %in% roles$heme_values)
+  if (!is.null(cohort) && any(cohort != "all") && 'cohort' %in% colnames(df))
+    keep = keep & (df$cohort %in% cohort)
+  keep
+}
+
 ## gitr - data retriever function
 ## Uses dense views (tcgas, tcgacats) which handle sparse data:
 ##   tested + no value in tcgai = 0 (sparse zero)
@@ -29,13 +78,18 @@ gitr_default_roles = list(
 ## `dbfile` selects which dataset db to query; `roles` provides the dataset's
 ## clinical role map (see gitr_default_roles). Together they make gitr work
 ## against any T2-shaped dataset, not just TCGA.
+##
+## `keep_samples`: NULL = no restriction; otherwise a character vector of
+## sample ids to keep (the Thanos Filter tab's survivors). character(0) means
+## "keep nothing". Supplied by the server only, never by the browser.
 gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 cohort = 'all', conn = con,
                 makefactors = TRUE,
                 dbfile = gitrdb,
                 roles = gitr_default_roles,
                 db = 'tcga',
-                dbcat = 'tcgacat') {
+                dbcat = 'tcgacat',
+                keep_samples = NULL) {
 
   if (is.null(roles)) roles = gitr_default_roles
   role_has = function(key) {
@@ -116,14 +170,7 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## lack these columns simply don't get the corresponding virtual column.
   if (phenos) {
     probe_cols = setdiff(colnames(rout), clinpheno_cols)
-    out = clinpheno
-    if (role_has('subtype_col') && roles$subtype_col %in% colnames(out))
-      out$subtype = out[[roles$subtype_col]]
-    if (role_has('cohort_col') && roles$cohort_col %in% colnames(out)) {
-      if ('cohort' %in% colnames(out)) out$lcohort = out$cohort
-      out$cohort = out[[roles$cohort_col]]
-    }
-    out = out %>%
+    out = t2_add_virtual_cols(clinpheno, roles) %>%
       left_join(rout[, c('sample', probe_cols), drop = FALSE], by = 'sample')
   } else {
     out = rout
@@ -131,20 +178,10 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
   ## filters — each is a no-op when its role column is absent for this dataset
   stc = roles$sampletype_col
-  ccol = roles$cohort_col
-  ## normal_label may name ONE or SEVERAL "non-tumor" sample-type values
-  ## (e.g. TCGA-TARGET-GTEX has Solid Tissue Normal + Normal Tissue + Cell
-  ## Line). Use %in% so a single string and a vector both work.
-  nl = roles$normal_label
-  nl = nl[!is.na(nl)]
-  if (nonormal && role_has('sampletype_col') && stc %in% colnames(out) &&
-      length(nl) > 0)
-    out = out %>% dplyr::filter(! .data[[stc]] %in% nl)
-  if (noheme && role_has('cohort_col') && ccol %in% colnames(out) &&
-      length(roles$heme_values) > 0)
-    out = out %>% dplyr::filter(!.data[[ccol]] %in% roles$heme_values)
-  if (!is.null(cohort) && any(cohort != "all") && 'cohort' %in% colnames(out))
-    out = out[out$cohort %in% cohort, ]
+  keep = t2_sample_keep(out, roles, cohort = cohort, nonormal = nonormal,
+                        noheme = noheme)
+  if (!is.null(keep_samples)) keep = keep & (out$sample %in% keep_samples)
+  if (!all(keep)) out = out[keep, , drop = FALSE]
 
   ## factor levels for the sample-type role column (if present + declared)
   if (phenos && role_has('sampletype_col') && stc %in% colnames(out) &&

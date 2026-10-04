@@ -103,7 +103,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
     multi_y = FALSE, zscore_y = FALSE,
     dbfile = gitrdb, roles = gitr_default_roles,
-    dataset_label = "TCGA Pan-Cancer 2018", ...
+    dataset_label = "TCGA Pan-Cancer 2018",
+    keep_samples = NULL, ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
@@ -135,8 +136,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## save original parameter values before transformations
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
     orig_size = size; orig_facet = facet; orig_condition = condition
+    ## keep_samples: the Filter tab's surviving sample ids (NULL = no restriction)
     data = gitr(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
-                dbfile = dbfile, roles = roles)
+                dbfile = dbfile, roles = roles, keep_samples = keep_samples)
 
     ## build data summary before any transformations
     summary_lines = c()
@@ -557,17 +559,25 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 }
 
 
-fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles ) {
+## Download table: the same samples the plot shows -- the Select tab's cohort /
+## non-tumor / heme choices plus the Filter tab's survivors (keep_samples).
+fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles,
+                       keep_samples = NULL ) {
     ##    my.input = paste ('~', paste(input$x, input$y, input$color,
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
     my.input = c( input$x, input$y, input$color, input$size, input$facet )
-    gitr( my.input, nonormal = FALSE, dbfile = dbfile, roles = roles )
+    my.input = setdiff( my.input, 'probe' )   # multi-Y colour handle, not a column
+    gitr( my.input,
+          cohort = if (length(input$cohort)) input$cohort else 'all',
+          nonormal = isTRUE(input$nonormal), noheme = isTRUE(input$noheme),
+          dbfile = dbfile, roles = roles, keep_samples = keep_samples )
 }
 
 
 fun_plot1 = function(input, reactive = TRUE,
                      dbfile = gitrdb, roles = gitr_default_roles,
-                     dataset_label = "TCGA Pan-Cancer 2018") {
+                     dataset_label = "TCGA Pan-Cancer 2018",
+                     keep_samples = NULL) {
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
     }
@@ -592,6 +602,10 @@ fun_plot1 = function(input, reactive = TRUE,
     input$dbfile = dbfile
     input$roles = roles
     input$dataset_label = dataset_label
+    ## the Filter tab's surviving sample ids: server-side only (never a browser
+    ## input, so not in T2_INPUT_ARGS). list() wrapper keeps a NULL out of the
+    ## argument list and lets character(0) ("nothing survives") through.
+    if (!is.null(keep_samples)) input['keep_samples'] = list(keep_samples)
 
     ## Survival mode: if X is a time-to-event endpoint (OS/PFI/DSS/DFI), draw a
     ## Kaplan-Meier plot of the Y marker's tertiles instead of a scatter.
@@ -607,6 +621,8 @@ fun_plot1 = function(input, reactive = TRUE,
                         condition = input$condition,
                         pcortype  = if (!is.null(input$pcortype)) input$pcortype else "none",
                         nonormal = if (!is.null(input$nonormal)) as.logical(input$nonormal)[1] else TRUE,
+                        noheme = if (!is.null(input$noheme)) as.logical(input$noheme)[1] else FALSE,
+                        keep_samples = keep_samples,
                         dbfile = dbfile, roles = roles),
             error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))
     }

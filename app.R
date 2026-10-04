@@ -25,6 +25,7 @@ source('global.R')
 source('database_connection_shiny.R')
 source("lib.R")
 source("input_validation.R")
+source("t2_thanos.R")     # Thanos loader + backend_t2 (the Filter tab)
 
 ## convenience functions
 nbsp = function(n) {
@@ -36,65 +37,135 @@ inline = function (x) {  shiny::tags$div(style="display:inline-block;", x)  }
 ## UI
 ################################################################
 
+## datasets known at startup: the Filter tab holds one (hidden) Thanos panel
+## set per dataset, shown for whichever dataset is selected
+T2_DATASETS = list_datasets()
+
+## the Filter tab: Thanos cross-filtering of the samples that get plotted
+filter_tab_ui = function() {
+    if (!HAVE_THANOS) {
+        return(tagList(tags$br(),
+            helpText("Interactive filtering is not available in this installation. ",
+                     T2_THANOS_NOTE)))
+    }
+    tagList(
+        tags$br(),
+        inline(actionButton("plot_btn3", "Plot")),
+        inline(HTML(nbsp(3))),
+        inline(tags$b(textOutput("filter_count", inline = TRUE))),
+        helpText("Fine-tune which samples are plotted. Every variable chosen on the ",
+                 tags$b("Select"), " tab appears here automatically; add any other variable with ",
+                 tags$b("Filter columns"), ". Each histogram shows the samples passing all the ",
+                 tags$i("other"), " filters, with this variable's own selection highlighted. ",
+                 "Cohort and the Exclude checkboxes on the Select tab decide which samples are shown here at all. ",
+                 "Filters take effect on the plot when you press ", tags$b("Plot"), "."),
+        lapply(T2_DATASETS, function(ds) {
+            conditionalPanel(
+                condition = sprintf("input.dataset == %s",
+                                    jsonlite::toJSON(ds, auto_unbox = TRUE)),
+                div(class = "t2-thanos", thanosUI(t2_thanos_id(ds))))
+        })
+    )
+}
+
 ui = fluidPage(
     theme = shinytheme('flatly'),
-    tags$head(tags$style("h6 {font-size: 75%; }")),
+    tags$head(tags$style(HTML("
+        h6 {font-size: 75%; }
+        /* Filter tab: lay the Thanos panels out as a responsive grid */
+        .t2-thanos div[id$='-panels'] { display: grid; gap: 14px 28px;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
+        .t2-thanos .thanos-panel { border: 1px solid #dce4ec; border-radius: 4px;
+            padding: 10px 12px 4px 12px; background: #fff; }
+        .t2-filter-status { font-size: 90%; color: #555; margin: 8px 0; }
+    "))),
     uiOutput('app_title'),
-    inline( selectizeInput('dataset', 'Data set', choices = NULL ) ),
-    tags$br(),
-    inline( selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE ) ),
-    inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE ) ),
-    inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
-    inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
-    inline( selectizeInput('color', 'color', choices = NULL) ),
-    inline( selectizeInput('size', 'size', choices = NULL )),
-    inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
-    inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
-    inline(HTML(nbsp(5))),
-    inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
-    inline(checkboxInput("waterfall", "Waterfall", value = FALSE)),
-    inline(checkboxInput("waterfall_flip", "Flip waterfall", value = FALSE)),
-    inline(checkboxInput("nonormal", "Exclude Non-tumor", value = FALSE)),
-    inline(checkboxInput("noheme", "Exclude tumors of heme origin", value = FALSE)),
-    tags$br(),
-    inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
-    inline(HTML(nbsp(5))),
-    inline(
-        radioButtons('pcortype', 'Remove influence on:',
-                     choices = c('none', 'x', 'y', 'both'), selected = 'none', inline = TRUE  ) ),
-    actionButton("plot_btn", "Plot"),
-    tags$br(),
-    fluidRow(
-        column(12, align="center",
-               withSpinner( plotOutput( "main_plot", height = '1800px', width = '95%' ),
-                           proxy.height = "200px", color = viridis::plasma(1) )
-               ) ),
-    h4("Data Summary"),
-    verbatimTextOutput('plot_summary'),
-    h5( paste( 'PI:', a.PI ) ),
-    h5( paste('Contributors:', a.credits) ),
-    h5( Sys.Date() ),
-    downloadButton('downloadData', 'Download Table'),
-    h4('Fiddly Options'),
-    inline( selectizeInput('scales', 'Multigraph Scales', choices = NULL  ) ),
-    inline( selectizeInput('alpha', 'Transparency', choices = NULL  )),
-    inline( selectizeInput('static.size', 'Point Size multipier', choices = NULL  ) ),
-    inline( selectizeInput('static.strip', 'Multi-Graph Label Size multipier', choices = NULL  ) ),
-    inline( selectizeInput('static.titles', 'Top  Title Size', choices = NULL  ) ),
-    inline( selectizeInput('static.labels', 'Axis Label Multiplier', choices = NULL  ) ),
-    inline( selectizeInput('ncols', 'Multi-graph Columns', choices = NULL  ) ),
-    inline( selectizeInput('smooth', 'Fit Line', choices = NULL  ) ),
-    ## survival (Kaplan-Meier) options — used when X is a time-to-event endpoint
-    inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = c(2, 3, 4, 5, 6), selected = 3) ),
-    inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = 365 * 5, min = 30, step = 30) ),
-    checkboxInput("allComplete", "Show only results with complete information:", value = TRUE),
-    actionButton("plot_btn2", "Plot"),
-    tags$br(),
-    h4("Types of TCGA Data Available"),
-    htmlOutput('datatypes'),
-    tags$br(),tags$br(),
-    h5('Below is an area for my notes, you can ignore...'),
-    verbatimTextOutput('print1')
+    tabsetPanel(id = 'tabs',
+        ## ---- (a) what to plot + the coarse sample filters ----
+        tabPanel("Select", value = "select",
+            tags$br(),
+            inline( selectizeInput('dataset', 'Data set', choices = NULL ) ),
+            tags$br(),
+            inline( selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE ) ),
+            inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE ) ),
+            inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
+            inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
+            inline( selectizeInput('color', 'color', choices = NULL) ),
+            inline( selectizeInput('size', 'size', choices = NULL )),
+            inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
+            inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
+            inline(HTML(nbsp(5))),
+            inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
+            inline(checkboxInput("waterfall", "Waterfall", value = FALSE)),
+            inline(checkboxInput("waterfall_flip", "Flip waterfall", value = FALSE)),
+            inline(checkboxInput("nonormal", "Exclude Non-tumor", value = FALSE)),
+            inline(checkboxInput("noheme", "Exclude tumors of heme origin", value = FALSE)),
+            tags$br(),
+            inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
+            inline(HTML(nbsp(5))),
+            inline(
+                radioButtons('pcortype', 'Remove influence on:',
+                             choices = c('none', 'x', 'y', 'both'), selected = 'none', inline = TRUE  ) ),
+            actionButton("plot_btn", "Plot")
+        ),
+        ## ---- (b) the result; every Plot button lands here ----
+        tabPanel("Plot", value = "plot",
+            div(class = "t2-filter-status", textOutput('filter_status')),
+            fluidRow(
+                column(12, align="center",
+                       withSpinner( plotOutput( "main_plot", height = '1800px', width = '95%' ),
+                                   proxy.height = "200px", color = viridis::plasma(1) )
+                       ) ),
+            h4("Data Summary"),
+            verbatimTextOutput('plot_summary'),
+            downloadButton('downloadData', 'Download Table')
+        ),
+        ## ---- (c) Thanos: fine-tune which samples are plotted ----
+        tabPanel("Filter", value = "filter", filter_tab_ui()),
+        ## ---- (d) plot appearance ----
+        tabPanel("Appearance", value = "appearance",
+            h4('Fiddly Options'),
+            inline( selectizeInput('scales', 'Multigraph Scales', choices = NULL  ) ),
+            inline( selectizeInput('alpha', 'Transparency', choices = NULL  )),
+            inline( selectizeInput('static.size', 'Point Size multipier', choices = NULL  ) ),
+            inline( selectizeInput('static.strip', 'Multi-Graph Label Size multipier', choices = NULL  ) ),
+            inline( selectizeInput('static.titles', 'Top  Title Size', choices = NULL  ) ),
+            inline( selectizeInput('static.labels', 'Axis Label Multiplier', choices = NULL  ) ),
+            inline( selectizeInput('ncols', 'Multi-graph Columns', choices = NULL  ) ),
+            inline( selectizeInput('smooth', 'Fit Line', choices = NULL  ) ),
+            ## survival (Kaplan-Meier) options — used when X is a time-to-event endpoint
+            inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = c(2, 3, 4, 5, 6), selected = 3) ),
+            inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = 365 * 5, min = 30, step = 30) ),
+            checkboxInput("allComplete", "Show only results with complete information:", value = TRUE),
+            actionButton("plot_btn2", "Plot")
+        ),
+        ## ---- (e) what this is ----
+        tabPanel("About", value = "about",
+            h4("About T2"),
+            tags$p("T2 is a database and plotting tool for large tumor-profiling compendia: ",
+                   "the TCGA Pan-Cancer 2018 release and companion datasets. Every measurement ",
+                   "(expression, mutation, copy number, signatures, clinical annotation, survival) ",
+                   "is stored per sample, so any variable can be plotted against any other."),
+            tags$ul(
+                tags$li(tags$b("Select"), ": choose the data set, the variables to plot (X, Y, color, size, ",
+                        "one graph per category) and the cohort(s); then press Plot."),
+                tags$li(tags$b("Plot"), ": the resulting graph, a summary of the samples behind it, ",
+                        "and a download of the plotted table."),
+                tags$li(tags$b("Filter"), ": interactive histograms and sliders/checkboxes for every selected ",
+                        "variable (and any others you add) to fine-tune which samples are plotted."),
+                tags$li(tags$b("Appearance"), ": point size, transparency, label sizes, multi-graph layout, ",
+                        "fit line and survival-plot options.")
+            ),
+            h5( paste( 'PI:', a.PI ) ),
+            h5( paste('Contributors:', a.credits) ),
+            h5( Sys.Date() ),
+            h4("Types of Data Available"),
+            htmlOutput('datatypes'),
+            tags$br(),tags$br(),
+            h5('Below is an area for my notes, you can ignore...'),
+            verbatimTextOutput('print1')
+        )
+    )
 )
 
 ################################################################
@@ -179,16 +250,113 @@ server = function(input, output, session) {
         }
     }, ignoreInit = TRUE)
 
-    plot_result = eventReactive(input$plot_btn | input$plot_btn2, {
+    ## ---- Thanos: one instance per dataset, started on first use ----
+    ## A Thanos instance is bound to one backend (= one dataset) for life, so
+    ## each dataset gets its own; switching datasets swaps which one is shown
+    ## and consulted. A filter set up for one dataset can therefore never be
+    ## applied to another whose fields may not even exist.
+    th_env = new.env(parent = emptyenv())
+    th_for = function(b) {
+        if (!HAVE_THANOS || !(b$name %in% T2_DATASETS)) return(NULL)
+        if (!is.null(th_env[[b$name]])) return(th_env[[b$name]])
+        be = backend_t2(b)
+        ds = b$name
+        ## the Select tab's pre-filters as this instance's universe; NULL (no
+        ## restriction, nothing to recompute) while another dataset is active
+        base = reactive({
+            if (!identical(bundle()$name, ds)) return(NULL)
+            be$base_mask(cohort   = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), 200),
+                         nonormal = .t2_flag(input$nonormal),
+                         noheme   = .t2_flag(input$noheme))
+        })
+        ## no extra debounce: server state then always equals what the browser
+        ## has sent, so a Plot click right after a filter change sees it
+        th = isolate(thanosServer(t2_thanos_id(ds), be, base_mask = base,
+                                  debounce_ms = 0, debounce_checkbox_ms = 0))
+        th_env[[ds]] = list(th = th, backend = be, base = base)
+        th_env[[ds]]
+    }
+    th_for(init_bundle)
+    observeEvent(bundle(), th_for(bundle()))
+
+    ## every variable chosen on the Select tab gets a Thanos panel (additive:
+    ## panels stay until removed on the Filter tab). Debounced together with
+    ## the dataset name, so after a dataset switch the push waits for the
+    ## repopulated selectors rather than sending the previous dataset's picks.
+    selected_vars = reactive({
+        v = c(input$x, input$y, input$color, input$size, input$facet,
+              if (!identical(input$pcortype, 'none')) input$condition)
+        v = as.character(unlist(v))
+        list(dataset = bundle()$name, vars = unique(v[!is.na(v) & nzchar(v)]))
+    })
+    selected_vars_d = debounce(selected_vars, 500)
+    observeEvent(selected_vars_d(), {
+        sv = selected_vars_d()
+        b = bundle()
+        if (!identical(sv$dataset, b$name)) return()
+        h = th_for(b)
+        if (is.null(h)) return()
+        v = intersect(sv$vars, h$backend$get_columns())
+        if (length(v) == 0) return()
+        h$backend$prefetch(v)      # one query for all of them
+        h$th$add_vars(v)
+    })
+
+    ## which samples the Filter tab currently lets through, for dataset bundle b:
+    ##   keep  NULL when Thanos adds nothing beyond the Select tab's own filters,
+    ##         else the surviving sample ids
+    ##   note  one line for the plot summary (NULL when there is no Filter tab)
+    filter_state = function(b) {
+        h = th_for(b)
+        if (is.null(h)) return(list(keep = NULL, note = NULL))
+        m = h$th$mask()
+        base = h$base()
+        base = if (is.null(base)) rep(TRUE, length(m)) else (base & !is.na(base))
+        active = t2_describe_filters(h$th$filters(), h$backend)
+        if (identical(m, base)) {
+            return(list(keep = NULL,
+                        note = sprintf("Filter tab: no additional filtering (%d samples).", sum(m))))
+        }
+        list(keep = h$backend$samples[m],
+             note = sprintf("Filter tab: %d of %d samples pass. %s", sum(m), sum(base),
+                            if (length(active)) paste0("Active filters: ", paste(active, collapse = "; "), ".")
+                            else "Samples with missing values (NA) are excluded for at least one variable."))
+    }
+
+    ## live count next to the Filter tab's Plot button
+    output$filter_count = renderText({
+        h = th_for(bundle())
+        if (is.null(h)) return("")
+        base = h$base()
+        n_base = if (is.null(base)) h$backend$n_rows() else sum(base, na.rm = TRUE)
+        sprintf("%s of %s samples selected", format(h$th$n_selected(), big.mark = ","),
+                format(n_base, big.mark = ","))
+    })
+
+    ## ---- plotting: any of the three Plot buttons ----
+    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3))
+    ## what the last plot was drawn from; the download hands out the same table
+    plot_snapshot = NULL
+    plot_result = eventReactive(plot_clicks(), {
+        ## nothing is drawn until a Plot button has been pressed
+        req(plot_clicks() > 0)
         b = bundle()
         ## whitelist + validate every input before it reaches the plotter/SQL
         inp = sanitize_t2_input(input, b)
         if( length(inp$x) == 0 | length(inp$y) == 0 ) { return( NULL ) }
+        fs = filter_state(b)
+        plot_snapshot <<- list(inp = inp, b = b, keep = fs$keep, note = fs$note)
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
-            fun_plot1(inp, reactive = FALSE, dbfile = b$path, roles = b$roles, dataset_label = b$label)
+            fun_plot1(inp, reactive = FALSE, dbfile = b$path, roles = b$roles, dataset_label = b$label,
+                      keep_samples = fs$keep)
         })
     })
+    ## pressing Plot anywhere shows the result
+    observeEvent(input$plot_btn,  updateTabsetPanel(session, 'tabs', selected = 'plot'))
+    observeEvent(input$plot_btn2, updateTabsetPanel(session, 'tabs', selected = 'plot'))
+    observeEvent(input$plot_btn3, updateTabsetPanel(session, 'tabs', selected = 'plot'))
+
     output$main_plot = renderPlot({
         res = plot_result()
         if (is.null(res)) return(NULL)
@@ -201,11 +369,19 @@ server = function(input, output, session) {
         if (inherits(res, "ggsurvplot")) return(res)
         if (is.list(res) && !is.null(res$plot)) res$plot else res
     })
+    ## the Filter tab's contribution to this plot, so it never applies unseen
+    filter_note = function() {
+        res = plot_result()
+        if (is.null(res) || is.null(plot_snapshot$note)) "" else plot_snapshot$note
+    }
+    output$filter_status = renderText(filter_note())
     output$plot_summary = renderText({
         res = plot_result()
         if (is.null(res)) return("")
-        if (!is.null(attr(res, "t2summary"))) return(attr(res, "t2summary"))
-        if (is.list(res) && !is.null(res$summary)) res$summary else ""
+        txt = if (!is.null(attr(res, "t2summary"))) attr(res, "t2summary")
+              else if (is.list(res) && !is.null(res$summary)) res$summary else ""
+        note = filter_note()
+        if (nzchar(note)) paste0(txt, "\n\n", note) else txt
     })
     output$datatypes = renderUI({
         b = bundle()
@@ -285,11 +461,19 @@ server = function(input, output, session) {
             survival_note
         )
     })
+    ## the table behind the last plot (same dataset, variables and samples);
+    ## before any plot, the table for the current selections
     output$downloadData = downloadHandler(
         filename = "csvdownload.csv",
         content = function(file) {
-            b = bundle()
-            write.csv(fun_table1(sanitize_t2_input(input, b), dbfile = b$path, roles = b$roles), file)
+            snap = plot_snapshot
+            if (is.null(snap)) {
+                b = bundle()
+                snap = list(inp = sanitize_t2_input(input, b), b = b,
+                            keep = isolate(filter_state(b))$keep)
+            }
+            write.csv(fun_table1(snap$inp, dbfile = snap$b$path, roles = snap$b$roles,
+                                 keep_samples = snap$keep), file)
         })
     output$print1 = renderPrint({
         print( str( reactiveValuesToList(input) ) )

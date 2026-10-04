@@ -61,7 +61,8 @@ fmtp <- function(p) {
 survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                         dbfile = "tcga.db", roles = NULL, nonormal = TRUE,
                         facet = NULL, ci = TRUE, title = NULL,
-                        max_time = 365 * 5, condition = NULL, pcortype = "none") {
+                        max_time = 365 * 5, condition = NULL, pcortype = "none",
+                        noheme = FALSE, keep_samples = NULL) {
   n_groups <- max(2L, as.integer(n_groups))
   stopifnot(endpoint %in% names(T2_ENDPOINTS))
   ev <- endpoint; tm <- paste0(endpoint, ".time")
@@ -74,7 +75,8 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
 
   ## pull marker probe(s) + covariates + clinical (gitr joins clinpheno)
   d <- suppressWarnings(gitr(unique(c(y, if (do_cond) condition)),
-                             cohort = cohort, nonormal = nonormal, dbfile = dbfile, roles = roles))
+                             cohort = cohort, nonormal = nonormal, noheme = noheme,
+                             dbfile = dbfile, roles = roles, keep_samples = keep_samples))
   miss <- setdiff(c(y, ev, tm, facet, if (do_cond) condition), names(d))
   if (length(miss)) stop("column(s) not found: ", paste(miss, collapse = ", "))
   num <- function(x) suppressWarnings(as.numeric(as.character(x)))

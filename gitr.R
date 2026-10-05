@@ -2,6 +2,50 @@ library(DBI)
 library(dplyr)
 gitrdb = 'tcga.db'
 
+## ---------------------------------------------------------------------------
+## T2_LIMITS: how much ONE request may ask for. All of T2's limits, in one place.
+##
+## A Shiny instance is one single-threaded R process: while it works on one
+## browser's request every other visitor of that process waits. So nothing a
+## browser can choose may cost more than a few seconds. Each limit is enforced
+## on the server before the expensive step (query, pivot, drawing); a request
+## beyond one gets a message in the plot area saying which limit, not a plot.
+##
+## Where the numbers come from (dev container, one BLAS thread, TCGA, a
+## 1400 x 700 px plot; a plain scatter draws in 1.2 s, the default box plot in 3 s):
+##   panels          a graph costs 0.13 s to draw: 33 (cohort) 4.5 s, 81 (cohort x
+##                   sample type) 12 s, 143 (histological_type) 18 s, 863
+##                   (TP53.fmut) 112 s. 100 still allows one graph per cohort in
+##                   every dataset (TCGA-TARGET-GTEx has 93) at about 13 s.
+##   x / y levels    box plots: 126 categories 3 s, 245 5 s, 863 16 s, 2,557 55 s.
+##   colour / size   legend keys: 126 2 s, 245 3 s, 863 8 s, 11,081 92 s.
+##   multi_y         each probe plotted individually adds every sample again:
+##                   5 probes 5 s, 10 probes 9 s, 20 probes 17 s (box plot by cohort).
+##   km_panels       a survival graph costs 0.2 s (33 cohorts: 6 s).
+##   *_vars          names per selector: bounds the query (0.03-0.09 s and 0.9 MB
+##                   per probe), the Thanos prefetch and the pivot.
+##   loess_points    geom_smooth(method = "loess") is quadratic: 1,100 points
+##                   1.4 s, 11,000 points 10 s and 140 MB.
+## ---------------------------------------------------------------------------
+T2_LIMITS = list(
+  x_vars         = 20,    # probes combined into X
+  y_vars         = 20,    # probes combined into Y (median of z-scores)
+  multi_y        = 10,    # Y probes when 'Plot Y probes individually' is ticked
+  facet_vars     = 3,     # 'Graph for each' variables
+  condition_vars = 10,    # 'Remove influences of' variables
+  cohorts        = 200,   # cohort names in one request
+  panels         = 100,   # graphs in one plot ('Graph for each', x Y probes)
+  km_panels      = 60,    # graphs in one survival (Kaplan-Meier) plot
+  x_levels       = 300,   # categories of a categorical X
+  y_levels       = 300,   # categories of a categorical Y
+  colour_levels  = 200,   # categories of a categorical color
+  size_levels    = 200,   # categories of a categorical size
+  filter_levels  = 200,   # categories above which a Select-tab variable gets no
+                          #   Filter-tab panel of its own accord
+  backend_fetch  = 64,    # uncached probes the Thanos backend fetches in one call
+  loess_points   = 5000   # points above which a loess fit line is drawn as lm
+)
+
 ## Default (TCGA) role map. Any dataset can pass its own `roles` list to make
 ## gitr dataset-agnostic; the keys below name which clinpheno columns play the
 ## roles of cohort / subtype / sample-type and how the nonormal/noheme filters

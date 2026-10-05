@@ -133,6 +133,9 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   ## ---------------- faceted grid: signature + groups WITHIN each panel --------
   if (length(facet)) {
     parts <- split(df, df[facet], drop = TRUE, sep = " | ")
+    if (exists("T2_LIMITS") && length(parts) > T2_LIMITS$km_panels)
+      stop(sprintf("'%s' has %s different values; a survival plot is limited to %d graphs",
+                   paste(facet, collapse = " x "), format(length(parts), big.mark = ","), T2_LIMITS$km_panels))
     keep_part <- vapply(parts, function(s) nrow(s) >= 2L * n_groups, logical(1))
     dropped <- sum(!keep_part)
     parts <- lapply(parts[keep_part], add_marker_grp)

@@ -429,9 +429,12 @@ server = function(input, output, session) {
     ## the dataset name, so after a dataset switch the push waits for the
     ## repopulated selectors rather than sending the previous dataset's picks.
     selected_vars = reactive({
-        v = c(input$x, input$y, input$color, input$size, input$facet,
-              if (!identical(input$pcortype, 'none')) input$condition)
-        v = as.character(unlist(v))
+        ## capped per selector BEFORE anything reaches the database: a browser can
+        ## send any number of names, whatever the selector shows
+        cap = function(v, n) utils::head(as.character(unlist(v)), n)
+        v = c(cap(input$x, T2_LIMITS$x_vars), cap(input$y, T2_LIMITS$y_vars),
+              cap(input$color, 1), cap(input$size, 1), cap(input$facet, T2_LIMITS$facet_vars),
+              if (!identical(input$pcortype, 'none')) cap(input$condition, T2_LIMITS$condition_vars))
         list(dataset = bundle()$name, vars = unique(v[!is.na(v) & nzchar(v)]))
     })
     selected_vars_d = debounce(selected_vars, 500)

@@ -93,6 +93,73 @@ clin = tbl(con, 'clinpheno')
 mygenesplus = .default_bundle$mygenesplus
 
 ################################################################
+## requests T2 does not draw (see T2_LIMITS in gitr.R)
+################################################################
+
+## What takes the place of a plot that was refused: the reason, drawn where the
+## plot would be (and sent as the warning as well). Nothing else is drawn, so
+## this costs milliseconds whatever was asked for.
+t2_message_plot = function(msg, summary = "", hint = NULL, fig_width = NULL, title_size = 16) {
+    wrap = function(s, size) {
+        if (is.null(s)) return(NULL)
+        if (is.null(fig_width)) paste(strwrap(s, 95), collapse = "\n") else t2_wrap_text(s, fig_width, size)
+    }
+    p = ggplot() + ggtitle(wrap(msg, title_size), subtitle = wrap(hint, title_size * 0.8)) +
+        theme_void() +
+        theme(plot.title = element_text(size = max(title_size, 4), hjust = 0, margin = margin(12, 12, 6, 12)),
+              plot.subtitle = element_text(size = max(title_size * 0.8, 4), hjust = 0, margin = margin(6, 12, 6, 12)))
+    list(plot = p,
+         summary = paste0(summary, if (nzchar(summary)) "\n\n" else "", "NOT PLOTTED: ", msg),
+         warning = msg, refused = TRUE)
+}
+
+## Would drawing `data` exceed a limit? Returns list(msg, hint) for the user,
+## or NULL when the plot may be drawn. x / y / color / size / facet are the
+## column names about to be mapped; n_probes is the number of Y probes behind
+## a 'probe' facet (multi-Y), for the wording only.
+t2_plot_refusal = function(data, x, y = NULL, color = NULL, size = NULL, facet = NULL,
+                           n_probes = 0, limits = T2_LIMITS) {
+    big = function(n) format(n, big.mark = ",", trim = TRUE)
+    is_cat = function(v) length(v) == 1 && !is.na(v) && v %in% colnames(data) && !is.numeric(data[, v])
+    n_val = function(v) length(unique(data[, v]))
+    fewer = "Choose a variable with fewer categories, or narrow the samples with Cohort or the Filter tab."
+    ## graphs: one per combination of the 'Graph for each' variables (and per Y
+    ## probe, when probes are plotted individually next to a color variable)
+    fv = facet[!is.na(facet) & facet %in% colnames(data)]
+    if (length(fv) > 0) {
+        n_pan = if (length(fv) == 1) n_val(fv) else sum(!duplicated(data[, fv, drop = FALSE]))
+        if (n_pan > limits$panels) {
+            what = vapply(fv, function(v) {
+                if (v == "probe" && n_probes > 0) sprintf("%d Y probes", n_probes)
+                else sprintf("'%s' (%s values)", v, big(n_val(v)))
+            }, "")
+            msg = if (length(fv) == 1 && !(fv == "probe" && n_probes > 0))
+                      sprintf("'%s' has %s different values; 'Graph for each' is limited to %d graphs.",
+                              fv, big(n_pan), limits$panels)
+                  else sprintf("%s would be %s graphs; one plot is limited to %d graphs.",
+                               paste(what, collapse = " x "), big(n_pan), limits$panels)
+            return(list(msg = msg, hint = if ("probe" %in% fv && n_probes > 0)
+                paste("Plotting Y probes individually next to a color variable draws one graph per probe",
+                      "and 'Graph for each' value. Choose fewer Y probes or fewer graphs.") else fewer))
+        }
+    }
+    check = function(v, what, lim) {
+        if (!is_cat(v)) return(NULL)
+        n = n_val(v)
+        if (n <= lim) return(NULL)
+        list(msg = sprintf("'%s' has %s different values; %s is limited to %d categories.", v, big(n), what, lim),
+             hint = fewer)
+    }
+    for (r in list(check(x, "a categorical X", limits$x_levels),
+                   check(y, "a categorical Y", limits$y_levels),
+                   check(color, "color", limits$colour_levels),
+                   check(size, "size", limits$size_levels))) {
+        if (!is.null(r)) return(r)
+    }
+    NULL
+}
+
+################################################################
 ## make a plotter function
 ################################################################
 interactive_plotter = function(...) { plotter( ... ) }
@@ -144,6 +211,18 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## save original parameter values before transformations
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
     orig_size = size; orig_facet = facet; orig_condition = condition
+    ## how much one request may ask for (T2_LIMITS): refuse before fetching anything
+    too_many = NULL
+    for (lim in list(list(x, T2_LIMITS$x_vars, "X"),
+                     list(y, if (isTRUE(multi_y)) T2_LIMITS$multi_y else T2_LIMITS$y_vars,
+                          if (isTRUE(multi_y)) "Y (plotted individually)" else "Y"),
+                     list(facet, T2_LIMITS$facet_vars, "'Graph for each'"),
+                     list(active_condition, T2_LIMITS$condition_vars, "'Remove influences of'"),
+                     list(cohort, T2_LIMITS$cohorts, "Cohort"))) {
+        if (is.null(too_many) && length(lim[[1]]) > lim[[2]])
+            too_many = sprintf("%d variables were chosen for %s; the limit is %d.", length(lim[[1]]), lim[[3]], lim[[2]])
+    }
+    if (!is.null(too_many)) return(t2_message_plot(too_many, fig_width = fig_width, title_size = title_size))
     ## keep_samples: the Filter tab's surviving sample ids (NULL = no restriction)
     data = gitr_memo(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
                      dbfile = dbfile, roles = roles, keep_samples = keep_samples)
@@ -335,6 +414,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             summary = plot_summary
         ))
     }
+    ## more graphs or categories than one request may draw (T2_LIMITS): say so
+    ## in the plot area instead of drawing for minutes
+    refusal = t2_plot_refusal(data, x = x, y = y, color = color, size = size, facet = facet,
+                              n_probes = if (isTRUE(multi_y)) length(orig_y) else 0)
+    if (!is.null(refusal)) return(t2_message_plot(refusal$msg, summary = plot_summary, hint = refusal$hint,
+                                                  fig_width = fig_width, title_size = title_size))
     ##if ( nrow(data) != 0 & is.factor( data[ , x] ) & length(levels( data[ , x] )) < 1 )  {
     ##    return( ggplot() + ggtitle("Sorry, your x variable seems to be categorical and there seems to be less than two categories to plot") )
     ##}
@@ -355,8 +440,20 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         all_cond_vars = unique(c(cond_x_vars, cond_y_vars, condition))
         data = data[ complete.cases( data[ , all_cond_vars ] ), ]
         ## residualize each conditioned var on the covariates (shared helper)
+        ## With 'Plot Y probes individually' the Y values of all probes are stacked
+        ## in one column: each probe gets its OWN regression (one pooled fit would
+        ## mostly remove the differences between probes, and what is plotted would
+        ## not be any probe's residuals).
+        stacked_y = length(orig_y) > 1 && isTRUE(multi_y) && "probe" %in% colnames(data)
         for (v in c(cond_y_vars, cond_x_vars)) {
-            data[, v] = residualize_on( data[, v], data[ , condition, drop = FALSE] )
+            if (stacked_y && identical(v, "y_value")) {
+                for (pr in unique(as.character(data$probe))) {
+                    i = which(data$probe == pr)
+                    data[i, v] = residualize_on( data[i, v], data[ i, condition, drop = FALSE] )
+                }
+            } else {
+                data[, v] = residualize_on( data[, v], data[ , condition, drop = FALSE] )
+            }
         }
     }
     ## check for waterfall

@@ -27,6 +27,17 @@ source("lib.R")
 source("input_validation.R")
 source("t2_thanos.R")     # Thanos loader + backend_t2 (the Filter tab)
 
+## The name this copy of the app is served under. The same code runs as "T2"
+## and as "T2T" (the site that carries the Thanos filter tab); the name is the
+## app directory's, because shiny-server starts R without the container's
+## environment variables. Anything that is not a T2-style name falls back to T2.
+T2_SITE = local({
+    d = basename(getwd())
+    if (grepl("^T2[A-Za-z0-9]{0,8}$", d)) d else "T2"
+})
+## page heading for a dataset: the canonical "T2: ..." title carries the site name
+site_title = function(title) sub("^T2:", paste0(T2_SITE, ":"), title)
+
 ## convenience functions
 nbsp = function(n) {
     paste( rep( '&nbsp;', n ), collapse = ' ')
@@ -175,6 +186,7 @@ filter_tab_ui = function() {
 }
 
 ui = fluidPage(
+    title = T2_SITE,
     theme = shinytheme('flatly'),
     tags$head(tags$style(HTML("
         h6 {font-size: 75%; }
@@ -288,7 +300,7 @@ ui = fluidPage(
         tabPanel("Publish", value = "publish", publish_tab_ui()),
         ## ---- (f) what this is ----
         tabPanel("About", value = "about",
-            h4("About T2"),
+            h4(paste("About", T2_SITE)),
             tags$p("T2 is a database and plotting tool for large tumor-profiling compendia: ",
                    "the TCGA Pan-Cancer 2018 release and companion datasets. Every measurement ",
                    "(expression, mutation, copy number, signatures, clinical annotation, survival) ",
@@ -331,7 +343,7 @@ server = function(input, output, session) {
     updateSelectizeInput(session, 'dataset', choices = list_datasets(),
                          selected = default_dataset(), server = TRUE)
 
-    output$app_title = renderUI(h4(bundle()$title))
+    output$app_title = renderUI(h4(site_title(bundle()$title)))
 
     ## (re)populate every dataset-dependent selectize from a bundle. Defaults
     ## that aren't valid choices for the selected dataset fall back gracefully.

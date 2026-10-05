@@ -47,6 +47,8 @@ if [ "$what" = all ] || [ "$what" = abuse ]; then
     chk "wrong dataset version in ?v= is a 409" "$(code "$u/v1/TCGA/values?probes=CD8A&v=000")" 409
     cc=$(curl -s -D - -o /dev/null "$u/v1/TCGA/values?probes=CD8A&v=$ver" | tr -d '\r' | awk 'tolower($1)=="cache-control:" {print}')
     chk "right version in ?v=: cacheable for good" "$(echo "$cc" | grep -c immutable)" 1
+    cc=$(curl -s -D - -o /dev/null "$u/v1/TCGA/meta" | tr -d '\r' | awk 'tolower($1)=="cache-control:" {print}')
+    chk "no version given (how a client learns it): must be revalidated" "$(echo "$cc" | grep -c no-cache)" 1
     chk "SQL in a probe name (just a name that does not exist)" "$(code "$u/v1/TCGA/values?probes=x%27%3B%20DROP%20TABLE%20probes%3B--")" 200
     chk "300-character probe name"        "$(code "$u/v1/TCGA/values?probes=$(head -c 300 /dev/zero | tr '\0' a)")" 400
     chk "POST is not allowed"             "$(code -X POST "$u/v1/TCGA/values?probes=CD8A")" 405

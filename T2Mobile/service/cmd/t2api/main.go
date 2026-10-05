@@ -182,7 +182,9 @@ func (s *server) withDataset(h func(http.ResponseWriter, *http.Request, *Dataset
 // A client that passes the dataset version it knows (?v=<version from /v1/datasets>) gets a
 // response that may be kept for good: the URL then names one database build. If that version
 // is no longer the one served, the answer is 409 and the client reloads /v1/datasets.
-// Without ?v= the response may be reused for five minutes and is revalidated by ETag after.
+// Without ?v= the response must be revalidated (ETag, answered 304) before it is reused:
+// that is how a client learns the current version, so it must never come from a cache
+// unchecked (a cached /meta naming a version that is gone would make every ?v= request fail).
 func (s *server) cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, etagKey string) (done bool) {
 	if v := r.URL.Query().Get("v"); v != "" {
 		if v != d.version {
@@ -191,7 +193,7 @@ func (s *server) cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, e
 		}
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
-		w.Header().Set("Cache-Control", "public, max-age=300")
+		w.Header().Set("Cache-Control", "no-cache")
 	}
 	sum := sha256.Sum256([]byte(etagKey))
 	etag := `"` + d.version + "-" + hex.EncodeToString(sum[:12]) + `"`
@@ -254,7 +256,7 @@ func (s *server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 		d := s.datasets[name]
 		out = append(out, entry{d.Name, d.Title, d.Label, len(d.samples), len(d.probeNames), d.version, d.Roles, d.Defaults})
 	}
-	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Header().Set("Cache-Control", "no-cache") // the list of current versions: never reused unchecked
 	writeJSON(w, map[string]any{"datasets": out})
 }
 

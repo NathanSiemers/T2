@@ -78,9 +78,11 @@ with the file; listed by `/v1/datasets`, in `/meta` and in every `/values` body)
   good by the app, Nginx or a CDN. If that version is no longer the one served, the answer
   is **`409`** (`{"error":"dataset version changed: ..."}`): reload `/v1/datasets`, drop
   what was cached for the old version, and ask again with the new one.
-- Without `v` the response may be reused for five minutes (`max-age=300`) and is then
-  revalidated by `ETag` (`If-None-Match` is answered `304`). The ETag is a fixed-length
-  hash; it changes with the dataset version. `gzip` is used when the
+- Without `v` the response is `Cache-Control: no-cache`: it must be revalidated by `ETag`
+  before reuse (`If-None-Match` is answered `304`). `/v1/datasets` and `/meta` are how a
+  client learns the current version, so they are always asked without `v` and never taken
+  from a cache unchecked. The ETag is a fixed-length hash; it changes with the dataset
+  version. `gzip` is used when the
 client accepts it (a 12,804-value numeric column: 64 KB plain, 24 KB gzipped).
 
 ## Errors

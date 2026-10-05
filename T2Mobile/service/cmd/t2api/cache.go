@@ -3,18 +3,24 @@ package main
 // A bounded, concurrency-safe cache of encoded probe columns. Least-recently-used entries
 // are dropped when the byte budget is exceeded. Concurrent requests for a probe that is not
 // cached yet share ONE database query (the others wait for it), so a burst of identical
-// requests costs a single lookup. "No such probe" is cached too (as an empty entry), so
-// asking for nonsense repeatedly cannot be used to hammer the database.
+// requests costs a single lookup. Only real columns are kept: names that are not variables
+// of the dataset never get here (Dataset.column checks the name list first), and a name
+// without data is not stored, so nonsense requests cannot fill memory. A panic while
+// loading is turned into an error for everyone waiting, never a name stuck "pending".
 
 import (
 	"container/list"
+	"fmt"
 	"sync"
 	"sync/atomic"
 )
 
+// what one entry costs beyond its bytes: list element, entry, map bucket, key header
+const entryOverhead = 256
+
 type cacheEntry struct {
 	key   string
-	value []byte // nil = known to be missing
+	value []byte
 }
 
 type inflight struct {
@@ -59,19 +65,26 @@ func (c *columnCache) get(key string, load func() ([]byte, error)) ([]byte, erro
 	c.mu.Unlock()
 	c.misses.Add(1)
 
-	p.value, p.err = load()
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				p.value, p.err = nil, fmt.Errorf("panic while loading %q: %v", key, r)
+			}
+		}()
+		p.value, p.err = load()
+	}()
 
 	c.mu.Lock()
 	delete(c.pending, key)
-	if p.err == nil {
+	if p.err == nil && p.value != nil {
 		c.items[key] = c.order.PushFront(&cacheEntry{key: key, value: p.value})
-		c.used += int64(len(p.value)) + int64(len(key)) + 64
+		c.used += int64(len(p.value)) + int64(len(key)) + entryOverhead
 		for c.used > c.budget && c.order.Len() > 1 {
 			last := c.order.Back()
 			e := last.Value.(*cacheEntry)
 			c.order.Remove(last)
 			delete(c.items, e.key)
-			c.used -= int64(len(e.value)) + int64(len(e.key)) + 64
+			c.used -= int64(len(e.value)) + int64(len(e.key)) + entryOverhead
 			c.evicted.Add(1)
 		}
 	}

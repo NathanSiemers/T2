@@ -30,6 +30,8 @@ import (
 	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
+	"syscall"
+	"time"
 )
 
 type Roles struct {
@@ -58,6 +60,10 @@ type Dataset struct {
 	clinOrder []string
 
 	probeNames []string // selectable names (allprobes), for search
+	known      map[string]struct{} // every name that can have data: allprobes + probes + clinical
+	fileSize   int64               // identity of the file the maps below were loaded from
+	fileMtime  time.Time
+	fileIno    uint64
 	probeLower []string
 
 	levels  map[string][]string // categorical clinical/virtual column -> its levels
@@ -96,7 +102,8 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 	}
 	db.SetMaxOpenConns(dbConns)
 	db.SetMaxIdleConns(dbConns)
-	d := &Dataset{Name: name, Path: path, db: db,
+	d := &Dataset{Name: name, Path: path, db: db, known: map[string]struct{}{},
+		fileSize: fi.Size(), fileMtime: fi.ModTime(), fileIno: inode(fi),
 		version: fmt.Sprintf("%x%x", fi.Size(), fi.ModTime().Unix()),
 		cache:   newColumnCache(cacheBytes)}
 	steps := []func() error{d.loadRoles, d.loadClinical, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.buildMeta}
@@ -107,6 +114,24 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 		}
 	}
 	return d, nil
+}
+
+func inode(fi os.FileInfo) uint64 {
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return st.Ino
+	}
+	return 0
+}
+
+// unchanged reports whether the database file is still the one this dataset was loaded
+// from. Sample order, key maps, clinical columns and cached probe columns all belong to
+// that file: if it is replaced or rewritten, answers would mix two databases (values
+// attached to the wrong samples). The server stops when this turns false; Docker starts it
+// again and everything is loaded afresh. Replace a database by putting a NEW file or
+// directory in place and restarting the service, never by copying over a served file.
+func (d *Dataset) unchanged() bool {
+	fi, err := os.Stat(d.Path)
+	return err == nil && fi.Size() == d.fileSize && fi.ModTime().Equal(d.fileMtime) && inode(fi) == d.fileIno
 }
 
 // cleanText makes database text safe for JSON, which must be valid UTF-8: every byte that
@@ -416,6 +441,9 @@ func (d *Dataset) loadProbeNames() error {
 	defer rows.Close()
 	seen := map[string]bool{}
 	add := func(n string) {
+		if n != "" {
+			d.known[n] = struct{}{}
+		}
 		if n != "" && n != "sample" && !seen[n] {
 			seen[n] = true
 			d.probeNames = append(d.probeNames, n)
@@ -441,7 +469,35 @@ func (d *Dataset) loadProbeNames() error {
 	for _, n := range d.clinOrder {
 		add(n)
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	// names with data that allprobes might not list (it is a superset in every build so far)
+	prows, err := d.db.Query("SELECT probe FROM probes")
+	if err != nil {
+		return err
+	}
+	defer prows.Close()
+	for prows.Next() {
+		var p sql.NullString
+		if err := prows.Scan(&p); err != nil {
+			return err
+		}
+		if p.String != "" {
+			d.known[p.String] = struct{}{}
+		}
+	}
+	return prows.Err()
+}
+
+// isKnown: is this name a variable of the dataset at all? Answered from memory, before any
+// query and before the cache, so made-up names cost nothing.
+func (d *Dataset) isKnown(name string) bool {
+	if _, ok := d.clin[name]; ok {
+		return true
+	}
+	_, ok := d.known[name]
+	return ok
 }
 
 // the distinct text values of a raw column (nil for a numeric column)
@@ -620,6 +676,9 @@ func (d *Dataset) buildMeta() error {
 func (d *Dataset) column(name string) ([]byte, error) {
 	if c, ok := d.clin[name]; ok {
 		return c, nil
+	}
+	if _, ok := d.known[name]; !ok {
+		return nil, nil // not a variable of this dataset: no query, no cache entry
 	}
 	return d.cache.get(name, func() ([]byte, error) { return d.fetchProbe(name) })
 }

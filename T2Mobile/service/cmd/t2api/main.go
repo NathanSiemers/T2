@@ -24,10 +24,16 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"crypto/sha256"
+	"encoding/hex"
+	"sync"
 )
 
 const (
-	maxProbesPerRequest = 50
+	maxProbesPerRequest = 100
+	// a request whose first names are ALL unknown is refused outright instead of answered
+	// name by name: it is a mistake or a probe for weaknesses, not a use of the service
+	unknownPrefix = 10
 	maxProbeNameLen     = 200
 	maxSearchLimit      = 200
 )
@@ -38,6 +44,7 @@ type server struct {
 	started  time.Time
 	nReq     atomic.Int64
 	nErr     atomic.Int64
+	stopOnce sync.Once
 }
 
 func main() {
@@ -95,7 +102,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           s.count(gzipped(mux)),
+		Handler:           s.count(s.recovered(gzipped(mux))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -157,21 +164,56 @@ func (s *server) withDataset(h func(http.ResponseWriter, *http.Request, *Dataset
 			s.fail(w, http.StatusNotFound, "unknown dataset")
 			return
 		}
+		if !d.unchanged() { // see Dataset.unchanged: never answer from a replaced file
+			s.fail(w, http.StatusServiceUnavailable, "dataset is being replaced, try again shortly")
+			s.stopOnce.Do(func() {
+				log.Printf("dataset %s: %s changed on disk; stopping so that it is loaded afresh", d.Name, d.Path)
+				go func() { time.Sleep(300 * time.Millisecond); os.Exit(3) }()
+			})
+			return
+		}
 		h(w, r, d)
 	}
 }
 
-// cacheable marks a response as immutable for the life of this database file and answers
-// conditional requests. etagKey distinguishes responses within a dataset.
-func cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, etagKey string) (notModified bool) {
-	etag := `"` + d.version + "-" + etagKey + `"`
+// cacheable sets the caching headers and answers conditional requests; true = the request
+// has been answered. etagKey distinguishes responses within a dataset; it is hashed, so the
+// header has a fixed length and never carries bytes chosen by the client.
+// A client that passes the dataset version it knows (?v=<version from /v1/datasets>) gets a
+// response that may be kept for good: the URL then names one database build. If that version
+// is no longer the one served, the answer is 409 and the client reloads /v1/datasets.
+// Without ?v= the response may be reused for five minutes and is revalidated by ETag after.
+func (s *server) cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, etagKey string) (done bool) {
+	if v := r.URL.Query().Get("v"); v != "" {
+		if v != d.version {
+			s.fail(w, http.StatusConflict, "dataset version changed: reload /v1/datasets (current version "+d.version+")")
+			return true
+		}
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=300")
+	}
+	sum := sha256.Sum256([]byte(etagKey))
+	etag := `"` + d.version + "-" + hex.EncodeToString(sum[:12]) + `"`
 	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "public, max-age=86400")
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return true
 	}
 	return false
+}
+
+// recovered answers a panic in a handler with a plain 500 and keeps the process serving.
+func (s *server) recovered(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if p := recover(); p != nil {
+				log.Printf("panic serving %s: %v", r.URL.Path, p)
+				s.fail(w, http.StatusInternalServerError, "internal error")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -217,7 +259,7 @@ func (s *server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleMeta(w http.ResponseWriter, r *http.Request, d *Dataset) {
-	if cacheable(w, r, d, "meta") {
+	if s.cacheable(w, r, d, "meta") {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -225,7 +267,7 @@ func (s *server) handleMeta(w http.ResponseWriter, r *http.Request, d *Dataset) 
 }
 
 func (s *server) handleClinical(w http.ResponseWriter, r *http.Request, d *Dataset) {
-	if cacheable(w, r, d, "clinical") {
+	if s.cacheable(w, r, d, "clinical") {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -298,7 +340,21 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 		s.fail(w, http.StatusBadRequest, fmt.Sprintf("too many probes (max %d per request)", maxProbesPerRequest))
 		return
 	}
-	if cacheable(w, r, d, "v-"+strings.Join(names, ",")) {
+	// names are checked against the dataset's variable list first, in memory
+	if len(names) >= unknownPrefix {
+		anyKnown := false
+		for _, n := range names[:unknownPrefix] {
+			if d.isKnown(n) {
+				anyKnown = true
+				break
+			}
+		}
+		if !anyKnown {
+			s.fail(w, http.StatusBadRequest, fmt.Sprintf("none of the first %d names is a variable of this dataset", unknownPrefix))
+			return
+		}
+	}
+	if s.cacheable(w, r, d, "v-"+strings.Join(names, ",")) {
 		return
 	}
 	cols := make([][]byte, 0, len(names))
@@ -317,7 +373,7 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 		cols = append(cols, c)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"dataset":%s,"n":%d,"columns":[`, jsonString(d.Name), len(d.samples))
+	fmt.Fprintf(w, `{"dataset":%s,"version":%s,"n":%d,"columns":[`, jsonString(d.Name), jsonString(d.version), len(d.samples))
 	for i, c := range cols {
 		if i > 0 {
 			w.Write([]byte{','})

@@ -30,7 +30,23 @@ if [ "$what" = all ] || [ "$what" = abuse ]; then
     chk "unknown dataset"                 "$(code "$u/v1/nope/values?probes=CD8A")" 404
     chk "dataset path traversal"          "$(code --path-as-is "$u/v1/..%2f..%2fetc/values?probes=CD8A")" 404
     chk "no probes"                       "$(code "$u/v1/TCGA/values")" 400
-    chk "51 probes in one request"        "$(code "$u/v1/TCGA/values?probes=$(seq -s, 1 51)")" 400
+    known100=$(curl -s "$u/v1/TCGA/probes?q=CD&limit=100" | sed 's/.*"probes":\[\([^]]*\)\].*/\1/' | tr -d '"')
+    n100=$(echo "$known100" | tr ',' '\n' | wc -l)
+    chk "$n100 real probes in one request"  "$(code "$u/v1/TCGA/values?probes=$known100")" 200
+    chk "101 probes in one request"       "$(code "$u/v1/TCGA/values?probes=$known100,zz_extra_name")" 400
+    chk "first 10 names all unknown: the call is refused" "$(code "$u/v1/TCGA/values?probes=$(seq -s, -f 'junk%g' 1 10),CD8A")" 400
+    chk "9 unknown names, then a real one: answered" "$(code "$u/v1/TCGA/values?probes=$(seq -s, -f 'junk%g' 1 9),CD8A")" 200
+    chk "a real name among the first 10: answered" "$(code "$u/v1/TCGA/values?probes=CD8A,$(seq -s, -f 'junk%g' 1 12)")" 200
+    entries() { curl -s "$u/statz" | tr ',{' '\n\n' | grep -A8 '"TCGA"' | grep '"entries"' | head -1 | tr -dc '0-9'; }
+    e0=$(entries); for i in $(seq 1 40); do code "$u/v1/TCGA/values?probes=CD8A,$(seq -s, -f "nonsense${i}_%g" 1 50)" >/dev/null; done; e1=$(entries)
+    chk "2,000 made-up names add nothing to the cache (entries $e0 -> $e1)" "$([ "$e1" -le "$((e0 + 1))" ] && echo same || echo grew)" same
+    long=$(for i in $(seq 1 60); do printf 'CD8A_%0150d,' $i; done)
+    el=$(curl -s -D - -o /dev/null "$u/v1/TCGA/values?probes=CD8A,${long%,}" | tr -d '\r' | awk 'tolower($1)=="etag:" {print length($2)}')
+    chk "ETag stays short whatever is asked (length $el)" "$([ "${el:-999}" -le 60 ] && echo short || echo long)" short
+    ver=$(curl -s "$u/v1/datasets" | tr ',' '\n' | grep '"version"' | head -1 | cut -d'"' -f4)
+    chk "wrong dataset version in ?v= is a 409" "$(code "$u/v1/TCGA/values?probes=CD8A&v=000")" 409
+    cc=$(curl -s -D - -o /dev/null "$u/v1/TCGA/values?probes=CD8A&v=$ver" | tr -d '\r' | awk 'tolower($1)=="cache-control:" {print}')
+    chk "right version in ?v=: cacheable for good" "$(echo "$cc" | grep -c immutable)" 1
     chk "SQL in a probe name (just a name that does not exist)" "$(code "$u/v1/TCGA/values?probes=x%27%3B%20DROP%20TABLE%20probes%3B--")" 200
     chk "300-character probe name"        "$(code "$u/v1/TCGA/values?probes=$(head -c 300 /dev/zero | tr '\0' a)")" 400
     chk "POST is not allowed"             "$(code -X POST "$u/v1/TCGA/values?probes=CD8A")" 405

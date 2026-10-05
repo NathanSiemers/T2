@@ -45,7 +45,7 @@ missing. `codes`: index into `levels` from 0, `-1` = missing. `type`: the data t
 | `GET /v1/{ds}/meta` | one dataset in full: the above plus `presets`, `clinical_columns`, `survival_endpoints`, `cohorts` (display names), `types` (data-type descriptions), `datatypes` |
 | `GET /v1/{ds}/clinical` | `samples` (ids, in order) and `columns`: every clinical and virtual column. About 2.7 MB for TCGA (0.5 MB gzipped); fetch once per dataset version and keep it. |
 | `GET /v1/{ds}/probes?q=cd8&limit=50` | names of selectable variables containing `q` (case-insensitive; names starting with `q` first); `total_matches` |
-| `GET /v1/{ds}/values?probes=CD8A,TP53.mut,gender` | `columns` for those names (probes, clinical columns or `cohort` / `subtype`), `missing`: names the dataset does not have. At most 50 names per request. |
+| `GET /v1/{ds}/values?probes=CD8A,TP53.mut,gender` | `columns` for those names (probes, clinical columns or `cohort` / `subtype`), `missing`: names the dataset does not have. At most 100 names per request. The body also carries the dataset `version`. |
 | `GET /statz` | request and cache counters |
 
 `roles`: which clinical columns play cohort / subtype / sample type, the sample-type values
@@ -71,16 +71,38 @@ from its roles (`source: "derived"`): exclude non-tumor, exclude heme.
 ## Caching
 
 Data change only when a database file is replaced. Every dataset has a `version` (changes
-with the file) and every data response carries `ETag` and `Cache-Control: public,
-max-age=86400`; `If-None-Match` is answered `304`. So the app can keep what it has fetched,
-and Nginx or a CDN can serve repeats without reaching the service. `gzip` is used when the
+with the file; listed by `/v1/datasets`, in `/meta` and in every `/values` body).
+
+- **Pass the version you know: `...&v=<version>`.** The URL then names one database build:
+  the response has `Cache-Control: public, max-age=31536000, immutable` and can be kept for
+  good by the app, Nginx or a CDN. If that version is no longer the one served, the answer
+  is **`409`** (`{"error":"dataset version changed: ..."}`): reload `/v1/datasets`, drop
+  what was cached for the old version, and ask again with the new one.
+- Without `v` the response may be reused for five minutes (`max-age=300`) and is then
+  revalidated by `ETag` (`If-None-Match` is answered `304`). The ETag is a fixed-length
+  hash; it changes with the dataset version. `gzip` is used when the
 client accepts it (a 12,804-value numeric column: 64 KB plain, 24 KB gzipped).
 
 ## Errors
 
-`400` bad request (no probes, more than 50, a name over 200 characters), `404` unknown
-dataset or path, `405` not GET, `500` query failed. Body: `{"error":"..."}`. An unknown
-*probe* is not an error: it is listed in `missing`.
+`400` bad request (no probes, more than 100, a name over 200 characters, or **none of the
+first 10 names is a variable of the dataset**), `404` unknown dataset or path, `405` not
+GET, `409` the `v` given is not the version served, `500` internal error, `503` the dataset
+file is being replaced (the service restarts by itself; retry after a few seconds). Body:
+`{"error":"..."}`. A single unknown *probe* is not an error: it is listed in `missing`.
+
+Names are checked against the dataset's variable list (`allprobes`, plus the clinical
+columns) in memory before anything else: a made-up name costs no query and is never
+cached.
+
+## Replacing a database (operators)
+
+The service loads sample order, key maps and clinical columns from a file once, and every
+cached column belongs to that file. **Never copy over a file that is being served.** Put
+the new files in a new directory (or under a new name), point the service's volume at it,
+and restart the service. As a safety net the service checks on every request that the file
+it loaded is still the same file (size, modification time, inode); if not, it answers `503`
+and exits so that Docker starts it again with everything loaded afresh.
 
 ## Limits and safety
 

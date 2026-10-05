@@ -173,6 +173,8 @@ public struct Clinical: Decodable, Sendable {
 
 public struct Values: Decodable, Sendable {
     public let dataset: String
+    /// the database version these values come from (absent in answers of older servers)
+    public let version: String?
     public let n: Int
     public let columns: [Column]
     /// requested names the dataset does not have

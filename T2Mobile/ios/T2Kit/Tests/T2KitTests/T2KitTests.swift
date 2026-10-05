@@ -205,4 +205,13 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(Stats.chiSquareUpperTail(10, df: 4), 0.0404276819945128, accuracy: 1e-12)
         XCTAssertEqual(Stats.chiSquareUpperTail(0.5, df: 3), 0.918891411654676, accuracy: 1e-12)
     }
+
+    func testValuesCarryTheDatabaseVersion() throws {
+        let with = #"{"dataset":"DEMO","version":"3a0006ac4","n":2,"columns":[],"missing":["x"]}"#
+        let without = #"{"dataset":"DEMO","n":2,"columns":[],"missing":[]}"#
+        XCTAssertEqual(try APIClient.decoder.decode(Values.self, from: Data(with.utf8)).version, "3a0006ac4")
+        XCTAssertNil(try APIClient.decoder.decode(Values.self, from: Data(without.utf8)).version)
+        XCTAssertEqual(APIClient.maxProbesPerRequest, 100)
+        XCTAssertEqual("\(APIClient.APIError.versionChanged)", "the database on the server was updated")
+    }
 }

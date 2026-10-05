@@ -98,7 +98,7 @@ final class AppModel {
     /// switch dataset: everything about the previous one is dropped (its variables may not exist here)
     func open(_ name: String, launch: Bool = false) async throws {
         let m = try await api.meta(name)
-        let clin = try await api.clinical(name)
+        let clin = try await api.clinical(name, version: m.version)
         var cf = CrossFilter(sampleCount: clin.n)
         cf.load(clin.columns)
         meta = m
@@ -141,7 +141,16 @@ final class AppModel {
         guard let ds = datasetName else { return }
         let need = Array(Set(names.filter { !$0.isEmpty && filter.columns[$0] == nil })).sorted()
         guard !need.isEmpty else { return }
-        let r = try await api.values(ds, probes: need)
+        let r: (columns: [Column], missing: [String])
+        do {
+            r = try await api.values(ds, probes: need, version: meta?.version)
+        } catch APIClient.APIError.versionChanged {
+            // the database was replaced on the server: what is on the device (the sample
+            // order above all) belongs to the old one, so start this dataset afresh
+            try await open(ds)
+            status = "The database on the server was updated. The dataset was reloaded: choose the variables again."
+            return
+        }
         filter.load(r.columns)
         if !r.missing.isEmpty { status = "Not in this dataset: \(r.missing.joined(separator: ", "))" }
     }

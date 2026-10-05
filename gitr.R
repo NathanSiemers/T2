@@ -153,7 +153,14 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
       rout = left_join(rout, tidyr::spread(num_result, probe, value), by = 'sample')
     }
     if (nrow(cat_result) > 0) {
-      ## deduplicate: some categorical types (fmut) can have multiple values per sample
+      ## deduplicate: some categorical types (fmut) can have multiple values per
+      ## sample (two mutations of one gene). Keep ONE by a rule that does not depend
+      ## on the order in which SQLite happens to return the rows (that order follows
+      ## the index used, so it changed with the covering index): the smallest value
+      ## in byte order, a missing value only when there is no other. The t2api
+      ## service (T2Mobile/service, dataset.go) applies the same rule.
+      cat_result = cat_result[order(cat_result$sample, cat_result$probe, cat_result$value,
+                                    method = "radix", na.last = TRUE), , drop = FALSE]
       cat_result = cat_result %>% distinct(sample, probe, .keep_all = TRUE)
       rout = left_join(rout, tidyr::spread(cat_result, probe, value), by = 'sample')
     }

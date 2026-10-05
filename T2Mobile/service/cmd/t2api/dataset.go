@@ -641,7 +641,12 @@ func (d *Dataset) fetchProbe(name string) ([]byte, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	vals := make([]any, n)
+	// A sample can have several values for one categorical probe (two mutations of one
+	// gene in .fmut). Exactly as gitr() does, keep the smallest value in byte order: a rule
+	// that does not depend on the order in which SQLite returns the rows (that order follows
+	// whichever index is used).
+	raw := make([]string, n)
+	has := make([]bool, n)
 	ctype, found := "", false
 	for rows.Next() {
 		var sk int64
@@ -651,8 +656,8 @@ func (d *Dataset) fetchProbe(name string) ([]byte, error) {
 		}
 		found = true
 		ctype = t.String
-		if r, ok := d.keyToRow[sk]; ok && vals[r] == nil && v.Valid {
-			vals[r] = cleanText(v.String) // first value per sample, as gitr's distinct() keeps
+		if r, ok := d.keyToRow[sk]; ok && v.Valid && (!has[r] || v.String < raw[r]) {
+			raw[r], has[r] = v.String, true
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -660,6 +665,12 @@ func (d *Dataset) fetchProbe(name string) ([]byte, error) {
 	}
 	if !found {
 		return nil, nil
+	}
+	vals := make([]any, n)
+	for r := range raw {
+		if has[r] {
+			vals[r] = cleanText(raw[r])
+		}
 	}
 	return encodeAny(name, ctype, vals, nil), nil
 }

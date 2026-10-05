@@ -49,7 +49,10 @@ for (ds in vapply(get("/v1/datasets")$datasets, `[[`, "", "name")) {
   suffix <- ifelse(grepl("\\.", genes), sub(".*\\.", "", genes), "(none)")
   per <- max(2, ceiling(n_random / length(unique(suffix))))
   pick <- unlist(lapply(split(genes, suffix), function(v) sample(v, min(per, length(v)))))
-  if (ds == "TCGA") pick <- unique(c("CD8A", "TP53.mut", "FOXP3", "StromalScore.estimate", "HRD.hrd", pick))
+  ## the .fmut probes have samples with several values (two mutations of one gene): the
+  ## rule "smallest value in byte order" must hold on both sides whatever index is used
+  if (ds == "TCGA") pick <- unique(c("CD8A", "TP53.mut", "FOXP3", "StromalScore.estimate", "HRD.hrd",
+                                     "CPN2.fmut", "TP53.fmut", "TTN.fmut", "KRAS.fmut", pick))
   pick <- unname(pick)
   t_api <- t_r <- 0; n_ok <- 0; kinds <- character(0); diffs <- character(0)
   for (chunk in split(pick, ceiling(seq_along(pick) / 20))) {

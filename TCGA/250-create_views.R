@@ -31,12 +31,14 @@ SELECT
   pr.probe,
   CASE
     WHEN dat.probekey IS NOT NULL THEN dat.value
-    ELSE 0
+    WHEN COALESCE(sp.sparse, 1) = 1 THEN COALESCE(sp.default_value, 0)
+    ELSE NULL
   END AS value,
   pt.type
 FROM probes pr
 JOIN probe_types pt ON pt.probekey = pr.key
 JOIN tested t ON t.type = pt.type
+LEFT JOIN sparse sp ON sp.type = pt.type
 JOIN samples sa ON sa.sample = t.sample
 LEFT JOIN tcgai dat
   ON dat.probekey   = pr.key
@@ -74,12 +76,14 @@ SELECT
   pr.probe,
   CASE
     WHEN dat.probekey IS NOT NULL THEN dat.value
-    ELSE 0
+    WHEN COALESCE(sp.sparse, 1) = 1 THEN COALESCE(sp.default_value, 0)
+    ELSE NULL
   END AS value,
   pt.type
 FROM probes pr
 JOIN probe_types pt ON pt.probekey = pr.key
 JOIN tested t ON t.type = pt.type
+LEFT JOIN sparse sp ON sp.type = pt.type
 JOIN samples sa ON sa.sample = t.sample
 JOIN clinpheno cp ON cp.sample = sa.sample
 LEFT JOIN tcgai dat

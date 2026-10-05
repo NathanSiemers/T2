@@ -172,62 +172,13 @@ source("default_filters.R")
 write_default_filters(con, "DEMO")
 
 ## ---------------------------------------------------------------------------
-## 5. Indexes (mirror the TCGA build's performance indexes)
+## 5. Sparse status, indexes and views: the shared DDL of t2_views.R, the same
+##    as every other dataset (probe_types was written above from tcgai)
 ## ---------------------------------------------------------------------------
-dbExecute(con, "CREATE INDEX probe_types_pk ON probe_types(probekey, type)")
-dbExecute(con, "CREATE INDEX probe_types_tp ON probe_types(type, probekey)")
-dbExecute(con, "CREATE INDEX tcgaiidx_pts ON tcgai(probekey, type, samplekey, value)")       # covering: see t2_views.R
-dbExecute(con, "CREATE INDEX tcgacatiidx_pts ON tcgacati(probekey, type, samplekey, value)")
-dbExecute(con, "CREATE INDEX tested_type ON tested(type)")
-dbExecute(con, "CREATE INDEX tested_type_sample ON tested(type, sample)")
-dbExecute(con, "CREATE INDEX clinphenoidx ON clinpheno(sample)")
-dbExecute(con, "CREATE INDEX samplesidx ON samples(sample)")
-dbExecute(con, "CREATE INDEX probesidx ON probes(probe)")
-
-## ---------------------------------------------------------------------------
-## 6. Views (identical DDL shape to 250-create_views.R)
-## ---------------------------------------------------------------------------
-dbExecute(con, "DROP VIEW IF EXISTS tcgas")
-dbExecute(con, "
-CREATE VIEW tcgas AS
-SELECT sa.sample, pr.probe,
-  CASE WHEN dat.probekey IS NOT NULL THEN dat.value ELSE 0 END AS value,
-  pt.type
-FROM probes pr
-JOIN probe_types pt ON pt.probekey = pr.key
-JOIN tested t ON t.type = pt.type
-JOIN samples sa ON sa.sample = t.sample
-LEFT JOIN tcgai dat ON dat.probekey = pr.key AND dat.samplekey = sa.key AND dat.type = pt.type")
-
-dbExecute(con, "DROP VIEW IF EXISTS tcgacats")
-dbExecute(con, "
-CREATE VIEW tcgacats AS
-SELECT sa.sample, pr.probe, dat.value, dat.type
-FROM tcgacati dat
-JOIN samples sa ON sa.key = dat.samplekey
-JOIN probes pr ON pr.key = dat.probekey")
-
-dbExecute(con, "DROP VIEW IF EXISTS tcga")
-dbExecute(con, "
-CREATE VIEW tcga AS
-SELECT cp.*, pr.probe,
-  CASE WHEN dat.probekey IS NOT NULL THEN dat.value ELSE 0 END AS value,
-  pt.type
-FROM probes pr
-JOIN probe_types pt ON pt.probekey = pr.key
-JOIN tested t ON t.type = pt.type
-JOIN samples sa ON sa.sample = t.sample
-JOIN clinpheno cp ON cp.sample = sa.sample
-LEFT JOIN tcgai dat ON dat.probekey = pr.key AND dat.samplekey = sa.key AND dat.type = pt.type")
-
-dbExecute(con, "DROP VIEW IF EXISTS tcgacat")
-dbExecute(con, "
-CREATE VIEW tcgacat AS
-SELECT cp.*, pr.probe, dat.value, dat.type
-FROM tcgacati dat
-JOIN samples sa ON sa.key = dat.samplekey
-JOIN probes pr ON pr.key = dat.probekey
-JOIN clinpheno cp ON cp.sample = sa.sample")
+source("t2_views.R")
+set_t2_sparse(con, "expr", sparse = FALSE)   # every sample x probe value is stored
+create_t2_core_indexes(con)
+create_t2_core_views(con)
 
 ## Serve in rollback-journal mode: a single file, readable by the read-only
 ## app containers without -wal/-shm sidecars (see finalize_t2_core).

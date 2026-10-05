@@ -6,8 +6,9 @@ package main
 //
 //   - The sample universe and order are the rows of `clinpheno`.
 //   - A NUMERIC probe has a data type (probe_types). For a sample tested for that type the
-//     value is the stored one, a stored NULL is missing, and NO stored row means 0 (sparse
-//     zero). A sample not tested for the type is missing.            [view `tcgas`]
+//     value is the stored one, a stored NULL is missing, and NO stored row means the type's
+//     default (0) if the type was loaded sparsely, missing if it was loaded in full (table
+//     `sparse`). A sample not tested for the type is missing.        [view `tcgas`]
 //   - Otherwise the probe is CATEGORICAL: the stored text value, missing where there is no
 //     row.                                                           [view `tcgacats`]
 //   - A numeric probe whose data type is declared "factor" in `datatypes` (mutations, copy
@@ -51,6 +52,7 @@ type Dataset struct {
 	samples   []string         // sample ids, clinpheno order: THE row order of every column
 	keyToRow  map[int64]int32  // samples.key -> row
 	tested    map[string][]bool // data type -> row tested?
+	sparse    map[string]sparseType // data type -> how it was loaded (table `sparse`); absent = sparse, default 0
 	dtype     map[string]string // data type -> "numeric" | "factor"
 	clin      map[string][]byte // encoded clinical + virtual columns
 	clinOrder []string
@@ -97,7 +99,7 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 	d := &Dataset{Name: name, Path: path, db: db,
 		version: fmt.Sprintf("%x%x", fi.Size(), fi.ModTime().Unix()),
 		cache:   newColumnCache(cacheBytes)}
-	steps := []func() error{d.loadRoles, d.loadClinical, d.loadSamples, d.loadTested, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.buildMeta}
+	steps := []func() error{d.loadRoles, d.loadClinical, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.buildMeta}
 	for _, f := range steps {
 		if err := f(); err != nil {
 			db.Close()
@@ -343,6 +345,39 @@ func (d *Dataset) loadTested() error {
 			d.tested[typ] = make([]bool, len(d.samples))
 		}
 		d.tested[typ][r] = true
+	}
+	return rows.Err()
+}
+
+// sparseType says what a missing row means for a sample tested for the type: for a type
+// loaded sparsely (zeros not stored) the default value, for a type loaded in full: missing.
+type sparseType struct {
+	sparse bool
+	def    float64
+}
+
+// loadSparse reads the `sparse` table (written by the database build since October 2026).
+// Databases without it behave as before: every type sparse with default 0, exactly as the
+// view `tcgas` treats a type that has no row in the table.
+func (d *Dataset) loadSparse() error {
+	d.sparse = map[string]sparseType{}
+	rows, err := d.db.Query("SELECT type, sparse, default_value FROM sparse")
+	if err != nil {
+		return nil // optional table
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var typ string
+		var sp sql.NullInt64
+		var def sql.NullFloat64
+		if err := rows.Scan(&typ, &sp, &def); err != nil {
+			return err
+		}
+		st := sparseType{sparse: !sp.Valid || sp.Int64 == 1}
+		if def.Valid {
+			st.def = def.Float64
+		}
+		d.sparse[typ] = st
 	}
 	return rows.Err()
 }
@@ -601,10 +636,16 @@ func (d *Dataset) fetchProbe(name string) ([]byte, error) {
 	if err == nil { // numeric probe: dense over the samples tested for its type
 		vals := make([]float64, n)
 		tested := d.tested[typ.String]
+		st, known := d.sparse[typ.String]
+		if !known {
+			st = sparseType{sparse: true}
+		}
 		for i := range vals {
-			if tested == nil || !tested[i] {
-				vals[i] = math.NaN() // not tested: missing
-			} // tested and no stored row: 0
+			if tested == nil || !tested[i] || !st.sparse {
+				vals[i] = math.NaN() // not tested, or the type is stored in full: missing unless a row says otherwise
+			} else {
+				vals[i] = st.def // tested, sparse type, no stored row: the default (0)
+			}
 		}
 		rows, err := d.db.Query("SELECT samplekey, value FROM tcgai WHERE probekey = ? AND type = ?", key, typ.String)
 		if err != nil {

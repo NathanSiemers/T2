@@ -7,9 +7,13 @@ library(tidyverse)
 ## apply any function you would like function (default: median)
 ## scale data after function if desired (default: no)
 
+## require_all_members (the default): a sample's signature is NA unless EVERY
+## member has a real value for that sample. Nothing is imputed and nothing is
+## computed from the members that happen to be present; samples with no data for
+## the members (e.g. no RNA) get NA, and they do not enter the postscale.
 sig_fn = function( dat, comp, name = 'sig', gitr = FALSE,
     gitrDB = tcga, gitrDBcat = tcgacat,
-    prescale = scale, postscale = NULL, fun = NULL, ...  ) {
+    prescale = scale, postscale = NULL, fun = NULL, require_all_members = TRUE, ...  ) {
     ## first, define simple default functions
     median_fn = function(x){median(x, na.rm = TRUE)}
     nothing_fn = function(x){x}
@@ -28,10 +32,11 @@ sig_fn = function( dat, comp, name = 'sig', gitr = FALSE,
         dat = gitr(comp, db = gitrDB, dbcat = gitrDBcat)
     }
     ## create signature
-    signature = dat %>%
-        select( c(comp) ) %>%
-            prescale %>% apply(1, fun) %>% postscale %>%
-                data.frame 
+    members = dat %>% select( c(comp) )
+    complete = stats::complete.cases(members)
+    values = members %>% prescale %>% apply(1, fun)
+    if (isTRUE(require_all_members)) values[!complete] = NA
+    signature = values %>% postscale %>% data.frame
     colnames(signature)  = name
     signature
 }    

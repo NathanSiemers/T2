@@ -186,6 +186,34 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
     else if (!is.na(nnull) && nnull > 0) FAIL("tcgas has NULL values (should be 0-filled)")
     else PASS(sprintf("%s: %s dense rows", gene, nview))
   })
+  add("views", "sparse table says how every numeric data type was loaded", function() {
+    ## without it a reader cannot tell whether a tested sample with no stored row is 0 or NA
+    if (!"sparse" %in% DBI::dbListTables(con)) return(FAIL("no `sparse` table"))
+    miss <- .qdf(con, "SELECT DISTINCT pt.type FROM probe_types pt LEFT JOIN sparse sp ON sp.type = pt.type WHERE sp.type IS NULL")
+    bad  <- .qdf(con, "SELECT type FROM sparse WHERE sparse NOT IN (0, 1) OR (sparse = 1 AND default_value IS NULL)")
+    if (nrow(miss)) FAIL(paste("types with no row in `sparse`:", paste(miss$type, collapse = ", ")))
+    else if (nrow(bad)) FAIL(paste("bad rows in `sparse`:", paste(bad$type, collapse = ", ")))
+    else PASS(paste(.qdf(con, "SELECT type || '=' || sparse AS x FROM sparse ORDER BY type")$x, collapse = " "))
+  })
+  add("views", "a type loaded in full has a stored row for every tested cell (no inferred values)", function() {
+    ## for sparse = 0 types the view returns NULL where there is no row: count those cells
+    full <- .qdf(con, "SELECT type FROM sparse WHERE sparse = 0 AND type IN (SELECT DISTINCT type FROM probe_types)")$type
+    if (!length(full)) return(SKIP("no numeric type loaded in full"))
+    gaps <- vapply(full, function(ty) {
+      cells <- .q1(con, sprintf("SELECT (SELECT COUNT(*) FROM probe_types WHERE type='%s') * (SELECT COUNT(*) FROM tested t JOIN samples sa ON sa.sample = t.sample WHERE t.type='%s')", ty, ty))
+      as.numeric(cells) - as.numeric(.q1(con, sprintf("SELECT COUNT(*) FROM tcgai WHERE type='%s'", ty)))
+    }, numeric(1))
+    if (any(gaps != 0)) WARN(paste("cells with no stored row (served as NA):", paste(sprintf("%s %s", full[gaps != 0], gaps[gaps != 0]), collapse = ", ")))
+    else PASS(paste(full, collapse = " "))
+  })
+  add("views", "signatures are missing for samples without the member data", function() {
+    if (is.na(.q1(con, "SELECT type FROM probe_types WHERE type = 'sig' LIMIT 1"))) return(SKIP("no signatures"))
+    n <- .q1(con, "SELECT COUNT(*) FROM tcgas WHERE type = 'sig' AND value IS NOT NULL
+                   AND sample NOT IN (SELECT sample FROM tested WHERE type = 'rna')")
+    nsamp <- .q1(con, "SELECT COUNT(*) FROM tested WHERE type = 'sig' AND sample NOT IN (SELECT sample FROM tested WHERE type = 'rna')")
+    if (n > 0) FAIL(sprintf("%s signature values exist for samples with no rna data", n))
+    else PASS(sprintf("%s samples without rna: all signatures NA", nsamp))
+  })
   add("views", "tcgas sparse-zero accounting is consistent", function() {
     if (is.na(gene)) return(SKIP("no numeric probe"))
     nz   <- .q1(con, sprintf("SELECT COUNT(*) FROM tcgas WHERE probe='%s' AND value<>0", gene))

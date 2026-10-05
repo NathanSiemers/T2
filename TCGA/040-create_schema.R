@@ -53,6 +53,14 @@ if( mysql ) {
       ##probe = 'varchar(35)',
       value = 'int',
       type = 'varchar(35)' ) )
+    ## sparse: how each data type was loaded (written by tablemaker). sparse = 1:
+    ## zero values were not stored, so a TESTED sample with no row has
+    ## default_value (0). sparse = 0: everything was stored, so no row means NA.
+    try(dbRemoveTable(con, 'sparse'), silent = TRUE)
+    dbCreateTable(con, name = 'sparse', c(
+      type = 'varchar(35) primary key',
+      sparse = 'int not null',
+      default_value = 'double' ) )
     try(dbRemoveTable(con, 'probestmp'))
     dbCreateTable(con, name = 'probestmp', c(
                            key = 'mediumint unsigned',
@@ -147,4 +155,12 @@ if( mysql ) {
       ##probe = 'varchar(35)',
       value = 'int',
       type = 'varchar(35)' ) )
+    ## sparse: how each data type was loaded (written by tablemaker). sparse = 1:
+    ## zero values were not stored, so a TESTED sample with no row has
+    ## default_value (0). sparse = 0: everything was stored, so no row means NA.
+    try(dbRemoveTable(con, 'sparse'), silent = TRUE)
+    dbCreateTable(con, name = 'sparse', c(
+      type = 'varchar(35) primary key',
+      sparse = 'int not null',
+      default_value = 'double' ) )
 }

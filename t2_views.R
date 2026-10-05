@@ -47,17 +47,41 @@ create_t2_core_indexes <- function(con) {
   for (s in idx) DBI::dbExecute(con, s)
 }
 
+## The `sparse` table: one row per data type saying how it was loaded.
+##   sparse = 1  zero values are not stored: a sample TESTED for the type with no
+##               row for a probe has default_value (0)
+##   sparse = 0  every value is stored: no row means missing (NA)
+## A stored NULL is NA either way, and a sample not in `tested` for the type is
+## NA either way. The TCGA pipeline fills this table in tablemaker(); the other
+## builders call set_t2_sparse(). A type with no row is treated as sparse with
+## default 0 (how every database built before October 2026 behaves).
+create_t2_sparse_table <- function(con) {
+  DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS sparse (type varchar(35) PRIMARY KEY, sparse int NOT NULL, default_value double)")
+}
+set_t2_sparse <- function(con, type, sparse = TRUE, default_value = 0) {
+  create_t2_sparse_table(con)
+  DBI::dbExecute(con, "DELETE FROM sparse WHERE type = ?", params = list(type))
+  DBI::dbExecute(con, "INSERT INTO sparse (type, sparse, default_value) VALUES (?, ?, ?)",
+                 params = list(type, as.integer(isTRUE(sparse)), if (isTRUE(sparse)) default_value else NA_real_))
+}
+
 create_t2_core_views <- function(con) {
-  ## tcgas: dense numeric (tested + probe_types -> sparse 0 vs NULL NA)
+  create_t2_sparse_table(con)
+  ## tcgas: dense numeric. For a sample tested for the probe's type: the stored
+  ## value (a stored NULL stays NULL = NA); with no stored row, the type's default
+  ## (0) if the type is sparse, else NULL. Untested samples are not in the view.
   DBI::dbExecute(con, "DROP VIEW IF EXISTS tcgas")
   DBI::dbExecute(con, "
 CREATE VIEW tcgas AS
 SELECT sa.sample, pr.probe,
-  CASE WHEN dat.probekey IS NOT NULL THEN dat.value ELSE 0 END AS value,
+  CASE WHEN dat.probekey IS NOT NULL THEN dat.value
+       WHEN COALESCE(sp.sparse, 1) = 1 THEN COALESCE(sp.default_value, 0)
+       ELSE NULL END AS value,
   pt.type
 FROM probes pr
 JOIN probe_types pt ON pt.probekey = pr.key
 JOIN tested t ON t.type = pt.type
+LEFT JOIN sparse sp ON sp.type = pt.type
 JOIN samples sa ON sa.sample = t.sample
 LEFT JOIN tcgai dat ON dat.probekey = pr.key AND dat.samplekey = sa.key AND dat.type = pt.type")
 
@@ -75,11 +99,14 @@ JOIN probes pr ON pr.key = dat.probekey")
   DBI::dbExecute(con, "
 CREATE VIEW tcga AS
 SELECT cp.*, pr.probe,
-  CASE WHEN dat.probekey IS NOT NULL THEN dat.value ELSE 0 END AS value,
+  CASE WHEN dat.probekey IS NOT NULL THEN dat.value
+       WHEN COALESCE(sp.sparse, 1) = 1 THEN COALESCE(sp.default_value, 0)
+       ELSE NULL END AS value,
   pt.type
 FROM probes pr
 JOIN probe_types pt ON pt.probekey = pr.key
 JOIN tested t ON t.type = pt.type
+LEFT JOIN sparse sp ON sp.type = pt.type
 JOIN samples sa ON sa.sample = t.sample
 JOIN clinpheno cp ON cp.sample = sa.sample
 LEFT JOIN tcgai dat ON dat.probekey = pr.key AND dat.samplekey = sa.key AND dat.type = pt.type")

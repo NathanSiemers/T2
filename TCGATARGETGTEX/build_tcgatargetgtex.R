@@ -176,7 +176,7 @@ for (lo in seq(1, nprobe, by = PROBE_CHUNK)) {
   sub <- coll[lo:hi]
   long <- melt(sub, id.vars = "probe", variable.name = "sample",
                value.name = "value", variable.factor = FALSE)
-  long <- long[value != 0]                       # sparse: drop unexpressed (==0)
+  long <- long[value != 0 | is.na(value)]        # sparse: drop unexpressed (==0), keep NA as NULL rows
   if (nrow(long)) {
     long[, samplekey := sample_key[sample]]
     long[, probekey  := probe_key[probe]]
@@ -249,6 +249,7 @@ write_default_filters(con, "tcgatargetgtex")
 ## 7. probe_types + indexes + views (shared DDL from ../t2_views.R)
 ## ============================================================================
 say("building probe_types, indexes, views ...")
+set_t2_sparse(con, "rna", sparse = TRUE, default_value = 0)   # zeros are not stored
 finalize_t2_core(con)
 
 ## ============================================================================

@@ -106,6 +106,15 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     }
     cat(sprintf("  r_datatype: %s\n", effective_datatype))
 
+    ## SPARSE - record how this type is loaded, so that gitr-like readers know
+    ## what a missing row means for a tested sample: the default value (0) for a
+    ## sparse type, NA for a type that was loaded in full.
+    if(!mysql) dbExecute(connection, 'create table if not exists sparse (type varchar(35) primary key, sparse int not null, default_value double)')
+    dbExecute(connection, paste0('delete from sparse where type = "', thistype, '"'))
+    dbExecute(connection, paste0('insert into sparse (type, sparse, default_value) values ( "', thistype, '", ',
+                                 as.integer(isTRUE(sparse)), ', ', if (isTRUE(sparse)) '0' else 'NULL', ' )'))
+    cat(sprintf("  sparse table: type=%s sparse=%d\n", thistype, as.integer(isTRUE(sparse))))
+
     ## INSERT INTO CORE TIDY TABLE
     ## filter zeros if sparse
     if(sparse){

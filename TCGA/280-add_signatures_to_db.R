@@ -31,12 +31,13 @@ table(my_na$probe)  ## always  the same number per sig no matter what!
 head(my_na)
 length(unique(my_na$sample))  # they are all the same samples
 
+## Signatures are loaded in full (sparse = FALSE): every value is stored, a
+## missing signature (a sample without all of the members, e.g. no RNA data) is
+## stored as NULL, and nothing is ever inferred to be 0.
 dim(sig_load)
-sig_load = sig_load[ !is.na(sig_load$value), ]
-dim(sig_load)
+table(is.na(sig_load$value))
 
-
-tablemaker(dat = sig_load, connection = con, deleteType = TRUE,  suffix = FALSE)
+tablemaker(dat = sig_load, connection = con, deleteType = TRUE,  suffix = FALSE, sparse = FALSE)
 
 system('touch restart.txt')
 

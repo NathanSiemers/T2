@@ -185,3 +185,71 @@ installs); the Apple Developer Program ($99/year) only for TestFlight / App Stor
    ~12 and thousands of *uncached* probe lookups per second.
 3. Publish the service behind Nginx once the app runs against the tunnel.
 4. App: survival screen, facets, on-device caching, TIFF, iPad layout.
+
+### 2026-10-04/05 (night) — iPhone app: real compiles on macOS runners, mac_setup.sh (Claude)
+
+Newest state of the iOS work is always the LAST bullet list of this entry ("Where it
+stands"). docs/IOS.md is the reference; this is the history.
+
+**Branch `t2mobile-ci`** (GitHub: NathanSiemers/T2). It is built on the *published* main
+(789cc5d), not on the local main: the local main had an unpushed commit (5c8fc0e: query
+service, default_filters, database build changes) and pushing a branch on top of it would
+have published all of that. The branch therefore carries only `T2Mobile/ios`,
+`T2Mobile/NOTES.md`, `T2Mobile/docs/IOS.md` and `.github/workflows/t2mobile-ios.yml`
+(so docs/API.md and service/, which these notes mention, are not on it). A local-only
+branch `t2mobile-ci-on-local-main` (bd68353) is the first, unpushed attempt; delete it at will.
+Merging `t2mobile-ci` into main: the two NOTES.md / IOS.md versions will conflict trivially
+(take this branch's for IOS.md; for NOTES.md keep both logs).
+
+**CI** — `.github/workflows/t2mobile-ios.yml`, only for pushes to `t2mobile-ci` (and
+manual runs); no secrets. Runner `macos-26` (arm64, macOS 26.6.2): **Xcode 26.6 (17F113),
+iOS SDK 26.5**, simulators iOS 26.5 (iPhone 17 / 17 Pro / 17 Pro Max / 17e / Air), XcodeGen
+2.46.0. Each job runs `T2Mobile/ios/mac_setup.sh --ci` — the script the owner runs on his
+Mac — so the script itself is what is tested. A run takes ~6 minutes of work; waiting for a
+free macOS runner took up to 20 minutes tonight.
+    gh run list --limit 5            # (the gh here is 2.4: no --branch flag)
+    gh run view <id> --log-failed
+    gh run download <id> -D <dir>    # screenshots and logs
+
+**Runs so far**
+- 37268887380 (bc97f41): FAILED in step 5/7. One line: `var x = "", y = "", color = ""` in
+  an `@Observable` class ("accessor macro can only apply to a single variable"). Rule: one
+  stored property per `var` in @Observable classes. Steps 1-4 of the script passed.
+- 37275226366 (fafbf8c): **GREEN**. The draft app as written on Linux compiled with that one
+  fix. T2Kit: 45 tests pass on macOS. The script ran all 7 steps: XcodeGen downloaded
+  (no Homebrew), project generated, simulator booted (2.5 min cold), app installed and
+  started on each of its four tabs, loaded live TCGA data, four screenshots saved.
+  What the screenshots showed (draft UI): data and plot correct in substance (boxes of CD8A
+  by cohort, 12,804 samples), but x-axis labels overlapping the axis title, legend cut off,
+  filter histogram labels one letter wide with 33 switches, figure preview far down the
+  Publish form. The live service was already serving stored presets ("Tumor samples only",
+  "Primary tumors only", ...).
+
+**Built this night (all in `T2Mobile/ios`)**
+- `mac_setup.sh` (see docs/IOS.md "On the Mac: one command").
+- `T2App/project.yml`: app + UI-test target + scheme; `Config/T2.xcconfig` (bundle id
+  `org.fiveprime.t2`, version 0.2.0 build 1, team empty; `Config/Local.xcconfig` overrides,
+  not in git); iOS 17.0; iPhone only; portrait + landscape; icon and launch logo generated
+  by `tools/make_icon.py` (Pillow; committed PNGs); accent colour.
+- T2Kit additions, each tested against R 4.5.3 / survival 3.8.6 (the R containers used for
+  the reference values were `shinyt2t:2026.10`; scripts are quoted in the test files):
+  `StatsMore` (Pearson/Spearman p, Kruskal-Wallis, KM confidence limits, Cox, quantile
+  groups as survival_km(), residuals), `Palette` (plasma from viridisLite), `PlotScene` +
+  `PlotBuilder` (a plot as data: scatter and box plots so far).
+  Semantics taken from lib.R, with line numbers checked: z-score and probe combination run
+  over the samples in use (after gitr() filtering), before the "complete information" cut;
+  "remove influences of" is fitted after that cut, over the samples drawn; "complete
+  information" also requires the dataset's `cohort` and `sample_type` when it has them.
+  Real numbers to compare with the website: TCGA, X = cohort, Y = CD8A, colour =
+  sample_type, no filters: 11,005 points (CD8A missing for 1,753 samples, cohort for 213).
+- Facts about the live API found on the way (client-side handled, API-side worth fixing):
+  `meta.survival_endpoints` lists OS/PFI/DSS/DFI for every dataset, but tcgatargetgtex
+  and DEMO have no such columns (T2Kit: `usableSurvivalEndpoints`).
+
+**Pitfalls**
+- This host's worktree guard refuses long compound shell commands; edit files with the
+  editor tools and run one plain command at a time.
+- Linux Foundation: `String(format: "%@", swiftString)` is not usable; interpolate.
+- XCUITest: an element in a SwiftUI List exists only while it is on screen: scroll first.
+- `xcrun simctl launch --stdout=file` returns at once and the app's output lands in the
+  file; the app writes `T2-READY <dataset>` with FileHandle (print() would be buffered).

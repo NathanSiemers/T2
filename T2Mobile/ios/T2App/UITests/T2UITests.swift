@@ -159,7 +159,7 @@ final class T2UITests: XCTestCase {
         shot("13-plot-boxes-by-mutation")
         // a search that finds nothing
         openTab("Select")
-        element("pick-Y").tap()
+        scrollTo("pick-Y").tap()      // on a small screen the row can be out of view after the picks above
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 20))
         field.tap()

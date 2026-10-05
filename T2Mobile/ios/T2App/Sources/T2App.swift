@@ -5,13 +5,16 @@ import T2Kit
 @main
 struct T2App: App {
     @State private var model = AppModel()
+    // the tab shown first can be chosen at launch (-t2Tab select|plot|filter|publish):
+    // mac_setup.sh and the UI tests use it to photograph each screen
+    @State private var tab = UserDefaults.standard.string(forKey: "t2Tab") ?? "select"
     var body: some Scene {
         WindowGroup {
-            TabView {
-                SelectView().tabItem { Label("Select", systemImage: "list.bullet") }
-                PlotView().tabItem { Label("Plot", systemImage: "chart.dots.scatter") }
-                FilterView().tabItem { Label("Filter", systemImage: "slider.horizontal.3") }
-                PublishView().tabItem { Label("Publish", systemImage: "square.and.arrow.up") }
+            TabView(selection: $tab) {
+                SelectView().tabItem { Label("Select", systemImage: "list.bullet") }.tag("select")
+                PlotView().tabItem { Label("Plot", systemImage: "chart.dots.scatter") }.tag("plot")
+                FilterView().tabItem { Label("Filter", systemImage: "slider.horizontal.3") }.tag("filter")
+                PublishView().tabItem { Label("Publish", systemImage: "square.and.arrow.up") }.tag("publish")
             }
             .environment(model)
             .task { await model.start() }

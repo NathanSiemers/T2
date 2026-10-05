@@ -20,7 +20,10 @@ final class AppModel {
     var samples: [String] = []
     var filter = CrossFilter(sampleCount: 0)
     var activePresets: Set<String> = []
-    var x = "", y = "", color = ""
+    // (one property per line: @Observable cannot track `var a = "", b = ""`)
+    var x = ""
+    var y = ""
+    var color = ""
     var status = ""
     var busy = false
 
@@ -36,6 +39,11 @@ final class AppModel {
             self.datasets = try await self.api.datasets()
             if let first = self.datasets.first, self.meta == nil { try await self.open(first.name) }
         }
+        // one line on standard output when the first data are on screen (or could not be
+        // loaded): mac_setup.sh and the UI tests wait for it before taking a picture.
+        // Written unbuffered: print() would sit in a buffer when output goes to a file.
+        let line = meta != nil ? "T2-READY \(meta?.dataset ?? "")\n" : "T2-FAILED \(status)\n"
+        FileHandle.standardOutput.write(Data(line.utf8))
     }
 
     /// switch dataset: everything about the previous one is dropped (its fields may not exist here)

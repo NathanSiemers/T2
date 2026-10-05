@@ -11,9 +11,9 @@ base_inputs <- list(
   size = "", cohort = "all",
   pcortype = "none", nonormal = FALSE, noheme = FALSE, multi_y = FALSE,
   zscore_y = FALSE, coordflip = FALSE, waterfall = FALSE, waterfall_flip = FALSE,
-  allComplete = TRUE, smooth = "TRUE", scales = "fixed", alpha = 0.12,
-  static.size = 0.5, static.strip = 0.5, static.labels = 0.6,
-  static.titles = 0.6, ncols = 8, plot_btn = 0, plot_btn2 = 0
+  allComplete = TRUE, smooth = "TRUE", scales = "fixed",
+  
+  ncols = 8, plot_btn = 0, plot_btn2 = 0
 )
 
 testServer(shiny::shinyAppDir("."), {

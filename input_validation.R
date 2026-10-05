@@ -15,8 +15,7 @@
 T2_INPUT_ARGS = c('x', 'y', 'color', 'size', 'cohort', 'facet', 'condition',
                   'pcortype', 'multi_y', 'zscore_y', 'coordflip', 'waterfall',
                   'waterfall_flip', 'nonormal', 'noheme', 'allComplete',
-                  'smooth', 'scales', 'static.size', 'static.strip',
-                  'static.labels', 'static.titles', 'alpha', 'ncols',
+                  'smooth', 'scales', 'show_legend', T2_STYLE_ARGS,
                   'km_groups', 'surv_max_days')
 
 ## character values that are in `allowed`, de-duplicated, at most max_n;
@@ -52,7 +51,7 @@ sanitize_t2_input = function(input, b) {
     ## read only the named inputs below: converting all of `input` to a list
     ## makes an output depend on every input (e.g. DT table state) and re-render forever
     vars = b$mygenesplus
-    list(
+    c(list(
         x         = .t2_pick(input$x, c(vars, names(T2_ENDPOINTS)), 20),
         y         = .t2_pick(input$y, vars, 20),
         color     = .t2_one(input$color, c('probe', vars), ""),
@@ -71,13 +70,34 @@ sanitize_t2_input = function(input, b) {
         allComplete    = .t2_flag(input$allComplete, TRUE),
         smooth        = .t2_one(input$smooth, c("TRUE", "FALSE"), "TRUE"),
         scales        = .t2_one(input$scales, c("free", "fixed", "free_x", "free_y"), "fixed"),
-        static.size   = .t2_num(input$static.size,   1:20 / 20, 0.5),
-        static.strip  = .t2_num(input$static.strip,  1:20 / 20, 0.5),
-        static.labels = .t2_num(input$static.labels, 1:20 / 20, 0.6),
-        static.titles = .t2_num(input$static.titles, 1:20 / 20, 0.6),
-        alpha         = .t2_num(input$alpha, 1:50 / 50, 0.12),
-        ncols         = .t2_num(input$ncols, 1:50, 8),
+        show_legend   = .t2_flag(input$show_legend, TRUE),
         km_groups     = .t2_num(input$km_groups, 2:6, 3),
         surv_max_days = .t2_num(input$surv_max_days, seq(30, 365 * 30, by = 30), 365 * 5)
-    )
+    ),
+    ## the Appearance menus (plot_style.R): each value snaps to its own menu.
+    ## plot_height is returned for the page; it is not a plotter argument.
+    sanitize_t2_style(input)[names(T2_STYLE)])
+}
+
+## The fixed style menus + the legend switch, read from the Appearance tab
+## (prefix "") or the Publish tab's own copy (prefix "pub_"). `defaults`
+## replaces the menu defaults (a figure preset has its own).
+sanitize_t2_style = function(input, prefix = "", defaults = list()) {
+    ids = names(T2_STYLE)
+    out = lapply(stats::setNames(ids, ids), function(id) {
+        d = if (!is.null(defaults[[id]])) defaults[[id]] else T2_STYLE[[id]]$default
+        .t2_num(input[[paste0(prefix, id)]], T2_STYLE[[id]]$choices, d)
+    })
+    out$show_legend = .t2_flag(input[[paste0(prefix, "show_legend")]], TRUE)
+    out
+}
+
+## The extra ggplot settings chosen in the Appearance tab's search box:
+## id -> validated value. Only ids from the registry (T2_TWEAKS) are read, each
+## from its own generated input, and every value passes t2_validate_tweak().
+sanitize_t2_tweaks = function(input, prefix = "") {
+    picked = .t2_pick(input[[paste0(prefix, "tweak_pick")]], names(T2_TWEAKS), 60)
+    vals = lapply(stats::setNames(picked, picked),
+                  function(id) input[[t2_tweak_input_id(id, prefix)]])
+    t2_validate_tweaks(vals[!vapply(vals, is.null, NA)])
 }

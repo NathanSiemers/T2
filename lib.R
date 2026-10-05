@@ -9,6 +9,8 @@ source('gitr.R')
 source('dataset_registry.R')
 source('marker_ops.R')           # shared: combine_markers_median_z, residualize_on
 source('survival_prototype.R')   # Kaplan-Meier survival mode (T2_ENDPOINTS, survival_km)
+source('plot_style.R')           # Appearance settings, themes, the ggplot tweak registry
+source('figure_export.R')        # Publish tab: figure presets, validation, rendering
 ################################################################
 ## Multi-dataset bundle
 ##
@@ -93,26 +95,37 @@ mygenesplus = .default_bundle$mygenesplus
 ################################################################
 ## make a plotter function
 ################################################################
-interactive_plotter = function(...) { plotter( ..., static.strip = 0.5, static.size = 0.1, static.labels = 0.05, static.titles = 0.05) }
+interactive_plotter = function(...) { plotter( ... ) }
 
 
 plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet = NULL, nonormal = TRUE,
     cohort = 'all', extra = NULL,  facet.formula = NULL, smooth = FALSE, allComplete = FALSE,
-    alpha = 0.4, static.size = 0.25, scales = 'fixed', ncols = 12, halfmutants = FALSE,
-    static.labels = 0.25, static.strip = 0.5, static.titles = 0.25, coordflip = FALSE, evaluate_vars = FALSE,
+    alpha = 0.3, point_size = 1.5, scales = 'fixed', ncols = 12, halfmutants = FALSE,
+    ## Appearance settings: real ggplot values (font sizes in points; 0 = hide)
+    title_size = 16, subtitle_size = 11, axis_title_size = 14, axis_text_size = 11,
+    strip_size = 11, legend_size = 11, show_legend = TRUE,
+    ## gg: validated extra ggplot settings from the tweak registry (plot_style.R)
+    gg = list(),
+    ## base_size / base_family: the theme's base font size (spacing, margins and
+    ## legend keys follow it) and font; caption: the source line ("" = none)
+    ## fig_width: a figure's width in inches; titles are wrapped to fit it
+    base_size = 12, base_family = "sans", caption = "Nathan Siemers, Ph.D.", fig_width = NULL,
+    coordflip = FALSE, evaluate_vars = FALSE,
     condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
     multi_y = FALSE, zscore_y = FALSE,
     dbfile = gitrdb, roles = gitr_default_roles,
-    dataset_label = "TCGA Pan-Cancer 2018", ...
+    dataset_label = "TCGA Pan-Cancer 2018",
+    keep_samples = NULL, ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
-    theme_set(theme_gdocs() + theme(
-        text = element_text(colour = "black"),
-        legend.title = element_text(colour="black", size=14 ),
-        legend.text = element_text(colour="black", size=14 ),
-        panel.background = element_rect(fill = "white")
-        ) )
+    style = list(title_size = title_size, subtitle_size = subtitle_size,
+                 axis_title_size = axis_title_size, axis_text_size = axis_text_size,
+                 strip_size = strip_size, legend_size = legend_size, show_legend = show_legend,
+                 base_size = base_size, base_family = base_family)
+    theme_set(do.call(t2_base_theme, style))
+    ## an extra ggplot setting if the user chose one, else T2's own default
+    G = function(key, default) { v = gg[[key]]; if (is.null(v)) default else v }
     update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("ribbon", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 0.5) )
@@ -123,10 +136,6 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if(FALSE){ # for testing
         x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = 'KRAS.mut'; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
     }
-    ## scaling factors depending on faceting
-    static.size = static.size * 30
-    if( x[1] == 'cohort' ) static.size = static.size / 4
-    if( ! is.null(facet)[1] )  static.size = static.size / 4
     ## retrieve tcga data  HELP
     ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     ## only include conditioning variables if actually being used
@@ -135,8 +144,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## save original parameter values before transformations
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
     orig_size = size; orig_facet = facet; orig_condition = condition
-    data = gitr(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
-                dbfile = dbfile, roles = roles)
+    ## keep_samples: the Filter tab's surviving sample ids (NULL = no restriction)
+    data = gitr_memo(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
+                     dbfile = dbfile, roles = roles, keep_samples = keep_samples)
 
     ## build data summary before any transformations
     summary_lines = c()
@@ -438,45 +448,35 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## create full aesthetics
     aesfull = modifyList( aesx, c(aesy, aescolor, aesshape, aessize) )
     p = ggplot( mapping = aesfull, data = data)
-    if( ! grepl('\\+|\\-', x[1] ) ) {
-        if(   is.factor(data[, x])  ) {
-            ## boxplot + jittered points for categorical x
-            if (multi_y_fill) {
-                ## multi_y with user color: fill boxplots by probe, color points by user's variable
-                box_aes = aes(fill = probe)
-                if(! is.null(size))  {
-                    p = p + geom_boxplot(box_aes, outlier.shape = NA, alpha = 0.3) +
-                        geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha)
-                } else {
-                    p = p + geom_boxplot(box_aes, outlier.shape = NA, alpha = 0.3) +
-                        geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha, size = static.size)
-                }
-            } else if(! is.null(size))  {
-                if(is.null(color)) {
-                    p = p + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitter(width = 0.2), alpha = alpha)
-                } else {
-                    p = p + geom_boxplot(outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha)
-                }
-            } else {
-                if(is.null(color)){
-                    p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitter(width = 0.2), alpha = alpha, size = static.size)
-                } else {
-                    p = p + geom_boxplot( outlier.shape = NA) + geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = alpha, size = static.size)
-                }
-            }
+    ## ---- layers: points (+ boxplots when X is categorical) ----
+    ## a mapped size variable overrides the fixed point size; point size 0
+    ## draws no points at all
+    pt_args = list(alpha = alpha, shape = as.integer(G('point.shape', '19')),
+                   stroke = G('point.stroke', 0.5))
+    if (is.null(size)) pt_args$size = point_size
+    if (is.null(color) && !is.null(gg[['point.colour']])) pt_args$colour = gg[['point.colour']]
+    draw_points = !is.null(size) || point_size > 0
+    pts = function(position = 'identity') {
+        if (draw_points) do.call(geom_point, c(list(position = position), pt_args))
+    }
+    if( ! grepl('\\+|\\-', x[1] ) && is.factor(data[, x]) ) {
+        ## boxplot + jittered points for categorical x
+        jw = G('jitter.width', 0.2)
+        box_args = list(outlier.shape = NA, linewidth = G('boxplot.linewidth', 0.5),
+                        notch = identical(G('boxplot.notch', 'FALSE'), 'TRUE'),
+                        varwidth = identical(G('boxplot.varwidth', 'FALSE'), 'TRUE'))
+        if (!is.null(gg[['boxplot.width']])) box_args$width = gg[['boxplot.width']]
+        if (multi_y_fill) {
+            ## multi_y with user color: fill boxplots by probe, color points by user's variable
+            p = p + do.call(geom_boxplot, c(list(mapping = aes(fill = probe), alpha = 0.3), box_args)) +
+                pts(position_jitterdodge(jitter.width = jw))
         } else {
-            if(! is.null(size))  {
-                p = p + geom_point(alpha = alpha)
-            } else {
-                p = p + geom_point(alpha = alpha, size = static.size)
-            }
+            p = p + do.call(geom_boxplot, box_args) +
+                pts(if (is.null(color)) position_jitter(width = jw)
+                    else position_jitterdodge(jitter.width = jw))
         }
     } else {
-        if(! is.null(size))  {
-            p = p + geom_point(alpha = alpha)
-        } else {
-            p = p + geom_point(alpha = alpha, size = static.size)
-        }
+        p = p + pts()
     }
     if(  !is.null(facet[1])  ) {
         ## facet names are used as symbols, never parsed as R code
@@ -485,51 +485,84 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         facet_scales = scales
         if (is.factor(data[, x]) && facet_scales == 'fixed') facet_scales = 'free_x'
         if (is.factor(data[, x]) && facet_scales == 'free_y') facet_scales = 'free'
-        p = p + facet_wrap(  my.formula, scales = facet_scales, ncol = ncols, drop = TRUE ) + theme(strip.text = element_text(size = round(60 * static.strip, digits = 0 ) ) )
+        p = p + facet_wrap(  my.formula, scales = facet_scales, ncol = ncols, drop = TRUE,
+                           strip.position = G('facet.strip.position', 'top'),
+                           dir = G('facet.dir', 'h') )
         if (is.factor(data[, x])) p = p + scale_x_discrete(drop = TRUE)
         if (!is.null(y) && is.factor(data[, y])) p = p + scale_y_discrete(drop = TRUE)
     }
     if(  !is.null(facet.formula)  ) {
         my.formula = paste( '~', facet.formula)
-        p = p + facet_wrap(  as.formula(my.formula), ncol = ncols, scales = scales, drop = TRUE  ) + theme(strip.text = element_text(size = 60 * static.strip) )
+        p = p + facet_wrap(  as.formula(my.formula), ncol = ncols, scales = scales, drop = TRUE  )
         if (is.factor(data[, x])) p = p + scale_x_discrete(drop = TRUE)
     }
+    pal_option = G('colour.palette', 'plasma')
+    pal_dir = as.numeric(G('colour.direction', '1'))
     if ( !is.null(smooth) ) {
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {
-            p = p +
-                ##                geom_smooth(aes_q(x = as.name(x), y = as.name(y), color = as.name(color), fill = color), formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
-                geom_smooth(
-                    aes_q(x = as.name(x), y = as.name(y)  ),
-                    formula = y ~ x, alpha = 0.25, fullrange = FALSE, method = 'lm', inherit.aes = FALSE) +
-                    geom_quantile(aes_string(x = as.name(x), y = as.name(y) ), formula = y ~ x, linetype = 2, color = 'black', quantiles = c(0.5), inherit.aes = FALSE)
+            sm_args = list(mapping = aes_q(x = as.name(x), y = as.name(y)), formula = y ~ x,
+                           alpha = G('smooth.alpha', 0.25), fullrange = FALSE,
+                           method = G('smooth.method', 'lm'),
+                           se = identical(G('smooth.se', 'TRUE'), 'TRUE'),
+                           level = min(max(G('smooth.level', 0.95), 0.01), 0.999),
+                           linewidth = G('smooth.linewidth', 1),
+                           linetype = G('smooth.linetype', 'solid'), inherit.aes = FALSE)
+            if (!is.null(gg[['smooth.colour']])) {
+                sm_args$colour = gg[['smooth.colour']]; sm_args$fill = gg[['smooth.colour']]
+            }
+            p = p + do.call(geom_smooth, sm_args)
+            if (identical(G('median.show', 'TRUE'), 'TRUE')) {
+                p = p + geom_quantile(aes_string(x = as.name(x), y = as.name(y) ), formula = y ~ x,
+                                      linetype = G('median.linetype', 'dashed'),
+                                      color = G('median.colour', 'black'),
+                                      quantiles = c(0.5), inherit.aes = FALSE)
+            }
             if( ! is.numeric(  data[, color] ) ) {
-                ##p = p + scale_fill_gdocs(na.value = 'grey')
-                p = p + scale_fill_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
+                p = p + scale_fill_viridis(end = G('colour.end', 0.7), discrete = TRUE,
+                                           option = pal_option, direction = pal_dir)
             }
         }
     }
 
-    p = p + ggtitle(  pstring, subtitle = paste(" ", pstring2, '\n ', psub) ) +
-        theme(axis.text = element_text(size = 14 * 4  * static.labels ),
-              axis.title = element_text(size = 14 * 4 * static.labels ),
-              plot.title = element_text(size = 22 * 4  * static.titles),
-              plot.subtitle = element_text(size = 18 * 4 * static.titles)
-              )
+    ## the complete T2 theme for these Appearance settings (set explicitly as
+    ## well as via theme_set, so the plot object carries it)
+    p = p + ggtitle(  t2_wrap_text(pstring, fig_width, title_size),
+                      subtitle = paste(" ", t2_wrap_text(pstring2, fig_width, subtitle_size), '\n ',
+                                       t2_wrap_text(psub, fig_width, subtitle_size)) ) +
+        do.call(t2_base_theme, style)
+    ## a size VARIABLE is drawn around the chosen point size (ggplot's own
+    ## range of 1-6 would swamp a small figure)
+    if (!is.null(size) && is.numeric(data[, size]) && point_size > 0)
+        p = p + scale_size(range = point_size * c(0.5, 3.5))
+    if (!is.null(gg[['legend.ncol']]) && !is.null(color) && is.factor(data[, color]))
+        p = p + guides(colour = guide_legend(ncol = as.integer(gg[['legend.ncol']])))
     if ( is.factor(data[ , color] ) ) {
-        p = p + viridis::scale_colour_viridis(end = 0.7, discrete = TRUE, option = 'plasma')
+        p = p + viridis::scale_colour_viridis(end = G('colour.end', 0.7), discrete = TRUE,
+                                              option = pal_option, direction = pal_dir)
     } else {
-        p = p + viridis::scale_color_viridis(end = 0.8, discrete = FALSE, option = 'plasma')
+        p = p + viridis::scale_color_viridis(end = G('colour.end', 0.8), discrete = FALSE,
+                                             option = pal_option, direction = pal_dir)
     }
     if (multi_y_fill) {
         p = p + viridis::scale_fill_viridis(end = 0.7, discrete = TRUE, option = 'viridis', alpha = 0.3)
     }
+    ## axis transforms apply to numeric axes only
+    trans_arg = if ('transform' %in% names(formals(scale_x_continuous))) 'transform' else 'trans'
+    if (is.numeric(data[, x]) && G('scale.x.trans', 'identity') != 'identity')
+        p = p + do.call(scale_x_continuous, stats::setNames(list(G('scale.x.trans', 'identity')), trans_arg))
+    if (!is.null(y) && is.numeric(data[, y]) && G('scale.y.trans', 'identity') != 'identity')
+        p = p + do.call(scale_y_continuous, stats::setNames(list(G('scale.y.trans', 'identity')), trans_arg))
     if( coordflip ) {
         p = p + coord_flip()
     }
-    p = p + labs(caption = "Nathan Siemers, Ph.D.") +
-        theme(plot.caption = element_text(size = 12),
-              axis.text.x = element_text(angle = 90, hjust = 1)
-              )
+    if (length(caption) == 1 && !is.na(caption) && nzchar(caption)) p = p + labs(caption = caption)
+    ## user-supplied titles / labels (drawn literally), then every other tweak
+    user_labs = gg[grep('^labs\\.', names(gg), value = TRUE)]
+    if (length(user_labs)) {
+        names(user_labs) = sub('^labs\\.', '', names(user_labs))
+        p = p + do.call(labs, user_labs)
+    }
+    p = p + t2_tweak_theme(gg)
 
     ## add graph parameters and final stats to summary (use original values)
     plot_summary = paste(plot_summary, sprintf("\nData points in plot: %d", nrow(data)), sep = "\n")
@@ -557,17 +590,26 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 }
 
 
-fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles ) {
+## Download table: the same samples the plot shows -- the Select tab's cohort /
+## non-tumor / heme choices plus the Filter tab's survivors (keep_samples).
+fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles,
+                       keep_samples = NULL ) {
     ##    my.input = paste ('~', paste(input$x, input$y, input$color,
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
     my.input = c( input$x, input$y, input$color, input$size, input$facet )
-    gitr( my.input, nonormal = FALSE, dbfile = dbfile, roles = roles )
+    my.input = setdiff( my.input, 'probe' )   # multi-Y colour handle, not a column
+    gitr( my.input,
+          cohort = if (length(input$cohort)) input$cohort else 'all',
+          nonormal = isTRUE(input$nonormal), noheme = isTRUE(input$noheme),
+          dbfile = dbfile, roles = roles, keep_samples = keep_samples )
 }
 
 
 fun_plot1 = function(input, reactive = TRUE,
                      dbfile = gitrdb, roles = gitr_default_roles,
-                     dataset_label = "TCGA Pan-Cancer 2018") {
+                     dataset_label = "TCGA Pan-Cancer 2018",
+                     keep_samples = NULL, gg = list(),
+                     base_size = 12, base_family = "sans", caption = NULL, fig_width = NULL) {
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
     }
@@ -582,8 +624,7 @@ fun_plot1 = function(input, reactive = TRUE,
    input = input[ input != 'none']
     input = input[ input != '']
     input = input[ names(input) != '']
-    numeric_vars = c('static.strip', 'static.size', 'static.titles',
-        'static.labels', 'ncols', 'alpha')
+    numeric_vars = T2_STYLE_ARGS
     input[ which(names(input) %in% numeric_vars) ] = as.numeric( input[ names(input) %in% numeric_vars ] )
     ## drop the dataset selector itself (not a plotter argument) and inject the
     ## active dataset's db path + role map AFTER the scalar-cleaning filters
@@ -592,13 +633,29 @@ fun_plot1 = function(input, reactive = TRUE,
     input$dbfile = dbfile
     input$roles = roles
     input$dataset_label = dataset_label
+    ## the Filter tab's surviving sample ids: server-side only (never a browser
+    ## input, so not in T2_INPUT_ARGS). list() wrapper keeps a NULL out of the
+    ## argument list and lets character(0) ("nothing survives") through.
+    if (!is.null(keep_samples)) input['keep_samples'] = list(keep_samples)
+    ## extra ggplot settings: validated against the tweak registry here, whatever
+    ## the caller did, so nothing unlisted or out of range can reach ggplot
+    gg = t2_validate_tweaks(gg)
+    if (length(gg)) input['gg'] = list(gg)
+    ## figure rendering (Publish tab): theme base size / font, and the source
+    ## line. caption = NULL keeps each plot type's own default.
+    input$base_size = base_size
+    input$base_family = base_family
+    if (!is.null(caption)) input$caption = caption
+    if (!is.null(fig_width)) input$fig_width = fig_width
 
     ## Survival mode: if X is a time-to-event endpoint (OS/PFI/DSS/DFI), draw a
     ## Kaplan-Meier plot of the Y marker's tertiles instead of a scatter.
     if (length(input$x) && input$x[1] %in% names(T2_ENDPOINTS)) {
         if (!length(input$y) || !nzchar(input$y[1]))
             return(list(warning = "Survival plot: pick a Y marker to stratify into groups."))
-        return(tryCatch(
+        ## Appearance settings laid over the survival plot: fonts, legend, theme
+        km_style = input[intersect(names(input), names(formals(t2_font_theme)))]
+        return(tryCatch(t2_style_survival(
             survival_km(y = input$y, endpoint = input$x[1],
                         cohort = if (length(input$cohort)) input$cohort else "all",
                         facet  = input$facet,
@@ -607,7 +664,11 @@ fun_plot1 = function(input, reactive = TRUE,
                         condition = input$condition,
                         pcortype  = if (!is.null(input$pcortype)) input$pcortype else "none",
                         nonormal = if (!is.null(input$nonormal)) as.logical(input$nonormal)[1] else TRUE,
+                        noheme = if (!is.null(input$noheme)) as.logical(input$noheme)[1] else FALSE,
+                        keep_samples = keep_samples,
+                        base_size = base_size, base_family = base_family,
                         dbfile = dbfile, roles = roles),
+            style = km_style, gg = gg, caption = caption, fig_width = fig_width),
             error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))
     }
 

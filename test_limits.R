@@ -109,3 +109,12 @@ ok(identical(as.character(kb$grp[match(k1$sample, kb$sample)]), as.character(k1$
 gf <- quiet(survival_km(ys, "OS", cohort = c("BRCA", "LUAD"), facet = "tumtype", multi_y = TRUE)); kf <- attr(gf, "km_data")
 ok(nrow(unique(kf[, c("probe", "tumtype")])) == 6, "... combined with 'Graph for each': probe x cohort graphs")
 ok(inherits(quiet(print(gi)), "ggplot") || TRUE, "... and it renders")
+
+cat("\n== survival by a 0/1 marker ==\n")
+g <- quiet(tryCatch(survival_km("TP53.mut", "OS", cohort = "BRCA"), error = function(e) conditionMessage(e)))
+k <- if (is.character(g)) NULL else attr(g, "km_data")
+ok(!is.null(k) && identical(levels(k$grp), c("= 0", "= 1")), paste("a mutation call gives two groups by value", if (is.character(g)) g else sprintf("(%s)", paste(table(k$grp), collapse = " / "))))
+mm <- quiet(gitr("TP53.mut", cohort = "BRCA", nonormal = TRUE, makefactors = FALSE)); mm <- mm[match(k$sample, mm$sample), ]
+ok(!is.null(k) && identical(as.character(k$grp), paste0("= ", mm$TP53.mut)), "... and each sample is in the group of its own value")
+ok(!is.null(k) && grepl("values", attr(g, "t2summary")), "... described as groups by value, not tertiles")
+g3 <- quiet(survival_km("CD8A", "OS", cohort = "BRCA")); ok(identical(levels(attr(g3, "km_data")$grp), c("Low", "Mid", "High")), "a continuous marker still gives tertiles")

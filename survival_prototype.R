@@ -139,6 +139,14 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   add_marker_grp <- function(sub) {
     m <- combine_markers_median_z(sub[, ymark, drop = FALSE])
     if (do_cond && length(cond_cols)) m <- residualize_on(m, sub[, cond_cols, drop = FALSE])
+    ## a marker with no more distinct values than groups (a 0/1 mutation call, a
+    ## copy-number class): the values ARE the groups; quantile cuts would collapse
+    vals <- sort(unique(m[!is.na(m)]))
+    if (length(vals) >= 2 && length(vals) <= n_groups) {
+      sub$marker <- m
+      sub$grp <- factor(m, levels = vals, labels = paste0("= ", format(vals)))
+      return(sub)
+    }
     br <- unique(stats::quantile(m, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE))
     if (length(br) < 2) return(NULL)
     br[1] <- -Inf; br[length(br)] <- Inf
@@ -209,6 +217,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
 
   grp_desc <- switch(as.character(n_groups), "2" = "halves", "3" = "tertiles",
                      "4" = "quartiles", "5" = "quintiles", sprintf("%d groups", n_groups))
+  if (any(grepl("^= ", levels(df$grp)))) grp_desc <- "values"      # grouped by value, not by quantile
   cap_txt <- if (capped) sprintf("  •  follow-up ≤ %dd", as.integer(max_time)) else ""
 
   stat_txt <- sprintf("Log-rank p = %s\nCox HR/SD = %.2f (%.2f–%.2f), p = %s",

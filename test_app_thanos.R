@@ -190,5 +190,19 @@ testServer(shiny::shinyAppDir("."), {
   r7 <- plot_result()
   ok(same_set(r7$plot$data$sample, g$sample[plottable & in_rng]),
      "TCGA plot uses TCGA's own filters after the round trip")
+
+  ## ---- a dataset switch does not turn the previous dataset's picks into panels ----
+  ## right after the switch the inputs still hold the old picks (the browser has
+  ## not reported the repopulated selectors); CD8A and FOXP3 exist in both datasets
+  session$setInputs(dataset = "tcgatargetgtex")
+  ht <- th_for(bundle())
+  fetched <- function() environment(ht$backend$prefetch)$fetched   # probes the backend has fetched
+  before <- fetched()
+  session$elapse(600)
+  ok(bundle()$name == "tcgatargetgtex" && !any(c("CD8A", "FOXP3") %in% setdiff(fetched(), before)),
+     "after a switch the old picks are not pushed to the new dataset's Filter tab")
+  session$setInputs(x = "cohort", y = "MKI67", color = "study")
+  session$elapse(600)
+  ok("MKI67" %in% fetched(), "the first real change of the selectors is pushed as before")
 })
 cat("== app thanos test done ==\n")

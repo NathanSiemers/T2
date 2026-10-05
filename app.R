@@ -354,22 +354,26 @@ server = function(input, output, session) {
             sel = sel[sel %in% choices]
             if (length(sel)) sel else fallback
         }
-        updateSelectizeInput(session, 'condition', choices = mgp,
-                             selected = pick(d$condition, mgp), server = TRUE)
-        updateSelectizeInput(session, 'x', choices = mgp,
-                             selected = pick(d$x, mgp, if (length(mgp)) mgp[1] else ""), server = TRUE)
-        updateSelectizeInput(session, 'y', choices = mgp,
-                             selected = pick(d$y, mgp, if (length(b$mygenes)) b$mygenes[1] else ""), server = TRUE)
-        updateSelectizeInput(session, 'color', choices = mgp,
-                             selected = pick(d$color, mgp), server = TRUE)
-        updateSelectizeInput(session, 'size', choices = mgp,
-                             selected = pick(d$size, mgp), server = TRUE)
+        sel = list(condition = pick(d$condition, mgp),
+                   x = pick(d$x, mgp, if (length(mgp)) mgp[1] else ""),
+                   y = pick(d$y, mgp, if (length(b$mygenes)) b$mygenes[1] else ""),
+                   color = pick(d$color, mgp), size = pick(d$size, mgp))
+        updateSelectizeInput(session, 'condition', choices = mgp, selected = sel$condition, server = TRUE)
+        updateSelectizeInput(session, 'x', choices = mgp, selected = sel$x, server = TRUE)
+        updateSelectizeInput(session, 'y', choices = mgp, selected = sel$y, server = TRUE)
+        updateSelectizeInput(session, 'color', choices = mgp, selected = sel$color, server = TRUE)
+        updateSelectizeInput(session, 'size', choices = mgp, selected = sel$size, server = TRUE)
         updateSelectizeInput(session, 'cohort', choices = c('all', b$mycohorts),
                              selected = NULL, server = TRUE)
         updateSelectizeInput(session, 'facet', choices = mgp,
                              selected = NULL, server = TRUE)
+        invisible(sel)       # what the selectors are being set to
     }
     apply_bundle_choices(init_bundle)
+    ## The picks shown at the moment of a dataset switch. Until the browser reports
+    ## the repopulated selectors, the inputs still hold them: they must not be
+    ## pushed to the NEW dataset's Filter tab (see the selected_vars observer).
+    stale_picks = NULL
 
     ## switching datasets: rebuild the bundle (new connection + choice lists)
     ## and repopulate all inputs from it.
@@ -377,8 +381,15 @@ server = function(input, output, session) {
         req(input$dataset)
         if (identical(input$dataset, bundle()$name)) return()
         b = load_dataset_bundle(input$dataset)
+        old = isolate(selected_vars()$vars)
         bundle(b)
-        apply_bundle_choices(b)
+        sel = apply_bundle_choices(b)
+        ## the selections the new dataset starts with, as selected_vars will report them
+        new = unlist(c(sel$x, sel$y, sel$color, sel$size,
+                       if (!identical(isolate(input$pcortype), 'none')) sel$condition))
+        new = unique(new[!is.na(new) & nzchar(new)])
+        ## arm the guard, unless the old picks ARE the new selections (then pushing them is right)
+        stale_picks <<- if (setequal(old, new)) NULL else old
     }, ignoreInit = TRUE)
 
     ## when multi_y is toggled on, add "probe" to color choices and select it
@@ -442,6 +453,13 @@ server = function(input, output, session) {
         sv = selected_vars_d()
         b = bundle()
         if (!identical(sv$dataset, b$name)) return()
+        ## just after a dataset switch the inputs still hold the previous dataset's
+        ## picks (the browser has not reported the repopulated selectors yet):
+        ## skip them, whatever the timing, and resume with the first real change
+        if (!is.null(stale_picks)) {
+            if (setequal(sv$vars, stale_picks)) return()
+            stale_picks <<- NULL
+        }
         h = th_for(b)
         if (is.null(h)) return()
         v = intersect(sv$vars, h$backend$get_columns())

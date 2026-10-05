@@ -76,8 +76,7 @@ final class T2UITests: XCTestCase {
 
     /// open the picker called `title`, type `query`, choose `name`
     private func pick(_ title: String, search query: String, choose name: String, shotName: String? = nil) {
-        let row = element("pick-\(title)")
-        XCTAssertTrue(row.waitForExistence(timeout: 20), "no \(title) row")
+        let row = scrollTo("pick-\(title)")
         row.tap()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 20), "no search field in the \(title) picker")
@@ -231,6 +230,10 @@ final class T2UITests: XCTestCase {
         scrollTo("export-png").tap()
         waitFor("publish-share", "the share link", timeout: 60)
         shot("26-publish-png-exported")
+        scrollTo("export-tiff").tap()
+        waitFor("publish-share", "the share link", timeout: 60)
+        XCTAssertTrue(text(of: "publish-message").hasPrefix("TIFF"), text(of: "publish-message"))
+        shot("26b-publish-tiff-exported")
         scrollTo("export-pdf").tap()
         waitFor("publish-share", "the share link", timeout: 60)
         shot("27-publish-pdf-exported")
@@ -282,6 +285,17 @@ final class T2UITests: XCTestCase {
         scrollTo("table-make").tap()
         scrollTo("table-share")
         shot("45-table-made")
+
+        // two probes combined on Y, and the influence of a third removed
+        app.terminate()
+        launch()
+        waitFor("dataset-summary", "the dataset's sample count")
+        pick("Add to Y", search: "CD8B", choose: "CD8B")
+        pick("Remove influences of", search: "PTPRC", choose: "PTPRC")
+        shot("46-select-combined-and-adjusted")
+        openTab("Plot")
+        waitFor("plot-count", "the plot's sample count")
+        shot("47-plot-combined-and-adjusted")
     }
 
     /// the other datasets (chosen with the picker), and what the app says when things go wrong

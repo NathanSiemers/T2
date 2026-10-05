@@ -224,6 +224,7 @@ final class PlotBuilderTests: XCTestCase {
         XCTAssertEqual(s.panels[0].points.map(\.sample), [0, 1, 4, 5, 6, 7])
         XCTAssertEqual(bits(s.panels[0].points.map(\.y)), bits([0, 1, 4, 5, 6, 7].map { resid[$0] }))
         XCTAssertNotEqual(resid[0], Stats.residuals(g2, on: [g1])[0])                // not a fit over every sample
+        XCTAssertTrue(s.subtitle.hasSuffix("Conditioning: G1 on y."), s.subtitle)
         XCTAssertEqual(Stats.mean([0, 1, 4, 5, 6, 7].map { resid[$0] }), 0, accuracy: 1e-12)     // residuals of the drawn samples sum to 0
         // removing from X when X is categorical: said, and nothing changes
         var onX = r; onX.conditionOn = .x

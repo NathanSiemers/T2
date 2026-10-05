@@ -58,6 +58,8 @@ struct VariablePicker: View {
     let title: String
     let current: String
     var allowNone = true
+    /// what the row shows while nothing is chosen
+    var placeholder = "none"
     let choose: (String) -> Void
 
     @Environment(AppModel.self) private var model
@@ -68,7 +70,7 @@ struct VariablePicker: View {
             HStack {
                 Text(title).foregroundStyle(Color.primary)
                 Spacer(minLength: 12)
-                Text(current.isEmpty ? "none" : current)
+                Text(current.isEmpty ? placeholder : current)
                     .foregroundStyle(Color.secondary).lineLimit(1).truncationMode(.middle)
                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondary.opacity(0.6))
             }
@@ -149,6 +151,34 @@ struct VariableSearch: View {
                 Spacer()
                 if name == current { Image(systemName: "checkmark").foregroundStyle(.tint) }
             }
+        }
+    }
+}
+
+/// A list of extra variables (more X, more Y, covariates): each with a remove button, then
+/// a row to add another.
+struct ExtraRows: View {
+    let title: String
+    let names: [String]
+    let slot: AppModel.ListSlot
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        ForEach(names, id: \.self) { name in
+            HStack {
+                Text(name)
+                Spacer()
+                Text(slot == .condition ? "removed" : "combined").font(.footnote).foregroundStyle(.secondary)
+                Button { model.remove(name, from: slot) } label: {
+                    Image(systemName: "minus.circle.fill").foregroundStyle(Color.red)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Remove \(name)")
+                .accessibilityIdentifier("remove-\(name)")
+            }
+        }
+        VariablePicker(title: title, current: "", allowNone: false, placeholder: "add") { v in
+            Task { await model.add(v, to: slot) }
         }
     }
 }
@@ -238,6 +268,23 @@ struct SelectView: View {
                     Text("\(model.filter.selectedCount().formatted()) of \(model.filter.sampleCount.formatted()) samples in use. Narrow them further on the Filter tab.")
                         .accessibilityIdentifier("select-count")
                 }
+            }
+            Section {
+                ExtraRows(title: "Add to X", names: model.xMore, slot: .xMore)
+                ExtraRows(title: "Add to Y", names: model.yMore, slot: .yMore)
+                ExtraRows(title: "Remove influences of", names: model.condition, slot: .condition)
+                if !model.condition.isEmpty {
+                    Picker("Remove them from", selection: $model.conditionOn) {
+                        Text("X").tag(PlotRequest.ConditionTarget.x)
+                        Text("Y").tag(PlotRequest.ConditionTarget.y)
+                        Text("both").tag(PlotRequest.ConditionTarget.both)
+                    }
+                    .pickerStyle(.segmented)
+                }
+            } header: {
+                Text("Combine and adjust")
+            } footer: {
+                Text("Several numeric variables on one axis are combined into one marker: the median of their z-scores. \u{201C}Remove influences of\u{201D} replaces X or Y by what a linear fit on the chosen numeric variables leaves unexplained.")
             }
             Section {
                 TextField("Service address", text: $model.baseURL)

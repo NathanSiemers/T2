@@ -40,6 +40,12 @@ final class AppModel {
     var size = ""
     /// "Graph for each": one panel per level of this categorical variable
     var facet = ""
+    /// more numeric variables on an axis: combined with the first into the median of their z-scores
+    var xMore: [String] = []
+    var yMore: [String] = []
+    /// "Remove influences of": numeric covariates, and the axis they are removed from
+    var condition: [String] = []
+    var conditionOn = PlotRequest.ConditionTarget.y
     /// survival plots: number of marker groups, and the follow-up limit in days (0 = none)
     var kmGroups = 3
     var kmMaxDays = 1825.0
@@ -107,6 +113,10 @@ final class AppModel {
         color = first("color", "t2Color")
         size = first("size", "t2Size")
         facet = (launch ? UserDefaults.standard.string(forKey: "t2Facet") : nil) ?? ""
+        xMore = []
+        yMore = []
+        condition = []
+        conditionOn = .y
         zscoreY = false
         flip = false
         waterfall = false
@@ -152,6 +162,29 @@ final class AppModel {
             self.filter.add(name)
         }
     }
+    enum ListSlot { case xMore, yMore, condition }
+
+    /// add a variable to one of the lists (more X, more Y, covariates)
+    func add(_ name: String, to slot: ListSlot) async {
+        guard !name.isEmpty else { return }
+        await run("Loading \(name)") {
+            try await self.ensureLoaded([name])
+            guard self.filter.columns[name] != nil else { return }
+            switch slot {
+            case .xMore: if name != self.x, !self.xMore.contains(name) { self.xMore.append(name) }
+            case .yMore: if name != self.y, !self.yMore.contains(name) { self.yMore.append(name) }
+            case .condition: if !self.condition.contains(name) { self.condition.append(name) }
+            }
+        }
+    }
+    func remove(_ name: String, from slot: ListSlot) {
+        switch slot {
+        case .xMore: xMore.removeAll { $0 == name }
+        case .yMore: yMore.removeAll { $0 == name }
+        case .condition: condition.removeAll { $0 == name }
+        }
+    }
+
     func addFilterColumn(_ name: String) async {
         await run("Loading \(name)") {
             try await self.ensureLoaded([name])
@@ -189,7 +222,9 @@ final class AppModel {
     /// The current plot, worked out by T2Kit (PlotBuilder) from the selections and the samples in use.
     func scene(fitLine: Bool) -> PlotScene {
         guard let m = meta else { return .empty(busy ? "Loading\u{2026}" : (status.isEmpty ? "No dataset is open." : status)) }
-        var request = PlotRequest(x: [x], y: [y], color: color, size: size, facet: facet)
+        var request = PlotRequest(x: [x] + xMore, y: [y] + yMore, color: color, size: size, facet: facet)
+        request.condition = condition
+        request.conditionOn = condition.isEmpty ? .none : conditionOn
         request.kmGroups = kmGroups
         request.kmMaxDays = kmMaxDays
         request.zscoreY = zscoreY
@@ -208,7 +243,7 @@ final class AppModel {
     func writeTable() -> URL? {
         guard let m = meta else { return nil }
         var names: [String] = []
-        for v in ["cohort", "sample_type", x, y, color, size, facet] + (isSurvival ? [x + ".time"] : [])
+        for v in ["cohort", "sample_type", x] + xMore + [y] + yMore + [color, size, facet] + condition + (isSurvival ? [x + ".time"] : [])
         where !v.isEmpty && filter.columns[v] != nil && !names.contains(v) { names.append(v) }
         let csv = TableExport.csv(samples: samples, columns: names.compactMap { filter.columns[$0] }, keep: filter.mask())
         let file = "T2_\(m.dataset)_\(x)_\(y).csv".replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)

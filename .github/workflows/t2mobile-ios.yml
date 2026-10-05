@@ -23,9 +23,16 @@ permissions:
 
 jobs:
   mac-setup:
-    name: mac_setup.sh on a clean Mac
-    runs-on: macos-26
+    name: mac_setup.sh on a clean Mac (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    # macos-15 is for information (does an older Xcode build it?): its result does not decide the run
+    continue-on-error: ${{ matrix.os != 'macos-26' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # the newest image (Xcode 26), and the previous one (Xcode 16) for owners of an older Xcode
+        os: [macos-26, macos-15]
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -42,7 +49,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mac-setup
+          name: mac-setup-${{ matrix.os }}
           if-no-files-found: warn
           path: |
             ~/T2Mobile/screenshots

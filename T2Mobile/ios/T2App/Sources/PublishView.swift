@@ -79,6 +79,7 @@ struct PublishView: View {
             }
             Section {
                 Button("Plot: PNG") { export(scene, pdf: false) }.accessibilityIdentifier("export-png")
+                Button("Plot: TIFF (LZW compressed)") { export(scene, pdf: false, tiff: true) }.accessibilityIdentifier("export-tiff")
                 Button("Plot: PDF (vector)") { export(scene, pdf: true) }.accessibilityIdentifier("export-pdf")
                 if let exported {
                     ShareLink(item: exported) { Label("Share or save the file", systemImage: "square.and.arrow.up") }
@@ -119,7 +120,7 @@ struct PublishView: View {
         message = ""
     }
 
-    @MainActor private func export(_ scene: PlotScene, pdf: Bool) {
+    @MainActor private func export(_ scene: PlotScene, pdf: Bool, tiff: Bool = false) {
         let f = model.figure
         let base = "T2_\(model.x)_vs_\(model.y)_\(String(format: "%.2fx%.2fin", f.widthIn, f.heightIn))"
             .replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
@@ -150,16 +151,19 @@ struct PublishView: View {
             renderer.scale = CGFloat(f.dpi / 72)
             renderer.isOpaque = true
             guard let image = renderer.cgImage else { message = "Could not render the figure."; return }
-            let url = dir.appendingPathComponent(base + "_\(Int(f.dpi))dpi.png")
-            // ImageIO, so that the file records its resolution (a 300 dpi PNG opens at 3.5 in, not 14.6)
-            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
-                message = "Could not create the PNG file."; return
+            let kind = tiff ? "TIFF" : "PNG"
+            let url = dir.appendingPathComponent(base + "_\(Int(f.dpi))dpi." + (tiff ? "tiff" : "png"))
+            // ImageIO, so that the file records its resolution (a 300 dpi image opens at 3.5 in, not 14.6)
+            let type = (tiff ? UTType.tiff : UTType.png).identifier as CFString
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, type, 1, nil) else {
+                message = "Could not create the \(kind) file."; return
             }
-            let properties: [CFString: Any] = [kCGImagePropertyDPIWidth: f.dpi, kCGImagePropertyDPIHeight: f.dpi]
+            var properties: [CFString: Any] = [kCGImagePropertyDPIWidth: f.dpi, kCGImagePropertyDPIHeight: f.dpi]
+            if tiff { properties[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFCompression: 5] as [CFString: Any] }   // 5 = LZW
             CGImageDestinationAddImage(dest, image, properties as CFDictionary)
-            guard CGImageDestinationFinalize(dest) else { message = "Could not write the PNG file."; return }
+            guard CGImageDestinationFinalize(dest) else { message = "Could not write the \(kind) file."; return }
             exported = url
-            message = "PNG, \(image.width) x \(image.height) pixels at \(Int(f.dpi)) dpi"
+            message = "\(kind), \(image.width) x \(image.height) pixels at \(Int(f.dpi)) dpi"
         }
     }
 }

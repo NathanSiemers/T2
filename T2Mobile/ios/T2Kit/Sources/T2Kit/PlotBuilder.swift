@@ -94,8 +94,10 @@ public enum PlotBuilder {
         // "remove influences of" comes after the samples are chosen (lib.R does it after the
         // complete-cases step): the fit uses exactly the samples that would be drawn, and a
         // sample without a covariate value drops out
+        var conditioned = false
         if applyConditioning(request, columns: columns, rows: rows, x: &x, y: &y, warnings: &warnings) {
             rows = rows.filter { !x.isMissing($0) && !y.isMissing($0) }
+            conditioned = true
         }
         guard !rows.isEmpty else {
             return .empty("No samples have data for these variables. Some classifications only cover some tumor types, and some mutations are not present.",
@@ -123,6 +125,10 @@ public enum PlotBuilder {
         if request.flip { flip(&scene) }
         scene.title = title(x: x.name, y: y.name, dataset: context.datasetLabel)
         scene.subtitle = subtitle(request, color: color, size: size, facet: facet, n: scene.n, dataset: context.datasetLabel)
+        if conditioned {
+            // as the website words it under the title
+            scene.subtitle += " Conditioning: \(request.condition.filter { !$0.isEmpty }.joined(separator: ",")) on \(request.conditionOn.rawValue)."
+        }
         scene.summary = summary
         scene.warnings = warnings
         return scene

@@ -5,7 +5,8 @@ my_pc_gene_program
 
 
 my_pc_gene_program = read_tsv('Data/Pancan12_GenePrograms_drugTargetCanon_in_Pancan33.tsv.gz',
-                              trim_ws = TRUE, n_max = my.limit ) %>% 
+                              trim_ws = TRUE, n_max = my.limit, name_repair = 'minimal' ) %>%
+    average_duplicate_columns('pc_gene_program') %>%
     rename(probe = sample) %>%
     gather( sample, value, -probe) %>%
     mutate( type = "pc_gene_program" ) %>%

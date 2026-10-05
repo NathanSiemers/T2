@@ -55,6 +55,10 @@ my_load = read.csv("ESTIMATE_copy.csv")
 my_load$X = NULL
 ## strip .estimate suffix — tablemaker will re-add it via suffix=TRUE
 my_load$probe = gsub("\\.estimate$", "", my_load$probe)
+## the scores were computed per RNA column; a sample that occurred twice in the RNA
+## file is here as "<sample>" and "<sample>-1": one value per sample, the mean
+my_load$sample = sub("^(TCGA-[^-]+-[^-]+-[0-9]{2})-[0-9]+$", "\\1", my_load$sample)
+my_load = average_duplicate_rows(my_load, 'estimate')
 head(my_load)
 tablemaker( my_load, deleteType = TRUE)
 

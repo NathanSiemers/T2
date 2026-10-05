@@ -3,7 +3,8 @@
 
 ## rna
 my_rna = read_tsv('Data/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.xena.gz',
-    trim_ws = TRUE, n_max = my.limit ) %>%
+    trim_ws = TRUE, n_max = my.limit, name_repair = 'minimal' ) %>%
+    average_duplicate_columns('rna') %>%
         rename(probe = sample) %>%
             mutate ( probe = make.unique(as.character(probe), sep = '_' ) )%>%
                 gather( sample, value, -probe ) %>%

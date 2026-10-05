@@ -1,6 +1,9 @@
 ## rppa
 
-my_rppa = read.csv('Data/TCGA-RPPA-pancan-clean.xena.gz', sep = '\t')
+## check.names = FALSE: keep the sample barcodes as they are in the file, so that a
+## sample that appears twice is seen as such (and averaged) instead of being renamed
+my_rppa = read.csv('Data/TCGA-RPPA-pancan-clean.xena.gz', sep = '\t', check.names = FALSE) %>%
+    average_duplicate_columns('rppa')
 my_rppa[1:20,1:5]
 
 

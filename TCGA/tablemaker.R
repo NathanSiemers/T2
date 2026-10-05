@@ -5,6 +5,10 @@
 
 tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE, tsep = '.', deleteType = TRUE, sparse = TRUE, r_datatype = NULL ) {
     thistype = dat$type[[1]]  ## there can be only one
+    ## a sample name repaired by a file reader ("...123") is a duplicated sample
+    ## column that was not resolved: see average_duplicate_columns()
+    renamed = grep('\\.\\.\\.[0-9]+$', unique(as.character(dat$sample)), value = TRUE)
+    if (length(renamed) > 0) stop('tablemaker(', thistype, '): renamed duplicate sample columns: ', paste(head(renamed, 10), collapse = ', '))
     ## input: a tidy data set of sample, probe, value, type
     ## convert sample and probe into integer keys while updating:
     ##      samples and probes tables with key relationships

@@ -1,6 +1,7 @@
 
 my_immune_score = read_tsv('Data/TCGA_pancancer_10852whitelistsamples_68ImmuneSigs.xena.gz',
-    trim_ws = TRUE, n_max = my.limit )%>%
+    trim_ws = TRUE, n_max = my.limit, name_repair = 'minimal' )%>%
+    average_duplicate_columns('immune_score') %>%
         rename(probe = ...1 ) %>%
             #mutate(sample = make.unique(sample, sep = '_') ) %>%
                 gather( sample, value, -probe ) %>%

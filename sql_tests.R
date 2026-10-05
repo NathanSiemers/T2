@@ -186,6 +186,17 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
     else if (!is.na(nnull) && nnull > 0) FAIL("tcgas has NULL values (should be 0-filled)")
     else PASS(sprintf("%s: %s dense rows", gene, nview))
   })
+  add("dimension", "no renamed copies of clinical samples (duplicated source columns)", function() {
+    ## "TCGA-21-1076-01...3746", "..._1", "...-1": a sample that occurred twice in a
+    ## source file and was renamed by the reader instead of being merged; the real
+    ## sample then has no data of that type
+    s <- .qdf(con, "SELECT sample FROM samples")$sample
+    cp <- .qdf(con, "SELECT sample FROM clinpheno")$sample
+    base <- sub("(\\.\\.\\.[0-9]+|[_.-][0-9]+)$", "", s)
+    ph <- s[!(s %in% cp) & base != s & base %in% cp]
+    if (length(ph)) FAIL(sprintf("%d renamed copies, e.g. %s", length(ph), paste(head(ph, 4), collapse = ", ")))
+    else PASS(sprintf("%d sample names", length(s)))
+  })
   add("views", "sparse table says how every numeric data type was loaded", function() {
     ## without it a reader cannot tell whether a tested sample with no stored row is 0 or NA
     if (!"sparse" %in% DBI::dbListTables(con)) return(FAIL("no `sparse` table"))

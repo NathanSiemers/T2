@@ -71,3 +71,25 @@ ok(is.character(r) && grepl("categorical", r), paste("survival plot with a numer
 cat("\n== 'Exclude tumors of heme origin' and list values that contain a comma ==\n")
 ok(identical(.split_meta("a, b|c|d , e"), c("a, b", "c", "d , e")) && identical(.split_meta("a,b, c"), c("a", "b", "c")) && length(.split_meta("")) == 0,
    "lists split on '|' when present, on ',' otherwise")
+
+cat("\n== survival: the Y marker is adjusted for the 'Remove influences of' variables when they apply to Y ==\n")
+km_groups <- function(...) { g <- quiet(survival_km("CD8A", "OS", cohort = "BRCA", ...)); k <- attr(g, "km_data"); stats::setNames(as.character(k$grp), k$sample) }
+cond <- c("ESTIMATEScore.estimate", "gender")
+adj  <- km_groups(condition = cond, pcortype = "y")
+both <- km_groups(condition = cond, pcortype = "both")
+none <- km_groups(condition = cond, pcortype = "none")
+onlx <- km_groups(condition = cond, pcortype = "x")
+raw  <- km_groups()
+## independent computation on exactly the samples of the adjusted plot
+g <- quiet(gitr(c("CD8A", cond), cohort = "BRCA", nonormal = TRUE)); g <- g[match(names(adj), g$sample), ]
+res <- stats::residuals(stats::lm(CD8A ~ ESTIMATEScore.estimate + gender, data = g))
+br <- stats::quantile(res, probs = seq(0, 1, length.out = 4)); br[1] <- -Inf; br[4] <- Inf
+expect <- as.character(cut(res, breaks = br, labels = c("Low", "Mid", "High"), include.lowest = TRUE))
+ok(!anyNA(g$CD8A) && identical(unname(adj), expect), sprintf("groups are tertiles of the residuals of Y ~ covariates (%d samples, independent lm)", length(adj)))
+ok(identical(adj, both), "the same when the covariates apply to both X and Y")
+ok(identical(none, raw) && identical(onlx, raw), "not adjusted when the covariates are off or apply to X only")
+common <- intersect(names(adj), names(raw))
+ok(mean(adj[common] != raw[common]) > 0.1, sprintf("adjusting changes the group of %.0f%% of samples here", 100 * mean(adj[common] != raw[common])))
+fg <- quiet(survival_km("CD8A", "OS", cohort = c("BRCA", "LUAD"), facet = "tumtype", condition = cond[1], pcortype = "y")); k <- attr(fg, "km_data")
+one <- km_groups(condition = cond[1], pcortype = "y"); kb <- k[k$tumtype == "BRCA", ]
+ok(identical(as.character(kb$grp[match(names(one), kb$sample)]), unname(one)), "with a graph per cohort, each graph is adjusted within itself (BRCA panel = BRCA alone)")

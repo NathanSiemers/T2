@@ -125,6 +125,42 @@ public struct DatasetMeta: Decodable, Sendable {
     public let presets: [Preset]
     public let clinicalColumns: [String]
     public let survivalEndpoints: [String]
+    /// display names of the cohorts (absent from older services)
+    public let cohorts: [CohortName]?
+
+    /// what to call a cohort value on screen: its `cohortstring` ("breast invasive carcinoma ( BRCA )"),
+    /// or the value itself when the dataset has no name for it
+    public func cohortTitle(_ value: String) -> String {
+        guard let hit = cohorts?.first(where: { $0.cohort == value }), !hit.cohortstring.isEmpty else { return value }
+        return hit.cohortstring
+    }
+    /// the survival endpoints this dataset can really analyse: an endpoint needs its event
+    /// column and its time column ("OS" and "OS.time") among the clinical columns.
+    /// (The service lists the same four names for every dataset.)
+    public var usableSurvivalEndpoints: [String] {
+        let have = Set(clinicalColumns)
+        return survivalEndpoints.filter { have.contains($0) && have.contains($0 + ".time") }
+    }
+}
+
+/// One cohort's names: the value in the data, a long name, and the two combined.
+public struct CohortName: Decodable, Sendable, Equatable {
+    public let cohort: String
+    public let cohortstring: String
+    public let lcohort: String
+
+    public init(cohort: String, cohortstring: String = "", lcohort: String = "") {
+        self.cohort = cohort; self.cohortstring = cohortstring; self.lcohort = lcohort
+    }
+    private enum Keys: String, CodingKey { case cohort, cohortstring, lcohort }
+    /// A name that is missing or null becomes "": one unnamed cohort must not make the
+    /// whole dataset unreadable.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        cohort = try c.decodeIfPresent(String.self, forKey: .cohort) ?? ""
+        cohortstring = try c.decodeIfPresent(String.self, forKey: .cohortstring) ?? ""
+        lcohort = try c.decodeIfPresent(String.self, forKey: .lcohort) ?? ""
+    }
 }
 
 public struct Clinical: Decodable, Sendable {

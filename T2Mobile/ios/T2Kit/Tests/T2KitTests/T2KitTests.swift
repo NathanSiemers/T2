@@ -45,6 +45,33 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(m.presets[0].rules[1].values, ["Normal Tissue"])
     }
 
+    /// meta as the live service sends it (2026-10-05): cohort names, and the same four
+    /// survival endpoints for every dataset whether or not it has the columns
+    func testMetaCohortNamesAndUsableSurvivalEndpoints() throws {
+        func meta(clinical: String, cohorts: String) throws -> DatasetMeta {
+            let json = """
+            {"dataset":"D","title":"T","label":"L","version":"v","n_samples":3,"n_probes":9,
+             "roles":{"cohort_col":"tumtype","subtype_col":"s","sampletype_col":"sample_type",
+                      "normal_label":[],"heme_values":[],"sampletype_levels":[]},
+             "defaults":{"x":"cohort","y":"CD8A"},"presets":[],
+             "clinical_columns":\(clinical),"survival_endpoints":["OS","PFI","DSS","DFI"]\(cohorts)}
+            """
+            return try APIClient.decoder.decode(DatasetMeta.self, from: Data(json.utf8))
+        }
+        let tcga = try meta(clinical: #"["gender","OS","OS.time","PFI","PFI.time","DSS","DFI.time"]"#,
+                            cohorts: #","cohorts":[{"cohort":"BRCA","cohortstring":"breast invasive carcinoma ( BRCA )","lcohort":"breast invasive carcinoma"},{"cohort":"XX","cohortstring":null}]"#)
+        XCTAssertEqual(tcga.usableSurvivalEndpoints, ["OS", "PFI"])          // DSS has no time, DFI no event
+        XCTAssertEqual(tcga.cohorts?.count, 2)
+        XCTAssertEqual(tcga.cohortTitle("BRCA"), "breast invasive carcinoma ( BRCA )")
+        XCTAssertEqual(tcga.cohortTitle("XX"), "XX")                         // a null name: the value itself
+        XCTAssertEqual(tcga.cohortTitle("LUAD"), "LUAD")                     // not listed
+        // tcgatargetgtex and DEMO list the endpoints but have no such columns
+        let gtex = try meta(clinical: #"["study","disease","sample_type","gender"]"#, cohorts: "")
+        XCTAssertEqual(gtex.usableSurvivalEndpoints, [])
+        XCTAssertNil(gtex.cohorts)                                           // a service without the field
+        XCTAssertEqual(gtex.cohortTitle("Whole Blood"), "Whole Blood")
+    }
+
     func testUnknownColumnKindIsAnError() {
         let json = #"{"name":"x","kind":"blob","type":"t"}"#
         XCTAssertThrowsError(try APIClient.decoder.decode(Column.self, from: Data(json.utf8)))

@@ -53,6 +53,12 @@ public enum PlotBuilder {
         guard keep.contains(true) else {
             return .empty("No samples pass the filters.", summary: summary)
         }
+        // a survival endpoint on X switches to time-to-event analysis, as on the website
+        if xNames.count == 1, context.survivalEndpoints.contains(xNames[0]) {
+            var scene = survival(request, endpoint: xNames[0], columns: columns, keep: keep, context: context)
+            scene.summary = summary
+            return scene
+        }
 
         // z-scores and combined probes are worked out over the samples in use, as the website
         // does (its data frame only holds them): lib.R scales after gitr() has applied the
@@ -98,15 +104,21 @@ public enum PlotBuilder {
         if let c = color, distinctCount(c, rows: rows) < 2 { color = nil }
         if let s = size, Set(rows.map { s[$0] }.filter { !$0.isNaN }).count < 2 { size = nil }
 
+        // colours and sizes are decided once, over every sample drawn, so that they mean the
+        // same in every panel
+        let d = dress(color: color, colorName: request.color, size: size, sizeName: request.size, rows: rows)
+        func one(_ rows: [Int]) -> PlotScene {
+            if x.isNumeric && y.isNumeric { return scatter(request, x: x, y: y, dress: d, rows: rows) }
+            if !x.isNumeric && y.isNumeric { return box(request, category: x, value: y, horizontal: false, dress: d, rows: rows) }
+            if x.isNumeric && !y.isNumeric { return box(request, category: y, value: x, horizontal: true, dress: d, rows: rows) }
+            return counts(x: x, y: y, rows: rows)
+        }
         var scene: PlotScene
-        if x.isNumeric && y.isNumeric {
-            scene = scatter(request, x: x, y: y, color: color, size: size, rows: rows)
-        } else if !x.isNumeric && y.isNumeric {
-            scene = box(request, category: x, value: y, horizontal: false, color: color, size: size, rows: rows, warnings: &warnings)
-        } else if x.isNumeric && !y.isNumeric {
-            scene = box(request, category: y, value: x, horizontal: true, color: color, size: size, rows: rows, warnings: &warnings)
+        if let f = facet, let codes = f.codes, let levels = f.levels {
+            scene = faceted(by: levels, codes: codes, rows: rows, maxPanels: context.maxPanels, warnings: &warnings, one: one)
+            if scene.legend.isEmpty { scene.legend = d.legend }
         } else {
-            return .empty("Both variables are categorical: counts are not drawn yet.", summary: summary, warnings: warnings)
+            scene = one(rows)
         }
         if request.flip { flip(&scene) }
         scene.title = title(x: x.name, y: y.name, dataset: context.datasetLabel)
@@ -237,9 +249,8 @@ public enum PlotBuilder {
 
     // MARK: numeric against numeric
 
-    static func scatter(_ request: PlotRequest, x: Variable, y: Variable, color: Column?, size: [Double]?, rows: [Int]) -> PlotScene {
+    static func scatter(_ request: PlotRequest, x: Variable, y: Variable, dress d: Dress, rows: [Int]) -> PlotScene {
         let xv = x.numbers!, yv = y.numbers!
-        let d = dress(color: color, colorName: request.color, size: size, sizeName: request.size, rows: rows)
         let xs = rows.map { xv[$0] }, ys = rows.map { yv[$0] }
         var panel = PlotPanel(title: "", xAxis: numericAxis(xs, title: x.name), yAxis: numericAxis(ys, title: y.name))
         panel.points = rows.map { PlotPoint(x: xv[$0], y: yv[$0], color: d.color($0), size: d.size($0), sample: $0) }
@@ -266,10 +277,8 @@ public enum PlotBuilder {
     // MARK: categorical against numeric
 
     /// Boxes with the samples jittered over them. `horizontal`: the categories are on the Y axis.
-    static func box(_ request: PlotRequest, category: Variable, value: Variable, horizontal: Bool, color: Column?, size: [Double]?,
-                    rows: [Int], warnings: inout [String]) -> PlotScene {
+    static func box(_ request: PlotRequest, category: Variable, value: Variable, horizontal: Bool, dress d: Dress, rows: [Int]) -> PlotScene {
         let v = value.numbers!, codes = category.codes
-        let d = dress(color: color, colorName: request.color, size: size, sizeName: request.size, rows: rows)
         // the levels that have samples, in the variable's own order (droplevels) ...
         var members: [Int: [Int]] = [:]
         for r in rows { members[codes[r], default: []].append(r) }
@@ -302,6 +311,79 @@ public enum PlotBuilder {
         return PlotScene(kind: .box, panels: [panel], legend: d.legend, stats: stats, n: rows.count)
     }
 
+    // MARK: categorical against categorical
+
+    /// How many samples have each pair of levels: a circle per pair, its area following the count.
+    static func counts(x: Variable, y: Variable, rows: [Int]) -> PlotScene {
+        var table: [Int: [Int: Int]] = [:]
+        for r in rows { table[x.codes[r], default: [:]][y.codes[r], default: 0] += 1 }
+        let xOrder = x.levels.indices.filter { table[$0] != nil }
+        let yPresent = Set(table.values.flatMap { $0.keys })
+        let yOrder = y.levels.indices.filter { yPresent.contains($0) }
+        func axis(_ v: Variable, _ order: [Int]) -> PlotAxis {
+            PlotAxis(kind: .categorical, lo: 0, hi: Double(order.count), ticks: order.indices.map { Double($0) + 0.5 },
+                     labels: order.map { v.levels[$0] }, title: v.name)
+        }
+        var panel = PlotPanel(title: "", xAxis: axis(x, xOrder), yAxis: axis(y, yOrder))
+        let largest = table.values.flatMap { $0.values }.max() ?? 1
+        for (i, xl) in xOrder.enumerated() {
+            for (j, yl) in yOrder.enumerated() {
+                guard let k = table[xl]?[yl], k > 0 else { continue }
+                panel.bubbles.append(PlotBubble(x: Double(i) + 0.5, y: Double(j) + 0.5, count: k,
+                                                radius: (Double(k) / Double(largest)).squareRoot(), color: Palette.single))
+            }
+        }
+        panel.n = rows.count
+        let stats = [StatLine("Samples", "\(rows.count)"), StatLine("Combinations with samples", "\(panel.bubbles.count) of \(xOrder.count * yOrder.count)")]
+        return PlotScene(kind: .counts, panels: [panel], stats: stats, n: rows.count)
+    }
+
+    // MARK: one panel per level ("Graph for each")
+
+    /// The same plot for every level of a categorical variable. Numeric axes are shared by
+    /// all panels (facet_wrap's fixed scales); a categorical axis shows each panel's own levels.
+    static func faceted(by levels: [String], codes: [Int], rows: [Int], maxPanels: Int, warnings: inout [String],
+                        one: ([Int]) -> PlotScene) -> PlotScene {
+        var groups: [Int: [Int]] = [:]
+        for r in rows { groups[codes[r], default: []].append(r) }
+        var order = levels.indices.filter { groups[$0] != nil }
+        if order.count > maxPanels {
+            warnings.append("\(order.count) graphs asked for; the first \(maxPanels) are drawn. Filter the samples to see the others.")
+            order = Array(order.prefix(maxPanels))
+        }
+        var panels: [PlotPanel] = []
+        var kind = PlotScene.Kind.empty
+        var legend = PlotLegend()
+        for level in order {
+            let scene = one(groups[level]!)
+            guard var panel = scene.panels.first else { continue }
+            kind = scene.kind
+            if legend.isEmpty { legend = scene.legend }
+            panel.title = levels[level]
+            // what the single plot shows as statistics goes into the panel, shortened
+            var note = "n = \(panel.n)"
+            if let r = scene.stats.first(where: { $0.label == "Pearson r" }) { note += ", r = \(r.value)" }
+            if let p = scene.stats.first(where: { $0.label == "Kruskal-Wallis p" }) { note += ", p = \(p.value)" }
+            panel.note = note
+            panels.append(panel)
+        }
+        // shared numeric axes
+        func share(_ path: WritableKeyPath<PlotPanel, PlotAxis>) {
+            guard panels.allSatisfy({ $0[keyPath: path].kind == .numeric }), let first = panels.first else { return }
+            let lo = panels.map { $0[keyPath: path].lo }.min() ?? first[keyPath: path].lo
+            let hi = panels.map { $0[keyPath: path].hi }.max() ?? first[keyPath: path].hi
+            let ticks = PlotFormat.ticks(lo, hi, target: panels.count > 4 ? 3 : 4)
+            for i in panels.indices {
+                panels[i][keyPath: path].lo = lo; panels[i][keyPath: path].hi = hi
+                panels[i][keyPath: path].ticks = ticks; panels[i][keyPath: path].labels = ticks.map(PlotFormat.tickLabel)
+            }
+        }
+        share(\.xAxis); share(\.yAxis)
+        let total = panels.reduce(0) { $0 + $1.n }
+        return PlotScene(kind: panels.isEmpty ? .empty : kind, panels: panels, legend: legend,
+                         stats: [StatLine("Data points", "\(total)"), StatLine("Graphs", "\(panels.count)")], n: total)
+    }
+
     /// The sideways offset of sample `i`, in -1 ... 1: the same every time the plot is drawn.
     static func jitter(_ i: Int) -> Double {
         // (i + 1: sample 0 would otherwise hash to 0 and always sit at the edge of its band)
@@ -325,6 +407,7 @@ public enum PlotBuilder {
             scene.panels[p].points = old.points.map { PlotPoint(x: $0.y, y: $0.x, color: $0.color, size: $0.size, sample: $0.sample) }
             scene.panels[p].lines = old.lines.map { PlotLine(xs: $0.ys, ys: $0.xs, color: $0.color, width: $0.width, dashed: $0.dashed) }
             scene.panels[p].boxes = old.boxes.map { var b = $0; b.horizontal.toggle(); return b }
+            scene.panels[p].bubbles = old.bubbles.map { PlotBubble(x: $0.y, y: $0.x, count: $0.count, radius: $0.radius, color: $0.color) }
         }
     }
 

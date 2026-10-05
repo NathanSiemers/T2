@@ -37,6 +37,16 @@ inline = function (x) {  shiny::tags$div(style="display:inline-block;", x)  }
 ## UI
 ################################################################
 
+## an Appearance label: the made-up name, with what ggplot calls it underneath
+gg_label = function(label, gg = NULL) {
+    if (is.null(gg)) label else tagList(label, tags$div(class = "gg-name", gg))
+}
+## one of the fixed Appearance menus (see T2_STYLE in plot_style.R)
+style_select = function(id) {
+    st = T2_STYLE[[id]]
+    inline(selectInput(id, gg_label(st$label, st$gg), choices = st$choices, selected = st$default))
+}
+
 ## datasets known at startup: the Filter tab holds one (hidden) Thanos panel
 ## set per dataset, shown for whichever dataset is selected
 T2_DATASETS = list_datasets()
@@ -78,6 +88,19 @@ ui = fluidPage(
         .t2-thanos .thanos-panel { border: 1px solid #dce4ec; border-radius: 4px;
             padding: 10px 12px 4px 12px; background: #fff; }
         .t2-filter-status { font-size: 90%; color: #555; margin: 8px 0; }
+        /* every tab drawn as a tab, the selected one raised and accented */
+        #tabs.nav-tabs { border-bottom: 1px solid #b4bcc2; margin-top: 6px; }
+        #tabs.nav-tabs > li > a { border: 1px solid #dce4ec; border-bottom-color: #b4bcc2;
+            background: #eef1f4; color: #2c3e50; margin-right: 4px; padding: 8px 18px;
+            border-radius: 5px 5px 0 0; }
+        #tabs.nav-tabs > li > a:hover { background: #e1e6ea; }
+        #tabs.nav-tabs > li.active > a, #tabs.nav-tabs > li.active > a:hover,
+        #tabs.nav-tabs > li.active > a:focus { background: #fff; color: #2c3e50; font-weight: 600;
+            border: 1px solid #b4bcc2; border-top: 3px solid #18bc9c; border-bottom-color: #fff; }
+        /* the ggplot name under each made-up Appearance label */
+        .gg-name { font-style: italic; font-weight: normal; font-size: 80%; color: #2e8b57;
+            line-height: 1.2; margin-top: 1px; }
+        .t2-tweaks .shiny-input-container { vertical-align: top; }
     "))),
     uiOutput('app_title'),
     tabsetPanel(id = 'tabs',
@@ -111,11 +134,8 @@ ui = fluidPage(
         ## ---- (b) the result; every Plot button lands here ----
         tabPanel("Plot", value = "plot",
             div(class = "t2-filter-status", textOutput('filter_status')),
-            fluidRow(
-                column(12, align="center",
-                       withSpinner( plotOutput( "main_plot", height = '1800px', width = '95%' ),
-                                   proxy.height = "200px", color = viridis::plasma(1) )
-                       ) ),
+            ## the plot area is rebuilt at the chosen Plot height (Appearance tab)
+            fluidRow( column(12, align="center", uiOutput('main_plot_ui')) ),
             h4("Data Summary"),
             verbatimTextOutput('plot_summary'),
             downloadButton('downloadData', 'Download Table')
@@ -125,18 +145,40 @@ ui = fluidPage(
         ## ---- (d) plot appearance ----
         tabPanel("Appearance", value = "appearance",
             h4('Fiddly Options'),
-            inline( selectizeInput('scales', 'Multigraph Scales', choices = NULL  ) ),
-            inline( selectizeInput('alpha', 'Transparency', choices = NULL  )),
-            inline( selectizeInput('static.size', 'Point Size multipier', choices = NULL  ) ),
-            inline( selectizeInput('static.strip', 'Multi-Graph Label Size multipier', choices = NULL  ) ),
-            inline( selectizeInput('static.titles', 'Top  Title Size', choices = NULL  ) ),
-            inline( selectizeInput('static.labels', 'Axis Label Multiplier', choices = NULL  ) ),
-            inline( selectizeInput('ncols', 'Multi-graph Columns', choices = NULL  ) ),
-            inline( selectizeInput('smooth', 'Fit Line', choices = NULL  ) ),
+            helpText("Sizes are real ggplot values (font sizes in points). A size of 0 removes that item. ",
+                     "The green line under each name is what ggplot calls the setting."),
+            style_select('point_size'),
+            style_select('alpha'),
+            style_select('title_size'),
+            style_select('subtitle_size'),
+            tags$br(),
+            style_select('axis_title_size'),
+            style_select('axis_text_size'),
+            style_select('strip_size'),
+            style_select('legend_size'),
+            tags$br(),
+            inline( selectInput('scales', gg_label('Multi-graph scales', 'facet_wrap(scales = )'),
+                                choices = c("fixed", "free", "free_x", "free_y"), selected = "fixed") ),
+            style_select('ncols'),
+            inline( selectInput('smooth', gg_label('Fit line', 'geom_smooth(method = "lm")'),
+                                choices = c("TRUE", "FALSE"), selected = "TRUE") ),
+            style_select('plot_height'),
+            tags$br(),
+            inline(checkboxInput("show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
+            inline(checkboxInput("allComplete", "Show only results with complete information", value = TRUE)),
+            tags$br(),
             ## survival (Kaplan-Meier) options — used when X is a time-to-event endpoint
             inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = c(2, 3, 4, 5, 6), selected = 3) ),
             inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = 365 * 5, min = 30, step = 30) ),
-            checkboxInput("allComplete", "Show only results with complete information:", value = TRUE),
+            h4('More ggplot settings'),
+            helpText("Search every other ggplot setting: all theme elements (axis text angle, legend position, ",
+                     "grid lines, backgrounds, spacing ...) and the drawing settings of points, boxplots and the fit line. ",
+                     "Each one you pick appears below with its current default; choose from the menu, or type your own number or #hex colour."),
+            selectizeInput('tweak_pick', 'Add settings', choices = t2_tweak_choices(), multiple = TRUE,
+                           width = '100%',
+                           options = list(placeholder = 'type to search, e.g.  angle,  legend,  grid,  shape,  title text ...',
+                                          plugins = list('remove_button'), maxOptions = 2000)),
+            div(class = "t2-tweaks", uiOutput('tweak_inputs')),
             actionButton("plot_btn2", "Plot")
         ),
         ## ---- (e) what this is ----
@@ -219,23 +261,6 @@ server = function(input, output, session) {
         apply_bundle_choices(b)
     }, ignoreInit = TRUE)
 
-    ## ---- dataset-independent fixed-choice inputs (set once) ----
-    updateSelectizeInput(session, 'smooth',  choices = c("TRUE", "FALSE"),
-                         selected = 'TRUE', server = TRUE)
-    updateSelectizeInput(session, 'scales',  choices = c("free", "fixed", "free_x", "free_y"),
-                         selected = 'fixed', server = TRUE)
-    updateSelectizeInput(session, 'static.size',  choices = 1:20 / 20,
-                         selected = "0.5", server = TRUE)
-    updateSelectizeInput(session, 'static.strip',  choices = 1:20 / 20,
-                         selected = "0.5", server = TRUE)
-    updateSelectizeInput(session, 'static.labels',  choices = 1:20 / 20,
-                         selected = "0.6", server = TRUE)
-    updateSelectizeInput(session, 'static.titles',  choices = 1:20 / 20,
-                         selected = "0.6", server = TRUE)
-    updateSelectizeInput(session, 'alpha',  choices = 1:50 / 50,
-                         selected = '0.12', server = TRUE)
-    updateSelectizeInput(session, 'ncols',  choices = 1:50,
-                         selected = 8, server = TRUE)
     ## when multi_y is toggled on, add "probe" to color choices and select it
     observeEvent(input$multi_y, {
         mgp = bundle()$mygenesplus
@@ -333,8 +358,45 @@ server = function(input, output, session) {
                 format(n_base, big.mark = ","))
     })
 
+    ## ---- Appearance: one widget per extra ggplot setting picked in the search box ----
+    ## Rebuilt when the pick list changes; a widget that already exists keeps
+    ## its current value. What these widgets send is validated against the
+    ## registry in sanitize_t2_tweaks() before anything reaches ggplot.
+    output$tweak_inputs = renderUI({
+        picked = .t2_pick(input$tweak_pick, names(T2_TWEAKS), 60)
+        if (is.null(picked)) return(NULL)
+        lapply(picked, function(id) {
+            tw = T2_TWEAKS[[id]]
+            iid = t2_tweak_input_id(id)
+            cur = isolate(input[[iid]])
+            lab = gg_label(tw$label, tw$gg)
+            if (tw$kind == "text") {
+                return(inline(textInput(iid, lab, value = if (is.null(cur)) "" else cur,
+                                        placeholder = "automatic")))
+            }
+            sel = if (!is.null(cur)) as.character(cur)
+                  else if (!is.null(tw$default)) as.character(tw$default) else ""
+            menu = t2_tweak_menu(tw)
+            if (tw$kind == "enum") {
+                return(inline(selectInput(iid, lab, choices = menu, selected = sel)))
+            }
+            ## numbers and colours: a menu, plus "type your own"
+            if (nzchar(sel) && !(sel %in% menu)) menu = c(sel, menu)
+            inline(selectizeInput(iid, lab, choices = c("automatic" = "", menu), selected = sel,
+                                  options = list(create = TRUE, persist = FALSE,
+                                                 placeholder = "automatic")))
+        })
+    })
+
     ## ---- plotting: any of the three Plot buttons ----
     plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3))
+    ## the plot's height on the page is, like every Appearance setting, taken at
+    ## the moment Plot is pressed
+    plot_height = reactiveVal(t2_style_default('plot_height'))
+    observeEvent(plot_clicks(), {
+        plot_height(.t2_num(input$plot_height, T2_STYLE$plot_height$choices,
+                            t2_style_default('plot_height')))
+    })
     ## what the last plot was drawn from; the download hands out the same table
     plot_snapshot = NULL
     plot_result = eventReactive(plot_clicks(), {
@@ -345,11 +407,12 @@ server = function(input, output, session) {
         inp = sanitize_t2_input(input, b)
         if( length(inp$x) == 0 | length(inp$y) == 0 ) { return( NULL ) }
         fs = filter_state(b)
-        plot_snapshot <<- list(inp = inp, b = b, keep = fs$keep, note = fs$note)
+        gg = sanitize_t2_tweaks(input)
+        plot_snapshot <<- list(inp = inp, b = b, keep = fs$keep, note = fs$note, gg = gg)
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
             fun_plot1(inp, reactive = FALSE, dbfile = b$path, roles = b$roles, dataset_label = b$label,
-                      keep_samples = fs$keep)
+                      keep_samples = fs$keep, gg = gg)
         })
     })
     ## pressing Plot anywhere shows the result
@@ -368,6 +431,13 @@ server = function(input, output, session) {
         ## the whole object so the risk table renders too, not just the curve.
         if (inherits(res, "ggsurvplot")) return(res)
         if (is.list(res) && !is.null(res$plot)) res$plot else res
+    })
+    ## a fixed-height container (not height = "auto": an auto-height plot
+    ## collapses while it redraws, the page scrollbar comes and goes, the width
+    ## changes, and the plot redraws for ever)
+    output$main_plot_ui = renderUI({
+        withSpinner( plotOutput( "main_plot", height = paste0(plot_height(), 'px'), width = '95%' ),
+                    color = viridis::plasma(1) )
     })
     ## the Filter tab's contribution to this plot, so it never applies unseen
     filter_note = function() {

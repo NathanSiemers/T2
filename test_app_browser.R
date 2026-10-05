@@ -110,8 +110,42 @@ app$set_inputs(tabs = "appearance"); settle(500)
 ok(visible("#plot_btn2") && visible("#surv_max_days") && !visible("#plot_btn"),
    "Appearance tab holds the fiddly options")
 shot("5_appearance")
+ok(js("document.querySelectorAll('.gg-name').length") >= 12,
+   "Appearance settings carry their ggplot name underneath")
+ok(identical(app$get_value(input = "title_size"), "16") && identical(app$get_value(input = "plot_height"), "700"),
+   "menus show real values (title 16 pt, plot 700 px)")
+ok(js("document.querySelector('#main_plot img').height") == 700, "the plot was drawn 700 px tall")
+
+## ---- the searchable ggplot settings ----
+pick <- function(ids) {
+  app$run_js(sprintf("$('#tweak_pick')[0].selectize.setValue(%s)", jsonlite::toJSON(ids)))
+  settle(1500)
+}
+ok(js("Object.keys($('#tweak_pick')[0].selectize.options).length") > 300,
+   "the search box holds every registered ggplot setting")
+pick(c("theme|axis.text.x|angle", "point.shape", "labs.title"))
+ok(identical(app$get_value(input = "tw_theme_axis_text_x_angle"), "90") &&
+   identical(app$get_value(input = "tw_point_shape"), "19") &&
+   identical(app$get_value(input = "tw_labs_title"), ""),
+   "picked settings appear as inputs, filled with their defaults")
+app$set_inputs(tw_theme_axis_text_x_angle = "45", tw_labs_title = "A custom title", plot_height = "500",
+               legend_size = "0")
+## a typed number that is not on the menu
+app$run_js("(function(){var s=$('#tw_theme_axis_text_x_angle')[0].selectize; s.createItem('33');})()")
+settle(800)
+ok(identical(app$get_value(input = "tw_theme_axis_text_x_angle"), "33"), "a typed number is accepted by the widget")
+pick(c("theme|axis.text.x|angle", "point.shape", "labs.title", "theme|legend.position"))
+ok(identical(app$get_value(input = "tw_theme_axis_text_x_angle"), "33") &&
+   identical(app$get_value(input = "tw_labs_title"), "A custom title") &&
+   identical(app$get_value(input = "tw_theme_legend_position"), "right"),
+   "adding another setting keeps the values already entered")
+shot("5b_appearance_tweaks")
 app$click("plot_btn2"); settle(4000)
 ok(identical(app$get_value(input = "tabs"), "plot"), "Appearance-tab Plot button switches to the Plot tab")
+ok(js("document.querySelector('#main_plot img').height") == 500, "Plot height setting resizes the plot (500 px)")
+shot("5c_plot_tweaked")
+pick(character(0))
+app$set_inputs(plot_height = "700", legend_size = "11")
 app$set_inputs(tabs = "select"); settle(500)
 app$click("plot_btn"); settle(4000)
 ok(identical(app$get_value(input = "tabs"), "plot"), "Select-tab Plot button switches to the Plot tab")

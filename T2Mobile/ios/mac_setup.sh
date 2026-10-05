@@ -351,8 +351,12 @@ if [ "$RUN_UI_TESTS" = 1 ]; then
     rm -rf "$UISHOTS" "$LOGS/ui-tests.xcresult"; mkdir -p "$UISHOTS"
     xcrun simctl terminate "$UDID" "$APP_ID" >/dev/null 2>&1 || true
     ui_failed=0
+    # a UI test that fails is run once more before it counts: on a freshly booted simulator
+    # the first launch sometimes times out ("Failed to get background assertion"), and the
+    # tests talk to a live service over the network
     TEST_RUNNER_T2_SCREENSHOT_DIR="$UISHOTS" xcodebuild -project "$APPDIR/T2.xcodeproj" -scheme T2 \
         -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DEST/build" \
+        -retry-tests-on-failure -test-iterations 2 \
         -resultBundlePath "$LOGS/ui-tests.xcresult" test-without-building > "$LOGS/ui-tests.log" 2>&1 || ui_failed=1
     # the screenshots are also attachments of the result bundle (Xcode shows them there)
     if [ -z "$(ls -A "$UISHOTS" 2>/dev/null)" ]; then

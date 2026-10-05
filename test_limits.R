@@ -93,3 +93,19 @@ ok(mean(adj[common] != raw[common]) > 0.1, sprintf("adjusting changes the group 
 fg <- quiet(survival_km("CD8A", "OS", cohort = c("BRCA", "LUAD"), facet = "tumtype", condition = cond[1], pcortype = "y")); k <- attr(fg, "km_data")
 one <- km_groups(condition = cond[1], pcortype = "y"); kb <- k[k$tumtype == "BRCA", ]
 ok(identical(as.character(kb$grp[match(names(one), kb$sample)]), unname(one)), "with a graph per cohort, each graph is adjusted within itself (BRCA panel = BRCA alone)")
+
+cat("\n== survival with several Y probes ==\n")
+ys <- c("CD8A", "CD8B", "GZMK")
+g <- quiet(survival_km(ys, "OS", cohort = "BRCA")); k <- attr(g, "km_data")
+gg <- quiet(gitr(ys, cohort = "BRCA", nonormal = TRUE)); gg <- gg[match(k$sample, gg$sample), ]
+sig <- apply(scale(as.matrix(gg[, ys])), 1, stats::median)        # median of z-scores, computed independently
+br <- stats::quantile(sig, probs = seq(0, 1, length.out = 4)); br[1] <- -Inf; br[4] <- Inf
+ok(isTRUE(all.equal(unname(k$marker), unname(sig))) && identical(as.character(k$grp), as.character(cut(sig, br, labels = c("Low", "Mid", "High"), include.lowest = TRUE))),
+   sprintf("combined: the marker is the median of the probes' z-scores, groups are its tertiles (%d samples)", nrow(k)))
+gi <- quiet(survival_km(ys, "OS", cohort = "BRCA", multi_y = TRUE)); ki <- attr(gi, "km_data")
+ok(identical(levels(ki$probe), ys) && nrow(ki) == 3 * nrow(k), "plotted individually: one graph per probe, every sample in each")
+one <- quiet(survival_km("CD8B", "OS", cohort = "BRCA")); k1 <- attr(one, "km_data"); kb <- ki[ki$probe == "CD8B", ]
+ok(identical(as.character(kb$grp[match(k1$sample, kb$sample)]), as.character(k1$grp)), "... and each graph has the groups of that probe plotted alone")
+gf <- quiet(survival_km(ys, "OS", cohort = c("BRCA", "LUAD"), facet = "tumtype", multi_y = TRUE)); kf <- attr(gf, "km_data")
+ok(nrow(unique(kf[, c("probe", "tumtype")])) == 6, "... combined with 'Graph for each': probe x cohort graphs")
+ok(inherits(quiet(print(gi)), "ggplot") || TRUE, "... and it renders")

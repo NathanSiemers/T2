@@ -63,7 +63,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                         facet = NULL, ci = TRUE, title = NULL,
                         max_time = 365 * 5, condition = NULL, pcortype = "none",
                         noheme = FALSE, keep_samples = NULL,
-                        base_size = 12, base_family = "sans") {
+                        base_size = 12, base_family = "sans", multi_y = FALSE) {
   ## every text / line size below follows base_size (12 = the on-screen look)
   k <- base_size / 12
   n_groups <- max(2L, as.integer(n_groups))
@@ -122,8 +122,22 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   ## and equal-count groups on a SUBSET of samples — used over the whole cohort
   ## for a single panel, or within each facet group so a panel matches selecting
   ## that group as the cohort.
+  ## Several Y probes: by default they are ONE marker, the median of their
+  ## z-scores (the same signature the scatter plot draws). With multi_y ('Plot Y
+  ## probes individually') each probe is its own marker instead: the samples are
+  ## stacked once per probe and `probe` becomes a graph variable, so every probe
+  ## gets its own Kaplan-Meier graph with its own groups.
+  ymark <- y
+  stacked <- isTRUE(multi_y) && length(y) > 1
+  if (stacked) {
+    df <- do.call(rbind, lapply(y, function(p) { s <- df; s$.probe_value <- s[[p]]; s$probe <- p; s }))
+    df$probe <- factor(df$probe, levels = y)
+    ymark <- ".probe_value"
+    facet <- c("probe", utils::head(facet, 1))     # ggsurvplot_facet takes at most two
+    ylab <- "Y probe"
+  }
   add_marker_grp <- function(sub) {
-    m <- combine_markers_median_z(sub[, y, drop = FALSE])
+    m <- combine_markers_median_z(sub[, ymark, drop = FALSE])
     if (do_cond && length(cond_cols)) m <- residualize_on(m, sub[, cond_cols, drop = FALSE])
     br <- unique(stats::quantile(m, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE))
     if (length(br) < 2) return(NULL)

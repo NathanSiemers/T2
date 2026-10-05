@@ -75,6 +75,12 @@ final class T2UITests: XCTestCase {
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
             start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
         }
+        // likewise at the very top, under the navigation bar (seen on the iPhone SE, where a
+        // list left scrolled by an earlier step puts a row there): bring it further down
+        if e.frame.minY < screen.minY + 120 {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)))
+        }
         return e
     }
 

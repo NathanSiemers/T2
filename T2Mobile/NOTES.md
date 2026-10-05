@@ -284,12 +284,21 @@ free macOS runner took up to 20 minutes tonight.
   `AppModel.writeTable`. Rewritten as appends in the next commit. Rule: no long `+` chains
   of array literals; Xcode 16's type checker gives up where Xcode 26's does not.
 
+- 37308564682 (572b1f9): **macos-15 job GREEN: the app builds and runs with Xcode 16.4**
+  (iOS SDK 18.5) after the one-expression change, as it does with Xcode 26.6. UI tests
+  green on iPhone 17 Pro Max (the Publish flow now passes there) and iPhone 17 Pro dark.
+  On the iPhone SE flow test02 failed with "could not scroll to pick-X": the drag added to
+  `scrollTo` in that commit left the Select list scrolled down on the small screen, and
+  the helper only looked downward. It now also scrolls back up (next commit). Again a
+  test-helper problem; the app code is the same as in the jobs that passed.
+
 **Where it stands (end of the night of 2026-10-05)**
 - Branch `t2mobile-ci`; every commit is pushed. The last run with EVERY job green is
   37278262683 (commit 9bfc855). The commits after it add TIFF export and "Combine and
   adjust" (1d12154: built with Xcode 26.6, all UI flows passed on two of three devices, see
   above), then change one expression in `AppModel.writeTable` (for Xcode 16), the UI
-  tests' `scrollTo` helper, and these notes. Look at the newest run of workflow
+  tests' `scrollTo` helper (twice), and these notes. No app source changed after 572b1f9.
+  Look at the newest run of workflow
   "T2Mobile iOS" for the result of the last commit: `gh run list --limit 3`. If it is red
   for a reason that is not obvious, `git checkout 9bfc855 -- T2Mobile/ios` gives back the
   fully green app.

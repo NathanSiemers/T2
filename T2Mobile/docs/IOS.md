@@ -139,10 +139,10 @@ dataset does not have, a search without matches, no sample passing the filters (
   problem; NOTES.md has the details), so that run as a whole is red.
 - **Not opened or verified**: the exported PNG / TIFF / PDF / CSV files themselves (their
   pixel size, recorded dpi, vector content); landscape; Dynamic Type sizes; a real iPhone.
-- **Xcode 16.4** (runner macos-15, job for information only): T2Kit's 52 tests pass and the
-  project generates; the app build failed on one expression Xcode 16 could not type-check
-  (`AppModel.writeTable`), since rewritten. Whether the rest builds with Xcode 16 is shown
-  by the newest run's macos-15 job (see NOTES.md). Use a current Xcode if you can.
+- **Xcode 16.4** (runner macos-15, iOS SDK 18.5; job for information only): since commit
+  572b1f9 `mac_setup.sh` runs through there too (CI run 37308564682): T2Kit's 52 tests
+  pass, the app builds, starts in an iPhone 17 Pro simulator and loads its data. The UI
+  tests are only run with Xcode 26.6. Xcode 15 has not been tried.
 
 Known cosmetic flaws seen in the screenshots and left: in small "graph for each" panels
 the per-panel note (n, r) overlaps the points; the coloured dots of the numbers-at-risk

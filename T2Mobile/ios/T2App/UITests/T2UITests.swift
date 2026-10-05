@@ -58,6 +58,12 @@ final class T2UITests: XCTestCase {
             app.swipeUp(velocity: .slow)
             swipes += 1
         }
+        // not below: it may be above (the list was left scrolled down by an earlier step)
+        swipes = 0
+        while !(e.exists && e.isHittable) && swipes < 2 * maxSwipes {
+            app.swipeDown(velocity: .slow)
+            swipes += 1
+        }
         if !(e.exists && e.isHittable) {
             shot("FAILED-scrolling-to-\(id)")
             XCTFail("could not scroll to \(id)")

@@ -97,8 +97,15 @@ final class AppModel {
 
     /// switch dataset: everything about the previous one is dropped (its variables may not exist here)
     func open(_ name: String, launch: Bool = false) async throws {
-        let m = try await api.meta(name)
-        let clin = try await api.clinical(name, version: m.version)
+        var m = try await api.meta(name)
+        var clin: Clinical
+        do {
+            clin = try await api.clinical(name, version: m.version)
+        } catch APIClient.APIError.versionChanged {
+            // the database was replaced between the two requests: ask once more
+            m = try await api.meta(name)
+            clin = try await api.clinical(name, version: m.version)
+        }
         var cf = CrossFilter(sampleCount: clin.n)
         cf.load(clin.columns)
         meta = m

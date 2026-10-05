@@ -83,6 +83,10 @@ public struct APIClient: Sendable {
         }
         guard let url = parts.url else { throw APIError.badURL }
         var request = URLRequest(url: url)
+        // A request that names a database version (?v=) may be answered from the device's
+        // cache for good. One that does not is how the current version is learned
+        // (/datasets, /meta) or a search: it always goes to the server.
+        if query["v"] == nil { request.cachePolicy = .reloadIgnoringLocalCacheData }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         var (data, response) = try await fetch(request)
         // 503: the service is restarting on a new database file; it is back within seconds

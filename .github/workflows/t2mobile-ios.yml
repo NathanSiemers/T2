@@ -1,0 +1,86 @@
+# Builds, tests and runs the T2 iPhone app (T2Mobile/ios) on GitHub's macOS machines.
+#
+# The development host has no Mac, so this is where the app meets a real Xcode:
+#   - mac-setup: runs T2Mobile/ios/mac_setup.sh exactly as its owner will on his Mac
+#     (fresh machine, XcodeGen downloaded, unit tests, simulator build, screenshots);
+#   - ui-tests: drives the app through its main flows in the iOS Simulator against the
+#     live data service and keeps a screenshot of every step (artifacts of the run).
+#
+# Runs only for the branch t2mobile-ci (and by hand). Needs no secrets.
+name: T2Mobile iOS
+
+on:
+  push:
+    branches: [t2mobile-ci]
+  workflow_dispatch:
+
+concurrency:
+  group: t2mobile-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mac-setup:
+    name: mac_setup.sh on a clean Mac (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    # macos-15 is for information (does an older Xcode build it?): its result does not decide the run
+    continue-on-error: ${{ matrix.os != 'macos-26' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # the newest image (Xcode 26), and the previous one (Xcode 16) for owners of an older Xcode
+        os: [macos-26, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i -E "ios|simulator" || true
+          swift --version
+          xcrun simctl list runtimes
+          xcrun simctl list devices available | grep -E "^--|iPhone" || true
+      - name: mac_setup.sh --ci --no-brew
+        run: T2Mobile/ios/mac_setup.sh --ci --no-brew
+      - name: Keep screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-setup-${{ matrix.os }}
+          if-no-files-found: warn
+          path: |
+            ~/T2Mobile/screenshots
+            ~/T2Mobile/logs/*.log
+            ~/T2Mobile/logs/*.out
+            ~/T2Mobile/mac_setup.log
+
+  ui-tests:
+    name: UI tests, ${{ matrix.device }} (${{ matrix.appearance }})
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: large-light, device: "iPhone 17 Pro Max", appearance: light, flags: "--no-brew" }
+          - { id: pro-dark, device: "iPhone 17 Pro", appearance: dark, flags: "--no-brew --dark" }
+          # the smallest screen iOS still supports; this job also takes the Homebrew route to XcodeGen
+          - { id: se-light, device: "iPhone SE (3rd generation)", appearance: light, flags: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: mac_setup.sh --ci --ui-tests
+        run: T2Mobile/ios/mac_setup.sh --ci --ui-tests --device "${{ matrix.device }}" ${{ matrix.flags }}
+      - name: Keep screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-${{ matrix.id }}
+          if-no-files-found: warn
+          path: |
+            ~/T2Mobile/screenshots
+            ~/T2Mobile/logs/*.log
+            ~/T2Mobile/logs/*.out
+            ~/T2Mobile/mac_setup.log

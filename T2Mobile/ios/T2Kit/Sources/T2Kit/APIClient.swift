@@ -9,8 +9,12 @@ public struct APIClient: Sendable {
         case badURL
         case http(Int, String)
         case transport(String)
+        /// the server no longer serves the database version the device holds: everything
+        /// fetched for that dataset (sample order included) belongs to the old database
+        case versionChanged
         public var description: String {
             switch self {
+            case .versionChanged: return "the database on the server was updated"
             case .badURL: return "bad URL"
             case .http(let code, let msg): return "server answered \(code): \(msg)"
             case .transport(let msg): return msg
@@ -18,7 +22,7 @@ public struct APIClient: Sendable {
         }
     }
     /// the service limits one request to this many names
-    public static let maxProbesPerRequest = 50
+    public static let maxProbesPerRequest = 100
 
     public let baseURL: URL
     private let session: URLSession
@@ -35,20 +39,26 @@ public struct APIClient: Sendable {
         try await get("v1/\(dataset)/meta", as: DatasetMeta.self)
     }
     /// sample ids and every clinical column: fetch once per dataset version and keep
-    public func clinical(_ dataset: String) async throws -> Clinical {
-        try await get("v1/\(dataset)/clinical", as: Clinical.self)
+    /// `version` (from `meta`): the server answers only if it still serves that database, and
+    /// the response can then be kept by the system's URL cache for good
+    public func clinical(_ dataset: String, version: String? = nil) async throws -> Clinical {
+        try await get("v1/\(dataset)/clinical", query: version.map { ["v": $0] } ?? [:], as: Clinical.self)
     }
     public func searchProbes(_ dataset: String, query: String, limit: Int = 50) async throws -> ProbeSearch {
         try await get("v1/\(dataset)/probes", query: ["q": query, "limit": String(limit)], as: ProbeSearch.self)
     }
-    /// the columns for `names` (any number: sent in requests of at most 50), and the names
-    /// the dataset does not have
-    public func values(_ dataset: String, probes names: [String]) async throws -> (columns: [Column], missing: [String]) {
+    /// the columns for `names` (any number: sent in requests of at most 100), and the names
+    /// the dataset does not have. Pass the `version` the device's sample list belongs to:
+    /// values of another database version must never be attached to it (`versionChanged`).
+    public func values(_ dataset: String, probes names: [String], version: String? = nil) async throws -> (columns: [Column], missing: [String]) {
         var columns: [Column] = [], missing: [String] = []
         var start = 0
         while start < names.count {
             let chunk = Array(names[start..<min(start + Self.maxProbesPerRequest, names.count)])
-            let r = try await get("v1/\(dataset)/values", query: ["probes": chunk.joined(separator: ",")], as: Values.self)
+            var query = ["probes": chunk.joined(separator: ",")]
+            if let version { query["v"] = version }
+            let r = try await get("v1/\(dataset)/values", query: query, as: Values.self)
+            if let version, let served = r.version, served != version { throw APIError.versionChanged }
             columns += r.columns
             missing += r.missing
             start += Self.maxProbesPerRequest
@@ -74,8 +84,16 @@ public struct APIClient: Sendable {
         guard let url = parts.url else { throw APIError.badURL }
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await fetch(request)
+        var (data, response) = try await fetch(request)
+        // 503: the service is restarting on a new database file; it is back within seconds
+        var tries = 0
+        while (response as? HTTPURLResponse)?.statusCode == 503 && tries < 3 {
+            tries += 1
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            (data, response) = try await fetch(request)
+        }
         guard let http = response as? HTTPURLResponse else { throw APIError.transport("no HTTP response") }
+        if http.statusCode == 409 { throw APIError.versionChanged }
         guard http.statusCode == 200 else {
             throw APIError.http(http.statusCode, String(data: data.prefix(300), encoding: .utf8) ?? "")
         }

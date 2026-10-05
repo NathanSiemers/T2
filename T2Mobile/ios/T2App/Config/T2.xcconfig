@@ -1,0 +1,19 @@
+// Build settings shared by the app and its UI tests.
+//
+// To change any of these on ONE Mac without touching the repository, put the new values
+// in a file named Local.xcconfig next to this one (it is ignored by git and kept by
+// mac_setup.sh). `mac_setup.sh --team ABCDE12345 --bundle-id com.example.t2` writes it.
+
+// the app's identity in the App Store / on a phone
+T2_BUNDLE_ID = org.fiveprime.t2
+
+// your Apple developer team (10 characters). Empty = choose it in Xcode:
+// target T2 > Signing & Capabilities > Team
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+// what the user sees (Settings > General > About, the App Store) / the build counter
+MARKETING_VERSION = 0.2.0
+CURRENT_PROJECT_VERSION = 1
+
+#include? "Local.xcconfig"

@@ -15,14 +15,21 @@ check(!datasets.isEmpty, "datasets: \(datasets.map(\.name).joined(separator: ", 
 for ds in datasets {
     print("\n== \(ds.name): \(ds.title) ==")
     let meta = try await api.meta(ds.name)
-    let clin = try await api.clinical(ds.name)
+    let clin = try await api.clinical(ds.name, version: ds.version)
     check(clin.samples.count == ds.nSamples && clin.columns.allSatisfy { $0.count == ds.nSamples },
           "clinical: \(clin.samples.count) samples x \(clin.columns.count) columns, every column full length")
     var cf = CrossFilter(sampleCount: clin.n)
     cf.load(clin.columns)
     // the dataset's default variables (some are clinical, some probes)
     let wanted = ["x", "y", "color"].compactMap { meta.defaults[$0] }.filter { !$0.isEmpty }
-    let fetched = try await api.values(ds.name, probes: wanted + ["no_such_probe_zzz"])
+    let fetched = try await api.values(ds.name, probes: wanted + ["no_such_probe_zzz"], version: ds.version)
+    // a version the server does not serve must be refused, never answered with other data
+    do {
+        _ = try await api.values(ds.name, probes: wanted, version: "0000")
+        print("  FAIL  a stale version was answered")
+    } catch APIClient.APIError.versionChanged {
+        print("  ok    a stale version is refused (versionChanged)")
+    }
     cf.load(fetched.columns)
     check(fetched.missing == ["no_such_probe_zzz"] && fetched.columns.count == Set(wanted).count,
           "values for the defaults (\(wanted.joined(separator: ", "))): \(fetched.columns.map { "\($0.name) [\($0.isNumeric ? "numeric" : "categorical"), \($0.missingCount) missing]" }.joined(separator: "; "))")

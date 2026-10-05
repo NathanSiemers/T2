@@ -185,3 +185,210 @@ installs); the Apple Developer Program ($99/year) only for TestFlight / App Stor
    ~12 and thousands of *uncached* probe lookups per second.
 3. Publish the service behind Nginx once the app runs against the tunnel.
 4. App: survival screen, facets, on-device caching, TIFF, iPad layout.
+
+### 2026-10-04/05 (night) — iPhone app: real compiles on macOS runners, mac_setup.sh (Claude)
+
+Newest state of the iOS work is always the LAST bullet list of this entry ("Where it
+stands"). docs/IOS.md is the reference; this is the history.
+
+**Branch `t2mobile-ci`** (GitHub: NathanSiemers/T2). It is built on the *published* main
+(789cc5d), not on the local main: the local main had an unpushed commit (5c8fc0e: query
+service, default_filters, database build changes) and pushing a branch on top of it would
+have published all of that. The branch therefore carries only `T2Mobile/ios`,
+`T2Mobile/NOTES.md`, `T2Mobile/docs/IOS.md` and `.github/workflows/t2mobile-ios.yml`
+(so docs/API.md and service/, which these notes mention, are not on it). A local-only
+branch `t2mobile-ci-on-local-main` (bd68353) is the first, unpushed attempt; delete it at will.
+Merging `t2mobile-ci` into main: the two NOTES.md / IOS.md versions will conflict trivially
+(take this branch's for IOS.md; for NOTES.md keep both logs).
+
+**CI** — `.github/workflows/t2mobile-ios.yml`, only for pushes to `t2mobile-ci` (and
+manual runs); no secrets. Runner `macos-26` (arm64, macOS 26.6.2): **Xcode 26.6 (17F113),
+iOS SDK 26.5**, simulators iOS 26.5 (iPhone 17 / 17 Pro / 17 Pro Max / 17e / Air), XcodeGen
+2.46.0. Each job runs `T2Mobile/ios/mac_setup.sh --ci` — the script the owner runs on his
+Mac — so the script itself is what is tested. A run takes ~6 minutes of work; waiting for a
+free macOS runner took up to 20 minutes tonight.
+    gh run list --limit 5            # (the gh here is 2.4: no --branch flag)
+    gh run view <id> --log-failed
+    gh run download <id> -D <dir>    # screenshots and logs
+
+**Runs so far**
+- 37268887380 (bc97f41): FAILED in step 5/7. One line: `var x = "", y = "", color = ""` in
+  an `@Observable` class ("accessor macro can only apply to a single variable"). Rule: one
+  stored property per `var` in @Observable classes. Steps 1-4 of the script passed.
+- 37275226366 (fafbf8c): **GREEN**. The draft app as written on Linux compiled with that one
+  fix. T2Kit: 45 tests pass on macOS. The script ran all 7 steps: XcodeGen downloaded
+  (no Homebrew), project generated, simulator booted (2.5 min cold), app installed and
+  started on each of its four tabs, loaded live TCGA data, four screenshots saved.
+  What the screenshots showed (draft UI): data and plot correct in substance (boxes of CD8A
+  by cohort, 12,804 samples), but x-axis labels overlapping the axis title, legend cut off,
+  filter histogram labels one letter wide with 33 switches, figure preview far down the
+  Publish form. The live service was already serving stored presets ("Tumor samples only",
+  "Primary tumors only", ...).
+
+**Built this night (all in `T2Mobile/ios`)**
+- `mac_setup.sh` (see docs/IOS.md "On the Mac: one command").
+- `T2App/project.yml`: app + UI-test target + scheme; `Config/T2.xcconfig` (bundle id
+  `org.fiveprime.t2`, version 0.2.0 build 1, team empty; `Config/Local.xcconfig` overrides,
+  not in git); iOS 17.0; iPhone only; portrait + landscape; icon and launch logo generated
+  by `tools/make_icon.py` (Pillow; committed PNGs); accent colour.
+- T2Kit additions, each tested against R 4.5.3 / survival 3.8.6 (the R containers used for
+  the reference values were `shinyt2t:2026.10`; scripts are quoted in the test files):
+  `StatsMore` (Pearson/Spearman p, Kruskal-Wallis, KM confidence limits, Cox, quantile
+  groups as survival_km(), residuals), `Palette` (plasma from viridisLite), `PlotScene` +
+  `PlotBuilder` (a plot as data: scatter and box plots so far).
+  Semantics taken from lib.R, with line numbers checked: z-score and probe combination run
+  over the samples in use (after gitr() filtering), before the "complete information" cut;
+  "remove influences of" is fitted after that cut, over the samples drawn; "complete
+  information" also requires the dataset's `cohort` and `sample_type` when it has them.
+  Real numbers to compare with the website: TCGA, X = cohort, Y = CD8A, colour =
+  sample_type, no filters: 11,005 points (CD8A missing for 1,753 samples, cohort for 213).
+- Facts about the live API found on the way (client-side handled, API-side worth fixing):
+  `meta.survival_endpoints` lists OS/PFI/DSS/DFI for every dataset, but tcgatargetgtex
+  and DEMO have no such columns (T2Kit: `usableSurvivalEndpoints`).
+
+**Pitfalls**
+- This host's worktree guard refuses long compound shell commands; edit files with the
+  editor tools and run one plain command at a time.
+- Linux Foundation: `String(format: "%@", swiftString)` is not usable; interpolate.
+- XCUITest: an element in a SwiftUI List exists only while it is on screen: scroll first.
+- `xcrun simctl launch --stdout=file` returns at once and the app's output lands in the
+  file; the app writes `T2-READY <dataset>` with FileHandle (print() would be buffered).
+- 37276335636 (5e663c6): the reworked app (plots drawn from T2Kit scenes, new Select / Plot
+  / Filter / Publish screens) **compiled first time**; job `mac-setup` green. The three
+  UI-test jobs each ran 5 flows: 4 passed on every device (iPhone 17 Pro Max, iPhone 17 Pro
+  in dark mode, iPhone SE 3rd generation, which the script created itself; the SE job also
+  took the Homebrew route to XcodeGen). The one failure was the TEST's expectation, not the
+  app: with no cohort ticked, 213 samples remain, because a sample with no cohort value
+  passes a filter unless "include samples with no value" is off (Thanos semantics).
+  Seen in the screenshots (34 per device): default box plot (11,005 points, as computed
+  from the API beforehand), gene / mutation / clinical search, scatter with fit line and
+  statistics, numeric colour and size, no-match search, presets (tcgatargetgtex offers
+  "GTEx normal tissues" ... from the database), cross-filter with live counts, both page
+  presets on Publish, PNG and PDF export, the share sheet with the PDF, dataset menu, DEMO,
+  unknown probe, no connection. Fixed afterwards: tinted labels inside buttons, long share
+  labels, legend rows, test scrolling.
+- 37278262683 (9bfc855): **all four jobs GREEN**: setup job, and six UI flows on iPhone 17
+  Pro Max, iPhone 17 Pro (dark) and iPhone SE. This is the run whose screenshots were
+  looked at for survival, graph-for-each, counts, cohorts, the table and the no-samples
+  flow (docs/IOS.md "How far each part has been checked").
+- 37306211658 (1d12154): TIFF export, "Combine and adjust" on Select, a macos-15 job.
+  Run conclusion: FAILURE, for one job. macos-26: setup job green; UI tests green on
+  iPhone SE and iPhone 17 Pro dark (all six flows, TIFF and combine/adjust included);
+  on iPhone 17 Pro Max flow test04_Publish failed ("the share link did not appear"): the
+  failure screenshot shows the "Plot: PNG" row at the edge of the floating tab bar after
+  scrolling, so the test's tap did not reach the button. A weakness of the test helper
+  (`scrollTo`), which now drags such an element further up; the same flow passed on the
+  other two devices. The macos-15 job (Xcode 16.4, iOS SDK 18.5,
+  information only) FAILED in step 5/7 on one line: "the compiler is unable to type-check
+  this expression in reasonable time" for a chain of six `+` on arrays in
+  `AppModel.writeTable`. Rewritten as appends in the next commit. Rule: no long `+` chains
+  of array literals; Xcode 16's type checker gives up where Xcode 26's does not.
+
+- 37308564682 (572b1f9): **macos-15 job GREEN: the app builds and runs with Xcode 16.4**
+  (iOS SDK 18.5) after the one-expression change, as it does with Xcode 26.6. UI tests
+  green on iPhone 17 Pro Max (the Publish flow now passes there) and iPhone 17 Pro dark.
+  On the iPhone SE flow test02 failed with "could not scroll to pick-X": the drag added to
+  `scrollTo` in that commit left the Select list scrolled down on the small screen, and
+  the helper only looked downward. It now also scrolls back up (next commit). Again a
+  test-helper problem; the app code is the same as in the jobs that passed.
+
+**Where it stands (end of the night of 2026-10-05)**
+- Branch `t2mobile-ci`; every commit is pushed. The last run with EVERY job green is
+  37278262683 (commit 9bfc855). The commits after it add TIFF export and "Combine and
+  adjust" (1d12154: built with Xcode 26.6, all UI flows passed on two of three devices, see
+  above), then change one expression in `AppModel.writeTable` (for Xcode 16), the UI
+  tests' `scrollTo` helper (twice), and these notes. No app source changed after 572b1f9.
+  Look at the newest run of workflow
+  "T2Mobile iOS" for the result of the last commit: `gh run list --limit 3`. If it is red
+  for a reason that is not obvious, `git checkout 9bfc855 -- T2Mobile/ios` gives back the
+  fully green app.
+- What the owner does: on the Mac, `/path/to/T2/T2Mobile/ios/mac_setup.sh` (docs/IOS.md,
+  first section). Nothing else is needed for the simulator; the script prints the steps
+  for his own iPhone (free Apple ID) and for the paid membership.
+- Screenshots Claude looked at were downloaded to this host's session scratchpad
+  (`.../scratchpad/run4/ui-*/screenshots/`), which is temporary: get them again with
+  `gh run download 37278262683 -D <dir>` (artifacts are kept 90 days).
+- Not done, in order of value: see docs/IOS.md "Not built (explicit gaps)" and "Known
+  cosmetic flaws". Next sensible steps: open the exported PNG / TIFF / PDF / CSV files and
+  check size, dpi and content; run on a real iPhone; multi-Y facets; cache data on the
+  device; the About tab.
+- For the API side (nothing blocks the app): `meta.survival_endpoints` lists OS, PFI,
+  DSS, DFI for datasets that have no such columns (the app checks the clinical columns
+  itself); an endpoint that returns only the non-missing samples of a probe, or a binary
+  format, would shorten downloads but is not needed.
+- Helper containers `ios-swift` / `ios-r` (Linux Swift builds, R reference values) were
+  temporary and are removed; the commands to recreate them are in docs/IOS.md and in the
+  test files' headers.
+
+### 2026-10-05 — databases rebuilt, service hardened and redeployed, branch merged (Claude)
+
+**Service is public**: `https://www.fiveprime.org/api/t2/` (`/healthz`, `/v1/...`; `/statz`
+is not exposed). Production container `t2api` is defined in
+`/scratch/Docker/ShinyPublic/docker-compose.yml` (image tag `t2api:2026.10`, 127.0.0.1:3860,
+network `shinypublic`, read-only root, user 999, 4 GB without swap) behind Nginx
+(`/scratch/Docker/Nginx/nginx.conf`, 50 requests/s per IP). `service/docker-compose.yml` is
+only a stand-alone development instance.
+
+**Databases** (all three rebuilt on 2026-10-05 from the fixed pipeline, no downloads; the
+service reads copies in `/scratch/shinyusb/T2-rebuilt-20261005/`; the Shiny sites still read
+the July files in `/scratch/shinyusb/T2` until the owner says otherwise):
+- covering index `(probekey, type, samplekey, value)` on both fact tables: one probe is one
+  contiguous index read (uncached lookup about 20 ms);
+- table `default_filters` (the presets), table `sparse(type, sparse, default_value)`: how
+  each data type was loaded. A sample tested for a type with no stored row gets the default
+  (0) only when the type is sparse; for a type loaded in full it is missing. A stored NULL
+  and an untested sample are missing either way. `dataset.go` reads the table (`loadSparse`)
+  exactly as the view `tcgas` uses it;
+- signatures (`.sig`) are missing unless every member gene has a value: the 1,744 samples
+  without RNA no longer get an invented number;
+- a sample that occurs twice in a source file is the mean of its copies (nine samples had no
+  RNA at all before because both copies were renamed by the reader);
+- lists in `dataset_meta` are separated by `|` (a cohort name contains a comma);
+  `splitMeta` in `dataset.go` reads both forms;
+- when a sample has several values of one categorical probe (two mutations of a gene),
+  `gitr()` and the service both keep the smallest value in byte order (it used to depend on
+  the index).
+`service/test.sh equiv` (value-for-value against `gitr()`): ALL PASS on the three datasets
+after each of these steps and after the deployment.
+
+**Hardening (commit 03a14e0), all in `test.sh abuse`:**
+- every requested name is checked in memory against the dataset's variable list
+  (`allprobes` + `probes` + clinical columns) before any query; unknown names cost nothing
+  and are never cached (2,000 made-up names: cache unchanged, 88 MB resident);
+- at most 100 names per call; a call whose first 10 names are all unknown is refused (400);
+- `?v=<version>`: the answer comes only from that database build (cacheable for good) or is
+  `409`; without it `max-age=300` + ETag; `/values` bodies carry `version`; the ETag is a
+  fixed-length hash;
+- the service answers `503` and exits (Docker restarts it) when the file it loaded is
+  replaced or rewritten: sample order, key maps and cached columns belong to one file.
+  **Replace a database by a new directory + volume change + `docker compose up -d t2api`,
+  never by copying over a served file** (docs/API.md, "Replacing a database");
+- a panic while loading a column is an error for the waiting requests, not a name stuck
+  pending; handler panics give a plain 500;
+- driver `modernc.org/sqlite v1.38.2`: v1.34.1 took one process-wide lock for every SQLite
+  mutex operation, so uncached lookups ran one at a time.
+
+**Measured after hardening** (private instance, 8 CPUs, TCGA, rebuilt database):
+
+| Load | before | after |
+|---|---|---|
+| 200 clients, 3,000 probes, half the requests uncached | 50 requests/s, median 4.6 s | 1,582 requests/s, median 68 ms, p99 1.2 s |
+| 500 clients, 300 probes, mostly cached | about 3,100 requests/s | 3,211 requests/s, median 66 ms |
+
+Memory 157 MB after start-up and cold load, 1.1 GB with the caches full (limit 4 GB).
+One instance is enough for hundreds of simultaneous phones; gzip is now the main cost of
+the warm path (API-6 of the review: cache the compressed column) and the uncached columns
+of one request are still fetched one after another (API-9). A pool of instances behind
+Nginx/HAProxy needs nothing shared (each has its own cache) and is the next step only if
+one instance's 8 CPUs are ever saturated.
+
+**App**: `T2Kit.APIClient` passes the dataset version, treats `409` as "the database was
+replaced" (the app reloads the dataset rather than attach new values to the old sample
+order), retries `503`, and sends up to 100 names per request. `t2smoke` checks the refusal
+of a stale version against the live service. Branch `t2mobile-ci` was merged into `main`
+on this date; continue on `main` and push to `t2mobile-ci` when a Mac build is wanted (the
+workflow only runs for that branch).
+
+**Open**: authentication / per-key limits (none yet); API-6 and API-9 above; the Shiny
+sites and the API read different database generations until the live Shiny files are
+replaced.

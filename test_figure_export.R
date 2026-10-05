@@ -159,6 +159,20 @@ tw <- draw(list(x = "CD8A", y = "FOXP3", color = "sample_type"),
 ok(identical(tw$theme$legend.position, "right") && calc_element("axis.text.x", tw$theme)$angle == 0,
    "the user's own settings override the preset's")
 
+## "Show legend" off must win over a legend position, including the one the
+## half-width preset sets by default (it did not: the preset's "bottom" won)
+drawn <- function(obj) {
+  g <- ggplotGrob(if (inherits(obj, "ggsurvplot")) obj$plot else obj)
+  any(grepl("guide-box", g$layout$name) & vapply(g$grobs, function(x) !inherits(x, "zeroGrob"), NA))
+}
+ok(drawn(p) && !drawn(draw(list(x = "CD8A", y = "FOXP3", color = "sample_type", show_legend = FALSE))),
+   "Show legend off hides the legend in the half-width preset (which positions it at the bottom)")
+ok(!drawn(draw(list(x = "CD8A", y = "FOXP3", color = "sample_type", show_legend = FALSE),
+               extra_gg = list(`theme|legend.position` = "top"))) &&
+   !drawn(draw(list(x = "OS", y = "MKI67", cohort = "LUAD", show_legend = FALSE))) &&
+   drawn(draw(list(x = "OS", y = "MKI67", cohort = "LUAD"))),
+   "...also against a user-chosen legend position, and on survival figures")
+
 cat("\n== survival figures ==\n")
 km <- draw(list(x = "OS", y = "MKI67", cohort = "LUAD"))
 ok(inherits(km, "ggsurvplot") && identical(km$plot$labels$caption, T2_CITATION), "Kaplan-Meier figure builds, with source line")

@@ -442,6 +442,8 @@ t2_wrap_text = function(txt, fig_width, font_size) {
 t2_style_survival = function(res, style = list(), gg = list(), caption = NULL, fig_width = NULL) {
     th = do.call(t2_font_theme, style[intersect(names(style), names(formals(t2_font_theme)))]) +
         t2_tweak_theme(gg)
+    ## "Show legend" off beats any legend.position among the settings
+    if (identical(style$show_legend, FALSE)) th = th + theme(legend.position = "none")
     lb = gg[grep("^labs\\.", names(gg), value = TRUE)]
     names(lb) = sub("^labs\\.", "", names(lb))
     ## a source line, when the caller asks for one (Publish tab)

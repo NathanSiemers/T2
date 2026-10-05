@@ -563,6 +563,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         p = p + do.call(labs, user_labs)
     }
     p = p + t2_tweak_theme(gg)
+    ## "Show legend" off beats any legend.position among the settings above
+    if (!isTRUE(show_legend)) p = p + theme(legend.position = "none")
 
     ## add graph parameters and final stats to summary (use original values)
     plot_summary = paste(plot_summary, sprintf("\nData points in plot: %d", nrow(data)), sep = "\n")

@@ -77,9 +77,14 @@ DATASETS_DIR <- "datasets"
 }
 
 ## comma-separated meta value -> character vector (empty string -> character(0))
+## A list stored in dataset_meta. Values can contain commas ("Acute Myeloid
+## Leukemia, Induction Failure Subproject"), so builders separate with "|"; a
+## string without "|" is split on "," (databases built before October 2026).
+## The t2api service applies the same rule (splitMeta in dataset.go).
 .split_meta <- function(s) {
   if (is.null(s) || is.na(s) || !nzchar(s)) return(character(0))
-  trimws(strsplit(s, ",", fixed = TRUE)[[1]])
+  x <- trimws(strsplit(s, if (grepl("|", s, fixed = TRUE)) "|" else ",", fixed = TRUE)[[1]])
+  x[nzchar(x)]
 }
 
 ## ---------------------------------------------------------------------------

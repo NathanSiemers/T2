@@ -130,9 +130,15 @@ func cleanText(s string) string {
 	return b.String()
 }
 
+// splitMeta reads a list stored in dataset_meta, as .split_meta() in dataset_registry.R does:
+// separated by "|" (values can contain commas), or by "," when there is no "|" (older files).
 func splitMeta(s string) []string {
 	out := []string{}
-	for _, p := range strings.Split(s, ",") {
+	sep := ","
+	if strings.Contains(s, "|") {
+		sep = "|"
+	}
+	for _, p := range strings.Split(s, sep) {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}

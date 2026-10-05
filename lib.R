@@ -302,13 +302,22 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
     }
 
-    ## multi_y with mixed types: warn but proceed (pivot handles it)
+    ## Y probes plotted individually are stacked into one column. A probe that is
+    ## also X, color, size or a graph variable cannot be stacked away, and a
+    ## column holds one type: drop what does not fit, with a note.
     if (length(y) > 1 && multi_y) {
-        y_types = sapply(y, var_type)
-        if (length(unique(y_types)) > 1) {
-            warnings = c(warnings, paste("Multi-Y has mixed types:", label_vars(y),
-                                         "- results may be unexpected"))
+        clash = intersect(y, c(if (length(x) == 1) x, color, size, facet))
+        if (length(clash) > 0) {
+            warnings = c(warnings, paste("Plotted individually, a Y variable cannot also be X, color, size or a graph variable. Dropping from Y:",
+                                         label_vars(clash)))
+            y = setdiff(y, clash)
         }
+        if (length(y) > 1 && length(unique(sapply(y, is_num))) > 1) {
+            non_num_y = y[!sapply(y, is_num)]
+            warnings = c(warnings, paste("Individual Y plots need one type; keeping the numeric ones. Dropping:", label_vars(non_num_y)))
+            y = setdiff(y, non_num_y)
+        }
+        if (length(y) == 0) y = orig_y[1]
     }
 
     ## facet variables must be categorical — numeric facets would create thousands of panels
@@ -458,7 +467,12 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     ## check for waterfall
     if(waterfall){
-      data[,x] = forcats::fct_reorder(data[,x],data[,y], .desc = waterfall_flip)
+      ## ordering the categories of X by Y: only defined for a categorical X and a numeric Y
+      if (!is.numeric(data[, x]) && is.numeric(data[, y])) {
+        data[,x] = forcats::fct_reorder(as.factor(data[,x]),data[,y], .desc = waterfall_flip)
+      } else {
+        warnings = c(warnings, "Waterfall needs a categorical X and a numeric Y; it was ignored.")
+      }
     }
     ################################################################
     ## convert mutations to factors

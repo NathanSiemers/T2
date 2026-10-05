@@ -158,7 +158,9 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## don't look them up in the database or in clinpheno directly
   is_clin = probes %in% clinpheno_cols
   is_virtual = probes %in% virtual_cols
-  clin_probes = probes[is_clin & !is_virtual]
+  ## 'sample' is the key column, always returned: asking for it again must not
+  ## select it twice (the join below would stop)
+  clin_probes = setdiff(probes[is_clin & !is_virtual], 'sample')
   db_probes = unique(probes[!is_clin & !is_virtual])
 
   ## start with clinpheno sample list

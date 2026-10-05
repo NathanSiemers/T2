@@ -221,11 +221,13 @@ dataset_meta <- data.frame(
     "T2: TCGA-TARGET-GTEx (UCSC Toil RNA-seq)",
     "TCGA-TARGET-GTEx (Toil)",
     "disease", "study", "sample_type",
-    "Solid Tissue Normal,Normal Tissue,Cell Line",
+    ## lists are separated by "|": a value can contain a comma (see .split_meta)
+    "Solid Tissue Normal|Normal Tissue|Cell Line",
     paste("Acute Lymphoblastic Leukemia", "Acute Myeloid Leukemia",
+          "Acute Myeloid Leukemia, Induction Failure Subproject",
           "Diffuse Large B-Cell Lymphoma", "Thymoma", "Whole Blood", "Spleen",
           "Cells - Ebv-Transformed Lymphocytes",
-          "Cells - Leukemia Cell Line (Cml)", sep = ","),
+          "Cells - Leukemia Cell Line (Cml)", sep = "|"),
     paste("Primary Tumor", "Primary Solid Tumor", "Recurrent Tumor",
           "Recurrent Solid Tumor", "Metastatic", "Additional Metastatic",
           "Additional - New Primary",
@@ -235,7 +237,7 @@ dataset_meta <- data.frame(
           "Recurrent Blood Derived Cancer - Peripheral Blood",
           "Post treatment Blood Cancer - Bone Marrow",
           "Post treatment Blood Cancer - Blood", "Control Analyte",
-          "Cell Line", "Normal Tissue", "Solid Tissue Normal", sep = ","),
+          "Cell Line", "Normal Tissue", "Solid Tissue Normal", sep = "|"),
     "cohort", "CD8A", "study", "", ""),
   stringsAsFactors = FALSE)
 dbWriteTable(con, "dataset_meta", dataset_meta, overwrite = TRUE)

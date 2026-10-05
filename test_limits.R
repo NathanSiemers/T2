@@ -50,3 +50,24 @@ pooled <- stats::residuals(stats::lm(y ~ c, data = long))
 ok(max(abs(pooled - pd$y_value[order(pd$probe)][seq_along(pooled)])) > 0.1 || TRUE, "(a pooled fit would differ)")
 cat(sprintf("     mean plotted residual per probe: %s (per-probe fits give 0; a pooled fit gives the probes' offsets)\n",
             paste(sprintf("%s %.3g", ys, tapply(pd$y_value, pd$probe, mean)[ys]), collapse = ", ")))
+
+cat("\n== combinations that used to stop with an R error ==\n")
+draws <- function(...) { r <- quiet(tryCatch(plotter(...), error = function(e) conditionMessage(e))); if (is.character(r)) r else { quiet(print(r$plot)); TRUE } }
+ok(isTRUE(draws(x = "cohort", y = c("CD8A", "TP53.mut"), multi_y = TRUE, cohort = "all")), "individual Y probes of mixed types")
+ok(isTRUE(draws(x = "CD8A", y = c("CD8A", "FOXP3", "GZMB"), multi_y = TRUE, cohort = "all")), "a Y probe that is also X")
+ok(isTRUE(draws(x = "cohort", y = c("TP53.mut", "KRAS.mut"), facet = "TP53.mut", multi_y = TRUE, cohort = "all")), "a Y probe that is also the graph variable")
+ok(isTRUE(draws(x = "CD8A", y = "FOXP3", waterfall = TRUE, cohort = "all")), "waterfall with a numeric X")
+ok(isTRUE(draws(x = "cohort", y = "TP53.mut", waterfall = TRUE, cohort = "all")), "waterfall with a categorical Y")
+g1 <- quiet(gitr("CD8A")); g2 <- quiet(gitr(c("sample", "CD8A")))
+ok(identical(g1, g2), "'sample' asked for as a variable changes nothing")
+ok(identical(combine_markers_median_z(matrix(numeric(0), 0, 3)), numeric(0)) && length(combine_markers_median_z(matrix(1:3, 1, 3))) == 1, "combined Y with zero or one sample")
+m <- as.matrix(g1[1:500, "CD8A", drop = FALSE]); m <- cbind(m, m^2, sqrt(m)); z <- apply(m, 2, .zscore_vec)
+ok(isTRUE(all.equal(combine_markers_median_z(m), unname(apply(z, 1, stats::median, na.rm = TRUE)))), "combined Y unchanged for ordinary input")
+r <- quiet(tryCatch(survival_km("CD8A", "OS", cohort = "BRCA", facet = "TP53.mut"), error = function(e) conditionMessage(e)))
+ok(!is.character(r), paste("survival plot with a graph per mutation status", if (is.character(r)) r else ""))
+r <- quiet(tryCatch(survival_km("CD8A", "OS", cohort = "BRCA", facet = "FOXP3"), error = function(e) conditionMessage(e)))
+ok(is.character(r) && grepl("categorical", r), paste("survival plot with a numeric graph variable is declined:", r))
+
+cat("\n== 'Exclude tumors of heme origin' and list values that contain a comma ==\n")
+ok(identical(.split_meta("a, b|c|d , e"), c("a, b", "c", "d , e")) && identical(.split_meta("a,b, c"), c("a", "b", "c")) && length(.split_meta("")) == 0,
+   "lists split on '|' when present, on ',' otherwise")

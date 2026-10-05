@@ -77,11 +77,14 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   do_cond <- length(condition) > 0 && pcortype %in% c("y", "both")
 
   ## pull marker probe(s) + covariates + clinical (gitr joins clinpheno)
-  d <- suppressWarnings(gitr_memo(unique(c(y, if (do_cond) condition)),
+  d <- suppressWarnings(gitr_memo(unique(c(y, facet, if (do_cond) condition)),
                              cohort = cohort, nonormal = nonormal, noheme = noheme,
                              dbfile = dbfile, roles = roles, keep_samples = keep_samples))
   miss <- setdiff(c(y, ev, tm, facet, if (do_cond) condition), names(d))
   if (length(miss)) stop("column(s) not found: ", paste(miss, collapse = ", "))
+  ## a graph for each value needs a categorical variable (as in plotter())
+  num_facet <- facet[vapply(facet, function(fv) is.numeric(d[[fv]]), logical(1))]
+  if (length(num_facet)) stop("'Graph for each' needs a categorical variable; ", paste(num_facet, collapse = ", "), " is numeric")
   num <- function(x) suppressWarnings(as.numeric(as.character(x)))
 
   ## Keep the RAW probe columns (+ covariates) so the median-z signature AND the

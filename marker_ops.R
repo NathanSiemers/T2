@@ -21,7 +21,10 @@ combine_markers_median_z <- function(mat) {
   mat <- as.matrix(mat)
   storage.mode(mat) <- "double"
   if (ncol(mat) <= 1) return(as.numeric(mat))
-  z <- apply(mat, 2, .zscore_vec)
+  if (nrow(mat) == 0) return(numeric(0))
+  ## vapply + matrix(): apply() would return a plain vector for a single row
+  z <- vapply(seq_len(ncol(mat)), function(j) .zscore_vec(mat[, j]), numeric(nrow(mat)))
+  z <- matrix(z, nrow = nrow(mat))
   apply(z, 1, stats::median, na.rm = TRUE)
 }
 

@@ -129,6 +129,7 @@ final class T2UITests: XCTestCase {
         pick("Size", search: "GZMB", choose: "GZMB")
         openTab("Plot")
         waitFor("plot-count", "the plot's sample count")
+        app.swipeDown(velocity: .fast)
         shot("10-plot-scatter-numeric-colour-and-size")
         // a clinical column on X: boxes; then a mutation on X
         openTab("Select")
@@ -136,11 +137,13 @@ final class T2UITests: XCTestCase {
         pick("Color", search: "sample_type", choose: "sample_type")
         openTab("Plot")
         waitFor("plot-count", "the plot's sample count")
+        app.swipeDown(velocity: .fast)
         shot("12-plot-boxes-by-gender")
         openTab("Select")
         pick("X", search: "TP53.mu", choose: "TP53.mut")
         openTab("Plot")
         waitFor("plot-count", "the plot's sample count")
+        app.swipeDown(velocity: .fast)
         shot("13-plot-boxes-by-mutation")
         // a search that finds nothing
         openTab("Select")
@@ -157,13 +160,16 @@ final class T2UITests: XCTestCase {
     func test03_PresetsAndFilter() {
         launch()
         waitFor("dataset-summary", "the dataset's sample count")
-        let toggle = app.switches.firstMatch
-        if toggle.waitForExistence(timeout: 10) {
-            // tap the switch itself (its right-hand side), not the label
-            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
-        }
-        app.swipeUp(velocity: .slow)
+        // the first of the dataset's presets: tap the switch itself (its right-hand side)
+        let all = text(of: "dataset-summary")
+        let preset = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH 'preset-'")).firstMatch
+        var swipes = 0
+        while !(preset.exists && preset.isHittable) && swipes < 8 { app.swipeUp(velocity: .slow); swipes += 1 }
+        XCTAssertTrue(preset.exists, "no preset switches for this dataset (\(all))")
+        preset.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        scrollTo("select-count")
         shot("15-select-presets-first-one-on")
+        XCTAssertFalse(text(of: "select-count").hasPrefix("12,804 of"), "the preset did not change the samples in use: " + text(of: "select-count"))
         openTab("Filter")
         waitFor("filter-count", "the filter's sample count")
         let before = text(of: "filter-count")
@@ -181,10 +187,18 @@ final class T2UITests: XCTestCase {
         app.swipeDown(velocity: .fast)
         app.swipeDown(velocity: .fast)
         app.swipeDown(velocity: .fast)
-        // none of the cohorts: no sample is left
+        // none of the cohorts: only the samples with no cohort at all are left (a missing value
+        // passes a filter unless "include samples with no value" is switched off) ...
         let none = app.buttons["None"].firstMatch
         XCTAssertTrue(none.waitForExistence(timeout: 20), "no None button")
         none.tap()
+        // ... and without those, no sample is left
+        if !element("filter-none").waitForExistence(timeout: 3) {
+            shot("19b-filter-none-of-the-levels")
+            scrollTo("include-missing-cohort").coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            app.swipeDown(velocity: .fast)
+            app.swipeDown(velocity: .fast)
+        }
         waitFor("filter-none", "the nothing-selected warning", timeout: 20)
         shot("20-filter-no-samples")
         openTab("Plot")
@@ -194,6 +208,7 @@ final class T2UITests: XCTestCase {
         XCTAssertTrue(reset.waitForExistence(timeout: 20), "no way back from an empty plot")
         reset.tap()
         XCTAssertTrue(text(of: "plot-count").contains("samples plotted"), text(of: "plot-count"))
+        app.swipeDown(velocity: .fast)
         shot("22-plot-after-removing-filters")
     }
 
@@ -223,6 +238,50 @@ final class T2UITests: XCTestCase {
         // the system's share sheet (it belongs to another process: just give it time)
         _ = app.otherElements["ActivityListView"].waitForExistence(timeout: 15)
         shot("28-publish-share-sheet")
+    }
+
+    /// survival curves, one graph per level, counts, the cohort choice, the table behind a plot
+    func test06_SurvivalFacetsCountsCohortsTable() {
+        launch(tab: "plot", ["-t2X", "OS", "-t2Y", "CD8A"])
+        waitFor("plot-count", "the plot's sample count")
+        shot("37-survival-tertiles")
+        app.swipeUp(velocity: .slow)
+        shot("38-survival-statistics")
+        scrollTo("km-groups")
+        shot("39-survival-options")
+
+        app.terminate()
+        launch(tab: "plot", ["-t2X", "OS", "-t2Y", "TP53.mut"])
+        waitFor("plot-count", "the plot's sample count")
+        shot("40-survival-by-mutation")
+
+        app.terminate()
+        launch(tab: "plot", ["-t2X", "CD8A", "-t2Y", "FOXP3", "-t2Facet", "gender"])
+        waitFor("plot-count", "the plot's sample count")
+        shot("41-graph-for-each-gender")
+
+        app.terminate()
+        launch(tab: "plot", ["-t2X", "gender", "-t2Y", "TP53.mut"])
+        waitFor("plot-count", "the plot's sample count")
+        shot("42-counts-two-categories")
+
+        // choose two cohorts, plot them, make the table
+        app.terminate()
+        launch()
+        waitFor("dataset-summary", "the dataset's sample count")
+        scrollTo("cohorts").tap()
+        waitFor("cohorts-none", "the cohort list", timeout: 20)
+        element("cohorts-none").tap()
+        element("cohort-BRCA").tap()
+        scrollTo("cohort-LUAD").tap()
+        shot("43-cohorts-two-chosen")
+        app.navigationBars.buttons.firstMatch.tap()
+        openTab("Plot")
+        waitFor("plot-count", "the plot's sample count")
+        shot("44-plot-two-cohorts")
+        scrollTo("table-make").tap()
+        scrollTo("table-share")
+        shot("45-table-made")
     }
 
     /// the other datasets (chosen with the picker), and what the app says when things go wrong

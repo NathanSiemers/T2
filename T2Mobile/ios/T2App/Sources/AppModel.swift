@@ -38,6 +38,11 @@ final class AppModel {
     var y = ""
     var color = ""
     var size = ""
+    /// "Graph for each": one panel per level of this categorical variable
+    var facet = ""
+    /// survival plots: number of marker groups, and the follow-up limit in days (0 = none)
+    var kmGroups = 3
+    var kmMaxDays = 1825.0
     var zscoreY = false
     var flip = false
     var waterfall = false
@@ -101,16 +106,18 @@ final class AppModel {
         y = first("y", "t2Y")
         color = first("color", "t2Color")
         size = first("size", "t2Size")
+        facet = (launch ? UserDefaults.standard.string(forKey: "t2Facet") : nil) ?? ""
         zscoreY = false
         flip = false
         waterfall = false
         applyPresets()
-        try await ensureLoaded([x, y, color, size])
+        try await ensureLoaded([x, y, color, size, facet])
         // a variable the dataset does not have is not kept as a selection
         if column(x) == nil { x = "" }
         if column(y) == nil { y = "" }
         if column(color) == nil { color = "" }
         if column(size) == nil { size = "" }
+        if column(facet) == nil { facet = "" }
         for v in [x, y, color, size] { filter.add(v) }     // plotted variables are filterable from the start
     }
 
@@ -129,7 +136,7 @@ final class AppModel {
         if !r.missing.isEmpty { status = "Not in this dataset: \(r.missing.joined(separator: ", "))" }
     }
 
-    enum Slot { case x, y, color, size }
+    enum Slot { case x, y, color, size, facet }
 
     func setVariable(_ slot: Slot, to name: String) async {
         await run(name.isEmpty ? "Updating" : "Loading \(name)") {
@@ -140,6 +147,7 @@ final class AppModel {
             case .y: self.y = name
             case .color: self.color = name
             case .size: self.size = name
+            case .facet: self.facet = name
             }
             self.filter.add(name)
         }
@@ -181,13 +189,46 @@ final class AppModel {
     /// The current plot, worked out by T2Kit (PlotBuilder) from the selections and the samples in use.
     func scene(fitLine: Bool) -> PlotScene {
         guard let m = meta else { return .empty(busy ? "Loading\u{2026}" : (status.isEmpty ? "No dataset is open." : status)) }
-        var request = PlotRequest(x: [x], y: [y], color: color, size: size)
+        var request = PlotRequest(x: [x], y: [y], color: color, size: size, facet: facet)
+        request.kmGroups = kmGroups
+        request.kmMaxDays = kmMaxDays
         request.zscoreY = zscoreY
         request.flip = flip
         request.waterfall = waterfall
         request.fitLine = fitLine
         let context = PlotBuilder.Context(datasetLabel: m.label, survivalEndpoints: m.usableSurvivalEndpoints)
         return PlotBuilder.build(request, columns: filter.columns, keep: filter.mask(), context: context)
+    }
+
+    /// is X a survival endpoint of this dataset (so the plot is a Kaplan-Meier plot)?
+    var isSurvival: Bool { meta?.usableSurvivalEndpoints.contains(x) ?? false }
+
+    /// The table behind the plot (the website's "Download Table"): the samples in use, with
+    /// the plotted variables, written to a CSV file. Returns nil if there is nothing to write.
+    func writeTable() -> URL? {
+        guard let m = meta else { return nil }
+        var names: [String] = []
+        for v in ["cohort", "sample_type", x, y, color, size, facet] + (isSurvival ? [x + ".time"] : [])
+        where !v.isEmpty && filter.columns[v] != nil && !names.contains(v) { names.append(v) }
+        let csv = TableExport.csv(samples: samples, columns: names.compactMap { filter.columns[$0] }, keep: filter.mask())
+        let file = "T2_\(m.dataset)_\(x)_\(y).csv".replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(file)
+        do { try csv.write(to: url, atomically: true, encoding: .utf8) } catch { return nil }
+        return url
+    }
+
+    // MARK: cohorts (the website's Cohort box: a filter on the dataset's cohort column)
+
+    /// the cohorts in use; nil = all
+    var chosenCohorts: Set<String>? {
+        if case .levels(let s)? = filter.filter("cohort")?.value { return s }
+        return nil
+    }
+    func setCohorts(_ chosen: Set<String>?) {
+        guard let all = filter.columns["cohort"]?.levels else { return }
+        filter.add("cohort")
+        if let chosen, chosen.count < all.count { filter.set("cohort", value: .levels(chosen)) }
+        else { filter.set("cohort", value: nil) }
     }
 
     private func run(_ what: String, _ work: @escaping () async throws -> Void) async {

@@ -88,7 +88,7 @@ struct SceneDrawing {
                 right -= column
             } else {
                 // a narrow figure (a phone held upright, a half-page figure): under the panel
-                let items = legendItems(ctx, width: fullWidth, maxRows: 4)
+                let items = legendItems(ctx, width: fullWidth, maxRows: 6)
                 bottom -= items.height + 2
                 drawLegend(&ctx, items, origin: CGPoint(x: pad, y: bottom + 2))
             }
@@ -231,7 +231,11 @@ struct SceneDrawing {
                 xLabelH = min(room, (xLabels.map { measure(ctx, label($0, ts, faint)).width }.max() ?? 0)) + 3
             }
         }
-        let plot = CGRect(x: left, y: top, width: plotWidth, height: max(10, rect.maxY - xTitleH - xLabelH - 4 - top))
+        // a survival plot's numbers at risk go under the x axis title, one row per group
+        let riskRowH = CGFloat(ts * 1.25)
+        let riskRows = ts > 0 ? (panel.riskTable?.rows.count ?? 0) : 0
+        let riskH: CGFloat = riskRows > 0 ? CGFloat(riskRows) * riskRowH + CGFloat(ts * 1.5) : 0
+        let plot = CGRect(x: left, y: top, width: plotWidth, height: max(10, rect.maxY - xTitleH - xLabelH - 4 - riskH - top))
 
         func px(_ v: Double) -> CGFloat { plot.minX + CGFloat(xa.fraction(v)) * plot.width }
         func py(_ v: Double) -> CGFloat { plot.maxY - CGFloat(ya.fraction(v)) * plot.height }
@@ -328,13 +332,26 @@ struct SceneDrawing {
         axes.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))
         ctx.stroke(axes, with: .color(ink), lineWidth: 0.6)
         if tt > 0, !xa.title.isEmpty {
-            ctx.draw(label(fitted(xa.title, size: tt, width: plot.width), tt, ink), at: CGPoint(x: plot.midX, y: rect.maxY - 2), anchor: .bottom)
+            ctx.draw(label(fitted(xa.title, size: tt, width: plot.width), tt, ink), at: CGPoint(x: plot.midX, y: rect.maxY - 2 - riskH), anchor: .bottom)
         }
         if tt > 0, !ya.title.isEmpty {
             var c = ctx
             c.translateBy(x: rect.minX + CGFloat(tt * 0.65), y: plot.midY)
             c.rotate(by: .degrees(-90))
             c.draw(label(fitted(ya.title, size: tt, width: plot.height), tt, ink), at: .zero)
+        }
+        if let risk = panel.riskTable, riskH > 0 {
+            let y0 = rect.maxY - riskH
+            ctx.draw(label("Number at risk", ts, faint), at: CGPoint(x: plot.minX, y: y0 + CGFloat(ts * 0.75)), anchor: .leading)
+            for (g, row) in risk.rows.enumerated() {
+                let y = y0 + CGFloat(ts * 1.5) + (CGFloat(g) + 0.5) * riskRowH
+                let color = g < risk.colors.count ? risk.colors[g].color : ink
+                let dot = CGFloat(ts * 0.6)
+                ctx.fill(Path(ellipseIn: CGRect(x: plot.minX - dot - 12, y: y - dot / 2, width: dot, height: dot)), with: .color(color))
+                for (k, t) in risk.times.enumerated() where k < row.count {
+                    ctx.draw(label("\(row[k])", ts, color), at: CGPoint(x: px(t), y: y))
+                }
+            }
         }
         if !panel.note.isEmpty, ts > 0 {
             ctx.draw(label(panel.note, ts, ink), at: CGPoint(x: plot.minX + 4, y: plot.maxY - 4), anchor: .bottomLeading)

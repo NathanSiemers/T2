@@ -81,8 +81,9 @@ struct PublishView: View {
                 Button("Plot: PNG") { export(scene, pdf: false) }.accessibilityIdentifier("export-png")
                 Button("Plot: PDF (vector)") { export(scene, pdf: true) }.accessibilityIdentifier("export-pdf")
                 if let exported {
-                    ShareLink(item: exported) { Label("Share or save \(exported.lastPathComponent)", systemImage: "square.and.arrow.up") }
+                    ShareLink(item: exported) { Label("Share or save the file", systemImage: "square.and.arrow.up") }
                         .accessibilityIdentifier("publish-share")
+                    Text(exported.lastPathComponent).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("publish-message") }
             } header: {

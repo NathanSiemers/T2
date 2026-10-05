@@ -253,3 +253,17 @@ free macOS runner took up to 20 minutes tonight.
 - XCUITest: an element in a SwiftUI List exists only while it is on screen: scroll first.
 - `xcrun simctl launch --stdout=file` returns at once and the app's output lands in the
   file; the app writes `T2-READY <dataset>` with FileHandle (print() would be buffered).
+- 37276335636 (5e663c6): the reworked app (plots drawn from T2Kit scenes, new Select / Plot
+  / Filter / Publish screens) **compiled first time**; job `mac-setup` green. The three
+  UI-test jobs each ran 5 flows: 4 passed on every device (iPhone 17 Pro Max, iPhone 17 Pro
+  in dark mode, iPhone SE 3rd generation, which the script created itself; the SE job also
+  took the Homebrew route to XcodeGen). The one failure was the TEST's expectation, not the
+  app: with no cohort ticked, 213 samples remain, because a sample with no cohort value
+  passes a filter unless "include samples with no value" is off (Thanos semantics).
+  Seen in the screenshots (34 per device): default box plot (11,005 points, as computed
+  from the API beforehand), gene / mutation / clinical search, scatter with fit line and
+  statistics, numeric colour and size, no-match search, presets (tcgatargetgtex offers
+  "GTEx normal tissues" ... from the database), cross-filter with live counts, both page
+  presets on Publish, PNG and PDF export, the share sheet with the PDF, dataset menu, DEMO,
+  unknown probe, no connection. Fixed afterwards: tinted labels inside buttons, long share
+  labels, legend rows, test scrolling.

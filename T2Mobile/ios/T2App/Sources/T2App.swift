@@ -66,11 +66,11 @@ struct VariablePicker: View {
     var body: some View {
         Button { open = true } label: {
             HStack {
-                Text(title).foregroundStyle(.primary)
+                Text(title).foregroundStyle(Color.primary)
                 Spacer(minLength: 12)
                 Text(current.isEmpty ? "none" : current)
-                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.secondary).lineLimit(1).truncationMode(.middle)
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondary.opacity(0.6))
             }
         }
         .accessibilityIdentifier("pick-\(title)")
@@ -145,7 +145,7 @@ struct VariableSearch: View {
     private func row(_ name: String) -> some View {
         Button { choose(name) } label: {
             HStack {
-                Text(name).foregroundStyle(.primary)
+                Text(name).foregroundStyle(Color.primary)
                 Spacer()
                 if name == current { Image(systemName: "checkmark").foregroundStyle(.tint) }
             }
@@ -170,6 +170,14 @@ struct SelectView: View {
         }
     }
 
+    private var variablesHelp: String {
+        var s = "Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. Two numbers give a scatter plot; a category on X gives box plots."
+        if let endpoints = model.meta?.usableSurvivalEndpoints, !endpoints.isEmpty {
+            s += " A survival endpoint on X (\(endpoints.joined(separator: ", "))) gives Kaplan-Meier curves by groups of Y."
+        }
+        return s
+    }
+
     @ViewBuilder private var form: some View {
         @Bindable var model = model
         Form {
@@ -190,10 +198,19 @@ struct SelectView: View {
                 VariablePicker(title: "Y", current: model.y, allowNone: false) { v in Task { await model.setVariable(.y, to: v) } }
                 VariablePicker(title: "Color", current: model.color) { v in Task { await model.setVariable(.color, to: v) } }
                 VariablePicker(title: "Size", current: model.size) { v in Task { await model.setVariable(.size, to: v) } }
+                VariablePicker(title: "Graph for each", current: model.facet) { v in Task { await model.setVariable(.facet, to: v) } }
+                if let levels = model.filter.columns["cohort"]?.levels, !levels.isEmpty {
+                    NavigationLink {
+                        CohortChooser()
+                    } label: {
+                        LabeledContent("Cohorts", value: model.chosenCohorts.map { "\($0.count) of \(levels.count)" } ?? "all \(levels.count)")
+                    }
+                    .accessibilityIdentifier("cohorts")
+                }
             } header: {
                 Text("Variables")
             } footer: {
-                Text("Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. A survival endpoint or a category on X gives box plots; two numbers give a scatter plot.")
+                Text(variablesHelp)
             }
             Section {
                 Button { showPlot() } label: { Label("Plot", systemImage: "chart.dots.scatter").frame(maxWidth: .infinity) }
@@ -213,6 +230,7 @@ struct SelectView: View {
                                 if !p.description.isEmpty { Text(p.description).font(.footnote).foregroundStyle(.secondary) }
                             }
                         }
+                        .accessibilityIdentifier("preset-\(p.label)")
                     }
                 } header: {
                     Text("Samples")

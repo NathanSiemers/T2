@@ -85,6 +85,7 @@ struct FilterCard: View {
                 Toggle("Include samples with no value (\(col.missingCount.formatted()))",
                        isOn: Binding(get: { f.includeMissing }, set: { model.filter.set(name, value: f.value, includeMissing: $0) }))
                     .font(.subheadline)
+                    .accessibilityIdentifier("include-missing-\(name)")
             }
             Text("\(h.selectedTotal.formatted()) of \(h.shownTotal.formatted()) pass this filter")
                 .font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
@@ -172,7 +173,7 @@ struct LevelRow: View {
                     Capsule().fill(Color.accentColor).frame(width: barWidth(selected), height: 8)
                 }
                 .frame(width: 80, alignment: .leading)
-                Text(shown.formatted()).font(.footnote.monospacedDigit()).foregroundStyle(.secondary)
+                Text(shown.formatted()).font(.footnote.monospacedDigit()).foregroundStyle(Color.secondary)
                     .frame(width: 50, alignment: .trailing)
             }
         }

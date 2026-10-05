@@ -62,6 +62,13 @@ final class T2UITests: XCTestCase {
             shot("FAILED-scrolling-to-\(id)")
             XCTFail("could not scroll to \(id)")
         }
+        // an element at the very bottom lies under the floating tab bar: "hittable", but a tap
+        // lands on the bar (seen on the iPhone 17 Pro Max). Bring it further up.
+        let screen = app.windows.firstMatch.frame
+        if e.frame.maxY > screen.maxY - 150 {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+        }
         return e
     }
 

@@ -267,3 +267,46 @@ free macOS runner took up to 20 minutes tonight.
   presets on Publish, PNG and PDF export, the share sheet with the PDF, dataset menu, DEMO,
   unknown probe, no connection. Fixed afterwards: tinted labels inside buttons, long share
   labels, legend rows, test scrolling.
+- 37278262683 (9bfc855): **all four jobs GREEN**: setup job, and six UI flows on iPhone 17
+  Pro Max, iPhone 17 Pro (dark) and iPhone SE. This is the run whose screenshots were
+  looked at for survival, graph-for-each, counts, cohorts, the table and the no-samples
+  flow (docs/IOS.md "How far each part has been checked").
+- 37306211658 (1d12154): TIFF export, "Combine and adjust" on Select, a macos-15 job.
+  Run conclusion: FAILURE, for one job. macos-26: setup job green; UI tests green on
+  iPhone SE and iPhone 17 Pro dark (all six flows, TIFF and combine/adjust included);
+  on iPhone 17 Pro Max flow test04_Publish failed ("the share link did not appear"): the
+  failure screenshot shows the "Plot: PNG" row at the edge of the floating tab bar after
+  scrolling, so the test's tap did not reach the button. A weakness of the test helper
+  (`scrollTo`), which now drags such an element further up; the same flow passed on the
+  other two devices. The macos-15 job (Xcode 16.4, iOS SDK 18.5,
+  information only) FAILED in step 5/7 on one line: "the compiler is unable to type-check
+  this expression in reasonable time" for a chain of six `+` on arrays in
+  `AppModel.writeTable`. Rewritten as appends in the next commit. Rule: no long `+` chains
+  of array literals; Xcode 16's type checker gives up where Xcode 26's does not.
+
+**Where it stands (end of the night of 2026-10-05)**
+- Branch `t2mobile-ci`; every commit is pushed. The last run with EVERY job green is
+  37278262683 (commit 9bfc855). The commits after it add TIFF export and "Combine and
+  adjust" (1d12154: built with Xcode 26.6, all UI flows passed on two of three devices, see
+  above), then change one expression in `AppModel.writeTable` (for Xcode 16), the UI
+  tests' `scrollTo` helper, and these notes. Look at the newest run of workflow
+  "T2Mobile iOS" for the result of the last commit: `gh run list --limit 3`. If it is red
+  for a reason that is not obvious, `git checkout 9bfc855 -- T2Mobile/ios` gives back the
+  fully green app.
+- What the owner does: on the Mac, `/path/to/T2/T2Mobile/ios/mac_setup.sh` (docs/IOS.md,
+  first section). Nothing else is needed for the simulator; the script prints the steps
+  for his own iPhone (free Apple ID) and for the paid membership.
+- Screenshots Claude looked at were downloaded to this host's session scratchpad
+  (`.../scratchpad/run4/ui-*/screenshots/`), which is temporary: get them again with
+  `gh run download 37278262683 -D <dir>` (artifacts are kept 90 days).
+- Not done, in order of value: see docs/IOS.md "Not built (explicit gaps)" and "Known
+  cosmetic flaws". Next sensible steps: open the exported PNG / TIFF / PDF / CSV files and
+  check size, dpi and content; run on a real iPhone; multi-Y facets; cache data on the
+  device; the About tab.
+- For the API side (nothing blocks the app): `meta.survival_endpoints` lists OS, PFI,
+  DSS, DFI for datasets that have no such columns (the app checks the clinical columns
+  itself); an endpoint that returns only the non-missing samples of a probe, or a binary
+  format, would shorten downloads but is not needed.
+- Helper containers `ios-swift` / `ios-r` (Linux Swift builds, R reference values) were
+  temporary and are removed; the commands to recreate them are in docs/IOS.md and in the
+  test files' headers.

@@ -242,9 +242,16 @@ final class AppModel {
     /// the plotted variables, written to a CSV file. Returns nil if there is nothing to write.
     func writeTable() -> URL? {
         guard let m = meta else { return nil }
+        // (built step by step: Xcode 16 cannot type-check one long chain of `+` on arrays)
+        var wanted: [String] = ["cohort", "sample_type", x]
+        wanted.append(contentsOf: xMore)
+        wanted.append(y)
+        wanted.append(contentsOf: yMore)
+        wanted.append(contentsOf: [color, size, facet])
+        wanted.append(contentsOf: condition)
+        if isSurvival { wanted.append(x + ".time") }
         var names: [String] = []
-        for v in ["cohort", "sample_type", x] + xMore + [y] + yMore + [color, size, facet] + condition + (isSurvival ? [x + ".time"] : [])
-        where !v.isEmpty && filter.columns[v] != nil && !names.contains(v) { names.append(v) }
+        for v in wanted where !v.isEmpty && filter.columns[v] != nil && !names.contains(v) { names.append(v) }
         let csv = TableExport.csv(samples: samples, columns: names.compactMap { filter.columns[$0] }, keep: filter.mask())
         let file = "T2_\(m.dataset)_\(x)_\(y).csv".replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(file)

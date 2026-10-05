@@ -793,7 +793,10 @@ fun_plot1 = function(input, reactive = TRUE,
                         max_time = if (length(input$surv_max_days)) suppressWarnings(as.numeric(input$surv_max_days[1])) else 365 * 5,
                         condition = input$condition,
                         pcortype  = if (!is.null(input$pcortype)) input$pcortype else "none",
-                        nonormal = if (!is.null(input$nonormal)) as.logical(input$nonormal)[1] else TRUE,
+                        ## survival is the patient's: a normal-tissue sample would enter
+                        ## the patient a second time with the normal tissue's marker
+                        ## value, so normals are excluded whatever the checkbox says
+                        nonormal = TRUE,
                         noheme = if (!is.null(input$noheme)) as.logical(input$noheme)[1] else FALSE,
                         keep_samples = keep_samples,
                         base_size = base_size, base_family = base_family,

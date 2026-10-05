@@ -25,7 +25,7 @@ type_info = data.frame(
     "Model-based immune subtypes C1-C6 (wound healing, IFN-gamma, inflammatory, etc.)",
     "Positional mutation annotations with amino acid change and effect (e.g., TP53_R175H_Missense)",
     "Binary indicator: was this sample exome-sequenced in the MC3 pipeline",
-    "Log10-transformed count of non-silent somatic mutations per sample",
+    "Log10(1 + number of somatic mutation calls) per exome-sequenced sample, from the MC3 MAF; calls of every class are counted (silent, intronic, UTR and flanking calls included)",
     "ESTIMATE algorithm scores: StromalScore, ImmuneScore, ESTIMATEScore, TumorPurity",
     "MSIsensor microsatellite instability score (0 = stable, higher = more unstable)",
     "Custom gene expression signatures (immune cell types: TCD8, Treg, NK, B cell, etc.)"

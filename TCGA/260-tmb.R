@@ -1,6 +1,7 @@
 ################################################################
 ## TMB (Tumor Mutation Burden)
-## Computed as log10(1 + non-silent mutation count) per sample.
+## Computed as log10(1 + number of calls in the MC3 MAF) per sample. EVERY row of the
+## `mutation` table is counted: silent, intronic, UTR and flanking calls included.
 ##
 ## Universe of TMB = samples exome-sequenced in MC3 (mutationsamples view).
 ## Any tested-but-zero-mutation sample gets value=0 (defensive — doesn't
@@ -12,7 +13,7 @@ source('tablemaker.R')
 ## "tested" universe = all samples in the MC3 MAF
 exome_samples = dbGetQuery(con, 'SELECT DISTINCT sample FROM mutation')
 
-## count non-silent mutations per sample from the raw MAF
+## count the mutation calls (all classes) per sample from the raw MAF
 mut_counts = dbGetQuery(con, '
   SELECT sample, count(*) as cnt
   FROM mutation

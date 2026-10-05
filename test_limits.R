@@ -118,3 +118,13 @@ mm <- quiet(gitr("TP53.mut", cohort = "BRCA", nonormal = TRUE, makefactors = FAL
 ok(!is.null(k) && identical(as.character(k$grp), paste0("= ", mm$TP53.mut)), "... and each sample is in the group of its own value")
 ok(!is.null(k) && grepl("values", attr(g, "t2summary")), "... described as groups by value, not tertiles")
 g3 <- quiet(survival_km("CD8A", "OS", cohort = "BRCA")); ok(identical(levels(attr(g3, "km_data")$grp), c("Low", "Mid", "High")), "a continuous marker still gives tertiles")
+
+cat("\n== survival never counts normal tissue ==\n")
+stc <- "sample_type"
+r1 <- quiet(fun_plot1(list(x = "OS", y = "CD8A", cohort = "BRCA", nonormal = FALSE), reactive = FALSE))
+r2 <- quiet(fun_plot1(list(x = "OS", y = "CD8A", cohort = "BRCA", nonormal = TRUE), reactive = FALSE))
+k1 <- attr(r1, "km_data"); k2 <- attr(r2, "km_data")
+st <- quiet(gitr("CD8A", cohort = "BRCA")); normals <- as.character(st$sample[st[[stc]] == "Solid Tissue Normal"])
+ok(length(normals) > 50 && !any(k1$sample %in% normals), sprintf("with 'Exclude Non-tumor' unticked the %d BRCA normals are still left out", length(normals)))
+ok(identical(k1$sample, k2$sample) && identical(as.character(k1$grp), as.character(k2$grp)), "the checkbox makes no difference to a survival plot")
+ok(grepl("Normal-tissue samples are excluded", attr(r1, "t2summary")), "and the summary says so")

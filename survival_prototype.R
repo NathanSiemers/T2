@@ -186,6 +186,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
       endpoint, ylab, n_groups, paste(facet, collapse = " x "), nrow(df),
       if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "", cond_note,
       if (dropped) sprintf(", %d small panel(s) dropped", dropped) else "")
+    attr(g, "t2summary") <- paste0(attr(g, "t2summary"), if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
     attr(g, "km_data") <- df                          # sample, grp, facet — for tests
     return(g)
   }
@@ -261,6 +262,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
     "%s ~ %s %s (n=%d%s%s).  Median %s: %s.  Log-rank p=%s.  Cox HR/SD=%.2f (%.2f-%.2f), p=%s.",
     endpoint, ylab, grp_desc, nrow(df), if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "",
     cond_note, endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
+  attr(g, "t2summary") <- paste0(attr(g, "t2summary"), if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
   attr(g, "km_data") <- df                            # sample, grp — for tests
   g
 }

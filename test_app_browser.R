@@ -150,6 +150,63 @@ app$set_inputs(tabs = "select"); settle(500)
 app$click("plot_btn"); settle(4000)
 ok(identical(app$get_value(input = "tabs"), "plot"), "Select-tab Plot button switches to the Plot tab")
 
+## ---- Publish tab: a figure of a real size, live preview, download ----
+img <- function() js("(function(){var i=document.querySelector('#pub_preview img'); return i ? [i.naturalWidth, i.naturalHeight, i.clientWidth, i.clientHeight] : null;})()")
+app$set_inputs(tabs = "publish"); settle(6000)
+i0 <- unlist(img())
+cat("    preview image:", paste(i0, collapse = " "), "|", app$get_value(output = "pub_readout"), "\n")
+ok(length(i0) == 4 && i0[1] == 1050 && i0[2] == 960,
+   "the preview is the default figure itself: 3.5 x 3.2 in at 300 dpi = 1050 x 960 px")
+ok(grepl("3.50 x 3.20 in", app$get_value(output = "pub_readout")) && grepl("1,050 x 960 pixels", app$get_value(output = "pub_readout")),
+   "the readout states size, resolution and pixels")
+ok(identical(app$get_value(input = "pub_title_size"), "8") && identical(app$get_value(input = "pub_axis_text_size"), "6") &&
+   identical(app$get_value(input = "title_size"), "16"),
+   "the figure has its own print-scale sizes; the Appearance tab's are untouched")
+ok(visible("#t2_citation") && grepl("Nathan O. Siemers", js("document.getElementById('t2_citation').innerText")),
+   "the citation is shown")
+shot("8_publish")
+## a preset fills in size, resolution and slide-scale sizes
+app$set_inputs(pub_preset = "slide"); settle(6000)
+i1 <- unlist(img())
+ok(identical(app$get_value(input = "pub_title_size"), "24") && app$get_value(input = "pub_width") == 13.33 &&
+   identical(app$get_value(input = "pub_dpi"), "150"),
+   "choosing the slide preset fills in 13.33 x 7.5 in, 150 dpi and slide-scale text")
+ok(abs(i1[1] / i1[2] - 13.33 / 7.5) < 0.01 && i1[3] <= 1100, "the preview redraws at the new shape, fitted to the window")
+## custom size + zoom modes
+app$set_inputs(pub_preset = "full_half"); settle(5000)
+app$set_inputs(pub_dpi = "600", pub_format = "tiff"); settle(5000)
+i2 <- unlist(img())
+ok(i2[1] <= 1600 && abs(i2[1] / i2[2] - 7 / 4.75) < 0.01 && grepl("4,200 x 2,850 pixels", app$get_value(output = "pub_readout")),
+   "a 600 dpi figure previews with fewer pixels (same shape); the readout shows the real 4,200 x 2,850")
+app$set_inputs(pub_zoom = "pixels"); settle(6000)
+i3 <- unlist(img())
+ok(i3[1] == 4200 && i3[2] == 2850, "'Pixel for pixel' shows the full-resolution image")
+app$set_inputs(pub_zoom = "print"); settle(5000)
+ok(abs(unlist(img())[3] - 7 * 96) <= 2, "'Print size' shows it 7 CSS inches wide")
+app$set_inputs(pub_zoom = "fit")
+## source line off -> citation reminder
+app$set_inputs(pub_source = FALSE); settle(4000)
+ok(grepl("removed the source line", js("document.querySelector('.t2-cite').innerText")),
+   "removing the source line brings up the citation reminder")
+shot("8b_publish_full")
+## the Publish tab's own ggplot settings, with the preset's default shown
+app$run_js("$('#pub_tweak_pick')[0].selectize.setValue(['theme|legend.key.size','theme|legend.position'])"); settle(2000)
+ok(identical(app$get_value(input = "pub_tw_theme_legend_key_size"), "8") &&
+   identical(app$get_value(input = "pub_tw_theme_legend_position"), "right"),
+   "the figure's own ggplot settings appear with the figure defaults (8 pt legend keys)")
+## download = the full-resolution file, as specified
+app$set_inputs(pub_preset = "half_third"); settle(5000)
+app$set_inputs(pub_format = "png", pub_source = TRUE); settle(4000)
+dl <- app$get_download("pub_download")
+di <- dim(png::readPNG(dl))
+cat("    downloaded:", basename(dl), paste(di[2:1], collapse = " x "), "px\n")
+ok(di[2] == 1050 && di[1] == 960, "Plot: the downloaded PNG is 1050 x 960 px (3.5 x 3.2 in at 300 dpi)")
+app$set_inputs(pub_format = "pdf"); settle(3000)
+dlp <- app$get_download("pub_download")
+ok(identical(rawToChar(readBin(dlp, "raw", 5)), "%PDF-"), "Plot: PDF download works")
+app$run_js("$('#pub_tweak_pick')[0].selectize.setValue([])")
+app$set_inputs(pub_format = "png")
+
 ## ---- About tab ----
 app$set_inputs(tabs = "about"); settle(1500)
 ok(js("document.querySelectorAll('#datatypes table tbody tr').length") > 5, "About tab shows the data-types table")

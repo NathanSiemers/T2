@@ -10,6 +10,7 @@ source('dataset_registry.R')
 source('marker_ops.R')           # shared: combine_markers_median_z, residualize_on
 source('survival_prototype.R')   # Kaplan-Meier survival mode (T2_ENDPOINTS, survival_km)
 source('plot_style.R')           # Appearance settings, themes, the ggplot tweak registry
+source('figure_export.R')        # Publish tab: figure presets, validation, rendering
 ################################################################
 ## Multi-dataset bundle
 ##
@@ -105,6 +106,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     strip_size = 11, legend_size = 11, show_legend = TRUE,
     ## gg: validated extra ggplot settings from the tweak registry (plot_style.R)
     gg = list(),
+    ## base_size / base_family: the theme's base font size (spacing, margins and
+    ## legend keys follow it) and font; caption: the source line ("" = none)
+    ## fig_width: a figure's width in inches; titles are wrapped to fit it
+    base_size = 12, base_family = "sans", caption = "Nathan Siemers, Ph.D.", fig_width = NULL,
     coordflip = FALSE, evaluate_vars = FALSE,
     condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
     multi_y = FALSE, zscore_y = FALSE,
@@ -116,7 +121,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## THEMES and ggplot geom defaults
     style = list(title_size = title_size, subtitle_size = subtitle_size,
                  axis_title_size = axis_title_size, axis_text_size = axis_text_size,
-                 strip_size = strip_size, legend_size = legend_size, show_legend = show_legend)
+                 strip_size = strip_size, legend_size = legend_size, show_legend = show_legend,
+                 base_size = base_size, base_family = base_family)
     theme_set(do.call(t2_base_theme, style))
     ## an extra ggplot setting if the user chose one, else T2's own default
     G = function(key, default) { v = gg[[key]]; if (is.null(v)) default else v }
@@ -139,8 +145,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
     orig_size = size; orig_facet = facet; orig_condition = condition
     ## keep_samples: the Filter tab's surviving sample ids (NULL = no restriction)
-    data = gitr(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
-                dbfile = dbfile, roles = roles, keep_samples = keep_samples)
+    data = gitr_memo(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
+                     dbfile = dbfile, roles = roles, keep_samples = keep_samples)
 
     ## build data summary before any transformations
     summary_lines = c()
@@ -520,8 +526,16 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
     ## the complete T2 theme for these Appearance settings (set explicitly as
     ## well as via theme_set, so the plot object carries it)
-    p = p + ggtitle(  pstring, subtitle = paste(" ", pstring2, '\n ', psub) ) +
+    p = p + ggtitle(  t2_wrap_text(pstring, fig_width, title_size),
+                      subtitle = paste(" ", t2_wrap_text(pstring2, fig_width, subtitle_size), '\n ',
+                                       t2_wrap_text(psub, fig_width, subtitle_size)) ) +
         do.call(t2_base_theme, style)
+    ## a size VARIABLE is drawn around the chosen point size (ggplot's own
+    ## range of 1-6 would swamp a small figure)
+    if (!is.null(size) && is.numeric(data[, size]) && point_size > 0)
+        p = p + scale_size(range = point_size * c(0.5, 3.5))
+    if (!is.null(gg[['legend.ncol']]) && !is.null(color) && is.factor(data[, color]))
+        p = p + guides(colour = guide_legend(ncol = as.integer(gg[['legend.ncol']])))
     if ( is.factor(data[ , color] ) ) {
         p = p + viridis::scale_colour_viridis(end = G('colour.end', 0.7), discrete = TRUE,
                                               option = pal_option, direction = pal_dir)
@@ -541,7 +555,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if( coordflip ) {
         p = p + coord_flip()
     }
-    p = p + labs(caption = "Nathan Siemers, Ph.D.")
+    if (length(caption) == 1 && !is.na(caption) && nzchar(caption)) p = p + labs(caption = caption)
     ## user-supplied titles / labels (drawn literally), then every other tweak
     user_labs = gg[grep('^labs\\.', names(gg), value = TRUE)]
     if (length(user_labs)) {
@@ -594,7 +608,8 @@ fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles,
 fun_plot1 = function(input, reactive = TRUE,
                      dbfile = gitrdb, roles = gitr_default_roles,
                      dataset_label = "TCGA Pan-Cancer 2018",
-                     keep_samples = NULL, gg = list()) {
+                     keep_samples = NULL, gg = list(),
+                     base_size = 12, base_family = "sans", caption = NULL, fig_width = NULL) {
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
     }
@@ -626,6 +641,12 @@ fun_plot1 = function(input, reactive = TRUE,
     ## the caller did, so nothing unlisted or out of range can reach ggplot
     gg = t2_validate_tweaks(gg)
     if (length(gg)) input['gg'] = list(gg)
+    ## figure rendering (Publish tab): theme base size / font, and the source
+    ## line. caption = NULL keeps each plot type's own default.
+    input$base_size = base_size
+    input$base_family = base_family
+    if (!is.null(caption)) input$caption = caption
+    if (!is.null(fig_width)) input$fig_width = fig_width
 
     ## Survival mode: if X is a time-to-event endpoint (OS/PFI/DSS/DFI), draw a
     ## Kaplan-Meier plot of the Y marker's tertiles instead of a scatter.
@@ -645,8 +666,9 @@ fun_plot1 = function(input, reactive = TRUE,
                         nonormal = if (!is.null(input$nonormal)) as.logical(input$nonormal)[1] else TRUE,
                         noheme = if (!is.null(input$noheme)) as.logical(input$noheme)[1] else FALSE,
                         keep_samples = keep_samples,
+                        base_size = base_size, base_family = base_family,
                         dbfile = dbfile, roles = roles),
-            style = km_style, gg = gg),
+            style = km_style, gg = gg, caption = caption, fig_width = fig_width),
             error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))
     }
 

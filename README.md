@@ -36,6 +36,16 @@ installed ggplot2 and the drawing settings of the layers T2 uses (about 440 in
 all). The registry, its menus and the server-side validation of every value
 live in `plot_style.R`; nothing a browser sends is parsed or evaluated.
 
+The **Publish** tab makes a figure of a chosen physical size and resolution
+(PNG, TIFF or PDF) from the current selections. The preview and the download
+are drawn by the same function at the same size in inches, so the preview is
+the figure. It keeps its own style values, started from presets with
+print-scale defaults (text 5-8 pt, thin rules, compact legend); see
+`figure_export.R`. `fonts/` holds open fonts metric-compatible with Arial
+(Liberation Sans) and Cambria (Caladea); `plot_style.R` points `XDG_DATA_HOME`
+at the app directory so both the PNG/TIFF and the PDF device find them (set
+`T2_NO_BUNDLED_FONTS` to disable that).
+
 Thanos is loaded from source: `T2_THANOS` names its loader file (default
 `../Thanos/thanos.R`); version 0.3.0 or later is required. Without it the app
 runs normally and the Filter tab says so. The bridge is `t2_thanos.R`.
@@ -45,4 +55,5 @@ Tests (run from this directory):
     Rscript test_t2_backend.R     # Thanos backend == gitr(), pre-filter predicate
     Rscript test_app_thanos.R     # which samples reach the plot / KM / download
     Rscript test_plot_style.R     # every Appearance / ggplot setting applies; value validation
+    Rscript test_figure_export.R  # figure files: exact size/dpi, preview == download, limits, fonts
     CHROMOTE_CHROME=/path/to/chrome NOT_CRAN=true Rscript test_app_browser.R   # real-browser UI checks

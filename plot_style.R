@@ -24,6 +24,20 @@
 library(ggplot2)
 
 ## ---------------------------------------------------------------------------
+## 0. Bundled fonts
+## ---------------------------------------------------------------------------
+## fonts/ holds open fonts with the metrics of Arial (Liberation Sans) and
+## Cambria (Caladea). Pointing XDG_DATA_HOME at the app directory makes
+## fontconfig -- and with it BOTH the PNG/TIFF device (ragg) and the PDF device
+## (cairo) -- find <app>/fonts, with nothing installed in the image. It has to
+## be set before the first text is measured, so it is done here, first thing.
+## (Set T2_NO_BUNDLED_FONTS to any value to leave XDG_DATA_HOME alone.)
+T2_FONT_DIR = file.path(getwd(), "fonts")
+if (dir.exists(T2_FONT_DIR) && !nzchar(Sys.getenv("T2_NO_BUNDLED_FONTS"))) {
+    Sys.setenv(XDG_DATA_HOME = dirname(T2_FONT_DIR))
+}
+
+## ---------------------------------------------------------------------------
 ## 1. The fixed Appearance settings
 ## ---------------------------------------------------------------------------
 .t2_font_menu = c(0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 22, 24, 28, 32, 40)
@@ -47,7 +61,7 @@ T2_STYLE = list(
                            choices = .t2_font_menu, default = 11),
     strip_size      = list(label = "Multi-graph label size", gg = "strip.text = element_text(size = )",
                            choices = .t2_font_menu, default = 11),
-    legend_size     = list(label = "Legend font size", gg = "legend.text, legend.title = element_text(size = )",
+    legend_size     = list(label = "Legend font size", gg = "legend.text = element_text(size = )",
                            choices = .t2_font_menu, default = 11),
     ncols           = list(label = "Multi-graph columns", gg = "facet_wrap(ncol = )",
                            choices = c(1:16, 20, 25, 30, 40, 50), default = 8),
@@ -82,15 +96,17 @@ t2_font_theme = function(title_size = 16, subtitle_size = 11, axis_title_size = 
 }
 
 ## The complete theme of T2's scatter / box plots.
+## base_size drives everything that is not set explicitly (spacing, margins,
+## legend keys); 12 is the on-screen look, a printed figure uses about 7.
 t2_base_theme = function(title_size = 16, subtitle_size = 11, axis_title_size = 14,
                          axis_text_size = 11, strip_size = 11, legend_size = 11,
-                         show_legend = TRUE) {
-    th = ggthemes::theme_gdocs() +
+                         show_legend = TRUE, base_size = 12, base_family = "sans") {
+    th = ggthemes::theme_gdocs(base_size = base_size, base_family = base_family) +
         theme(text = element_text(colour = "black"),
               legend.title = element_text(colour = "black"),
               legend.text = element_text(colour = "black"),
               panel.background = element_rect(fill = "white"),
-              plot.caption = element_text(size = 9)) +
+              plot.caption = element_text(size = 0.75 * base_size)) +
         t2_font_theme(title_size, subtitle_size, axis_title_size, axis_text_size,
                       strip_size, legend_size, show_legend)
     ## category labels on X read bottom-to-top (unless axis text is switched off)
@@ -120,7 +136,11 @@ T2_COLOURS = c("black", "white", "transparent", "grey10", "grey20", "grey30", "g
                "magenta", "brown", "#0D0887", "#9C179E", "#ED7953", "#F0F921")
 T2_LINETYPES = c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash", "blank")
 T2_FACES     = c("plain", "bold", "italic", "bold.italic")
-T2_FAMILIES  = c("sans", "serif", "mono")
+## fonts: the generic families plus the two bundled in fonts/ (open fonts with
+## the same metrics as Arial and Cambria; see figure_export.R)
+T2_FAMILIES  = c("sans" = "sans", "serif" = "serif", "mono" = "mono",
+                 "Arial-compatible (Liberation Sans)" = "Liberation Sans",
+                 "Cambria-compatible (Caladea)" = "Caladea")
 T2_SHAPES    = stats::setNames(as.character(0:25), c(
     "0 square (open)", "1 circle (open)", "2 triangle (open)", "3 plus", "4 cross",
     "5 diamond (open)", "6 triangle down (open)", "7 square cross", "8 asterisk",
@@ -290,6 +310,8 @@ t2_build_tweaks = function() {
       choices = c("plasma", "viridis", "magma", "inferno", "cividis", "rocket", "mako", "turbo"))
     g("colour.direction", C, "colour palette direction", "scale_colour_viridis(direction = )", "enum", "1", choices = c("1", "-1"))
     g("colour.end",       C, "colour palette end (0-1)", "scale_colour_viridis(end = )", "num", NULL, "unit01")
+    g("legend.ncol",      C, "legend columns (categorical colour)", "guide_legend(ncol = )", "enum", "1",
+      choices = as.character(1:8))
     g("scale.x.trans",    C, "X axis transform (numeric X)", "scale_x_continuous(transform = )", "enum", "identity",
       choices = c("identity", "log10", "log2", "sqrt", "reverse"))
     g("scale.y.trans",    C, "Y axis transform (numeric Y)", "scale_y_continuous(transform = )", "enum", "identity",
@@ -304,8 +326,10 @@ t2_build_tweaks = function() {
 }
 T2_TWEAKS = t2_build_tweaks()
 
-## input id of a tweak's widget (ids are generated here; uniqueness is asserted)
-t2_tweak_input_id = function(id) paste0("tw_", gsub("[^A-Za-z0-9]", "_", id))
+## input id of a tweak's widget (ids are generated here; uniqueness is asserted).
+## `prefix` separates the Appearance tab's widgets ("") from the Publish tab's
+## ("pub_"): two independent sets of the same settings.
+t2_tweak_input_id = function(id, prefix = "") paste0(prefix, "tw_", gsub("[^A-Za-z0-9]", "_", id))
 stopifnot(!anyDuplicated(vapply(names(T2_TWEAKS), t2_tweak_input_id, "")))
 
 ## choices for the search box: grouped, label -> id
@@ -319,13 +343,13 @@ t2_tweak_choices = function() {
 }
 
 ## the value menu a tweak's widget offers (default included, numerically sorted)
-t2_tweak_menu = function(tw) {
+t2_tweak_menu = function(tw, default = tw$default) {
     if (tw$kind == "num") {
         m = .t2_menus[[tw$menu]]
-        if (!is.null(tw$default)) m = sort(unique(c(m, tw$default)))
+        if (!is.null(default)) m = sort(unique(c(m, default)))
         as.character(m)
     } else if (tw$kind == "colour") {
-        unique(c(tw$default, T2_COLOURS))
+        unique(c(default, T2_COLOURS))
     } else tw$choices
 }
 
@@ -406,17 +430,43 @@ t2_tweak_theme = function(gg) {
 ## Lay the Appearance settings over a Kaplan-Meier result (a ggsurvplot, whose
 ## curve is $plot, or the faceted variant, a plain ggplot): fonts, legend
 ## visibility and theme tweaks. Layer settings do not apply to survival plots.
-t2_style_survival = function(res, style = list(), gg = list()) {
+## Wrap a title to the width of a figure: a character is about 0.55 em wide,
+## and a title has the panel's width (roughly 85% of the figure) to itself.
+t2_wrap_text = function(txt, fig_width, font_size) {
+    if (is.null(fig_width) || is.null(txt) || !is.character(txt) || !isTRUE(font_size > 0)) return(txt)
+    n = max(20, floor(0.85 * fig_width * 72 / (0.55 * font_size)))
+    paste(vapply(strsplit(txt, "\n", fixed = FALSE)[[1]],
+                 function(l) paste(strwrap(l, width = n), collapse = "\n"), ""), collapse = "\n")
+}
+
+t2_style_survival = function(res, style = list(), gg = list(), caption = NULL, fig_width = NULL) {
     th = do.call(t2_font_theme, style[intersect(names(style), names(formals(t2_font_theme)))]) +
         t2_tweak_theme(gg)
     lb = gg[grep("^labs\\.", names(gg), value = TRUE)]
     names(lb) = sub("^labs\\.", "", names(lb))
+    ## a source line, when the caller asks for one (Publish tab)
+    if (is.null(lb$caption) && length(caption) == 1 && !is.na(caption) && nzchar(caption))
+        lb$caption = caption
     keep = attributes(res)[c("t2summary", "km_data", "stats")]
+    ## legend columns, and titles wrapped to a figure's width (Publish tab)
+    extra = function(p) {
+        if (!is.null(gg[["legend.ncol"]])) {
+            n = as.integer(gg[["legend.ncol"]])
+            p = p + guides(colour = guide_legend(ncol = n), fill = guide_legend(ncol = n))
+        }
+        if (!is.null(fig_width)) {
+            ts = if (is.null(style$title_size)) 12 else style$title_size
+            ss = if (is.null(style$subtitle_size)) 10 else style$subtitle_size
+            p$labels$title = t2_wrap_text(p$labels$title, fig_width, ts)
+            p$labels$subtitle = t2_wrap_text(p$labels$subtitle, fig_width, ss)
+        }
+        p
+    }
     if (inherits(res, "ggsurvplot")) {
-        res$plot = res$plot + th
+        res$plot = extra(res$plot + th)
         if (length(lb)) res$plot = res$plot + do.call(labs, lb)
     } else if (inherits(res, "ggplot")) {
-        res = res + th
+        res = extra(res + th)
         if (length(lb)) res = res + do.call(labs, lb)
         for (a in names(keep)) if (!is.null(keep[[a]])) attr(res, a) = keep[[a]]
     }

@@ -257,6 +257,30 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 }
 
 
+## gitr() with a small memory of recent results, for callers that redraw the
+## same data with different styling (the Publish tab's live preview). The
+## served databases are read-only, so a result stays valid; the key still
+## includes the file's size and modification time. Shared by all sessions of
+## this R process; the most recent few results are kept.
+.gitr_memo = new.env(parent = emptyenv())
+.gitr_memo$keys = character(0)
+gitr_memo = function(probes, ..., dbfile = gitrdb, max_entries = 6) {
+  fi = file.info(dbfile)
+  key = rlang::hash(list(probes, list(...), normalizePath(dbfile, mustWork = FALSE),
+                         fi$size, fi$mtime))
+  hit = .gitr_memo[[key]]
+  if (!is.null(hit)) return(hit)
+  out = gitr(probes, ..., dbfile = dbfile)
+  .gitr_memo[[key]] = out
+  .gitr_memo$keys = c(.gitr_memo$keys, key)
+  if (length(.gitr_memo$keys) > max_entries) {
+    drop = head(.gitr_memo$keys, length(.gitr_memo$keys) - max_entries)
+    rm(list = drop, envir = .gitr_memo)
+    .gitr_memo$keys = setdiff(.gitr_memo$keys, drop)
+  }
+  out
+}
+
 test_gitr = function(n, phenos = TRUE){
   testconn = RSQLite::dbConnect(RSQLite::SQLite(), dbname = gitrdb, flags = RSQLite::SQLITE_RO )
   allprobes = tbl(testconn, 'allprobes')

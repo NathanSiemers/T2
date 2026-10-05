@@ -1,6 +1,12 @@
 # Publication-quality figures from T2 — plan
 
-Status: proposal, nothing built. Written 2026-10-04 in answer to the last item of
+Status: BUILT (2026-10-04) as the Publish tab, with the decisions below taken as: citation
+"T2 Database and Search Tool, Nathan O. Siemers, Ph.D., https://www.fiveprime.org"; PDF
+included; presets half-page x 1/3-page, full-page x half-page, Nature 89 mm and 183 mm, slide;
+bundled Arial- and Cambria-compatible fonts; limits as proposed; no separate "download as
+shown" button. Differences from the proposal: there is no "overall scale" knob (a PDF device
+cannot do it; the presets cover the need), and the Appearance controls are shared through a
+prefix rather than a separate component. The text below is the original proposal. Written 2026-10-04 in answer to the last item of
 `../Thanos/thanos.notes.md`. Numbers below were measured in the dev container on the
 TCGA CD8A × FOXP3 scatter (11,005 points).
 

@@ -62,7 +62,10 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                         dbfile = "tcga.db", roles = NULL, nonormal = TRUE,
                         facet = NULL, ci = TRUE, title = NULL,
                         max_time = 365 * 5, condition = NULL, pcortype = "none",
-                        noheme = FALSE, keep_samples = NULL) {
+                        noheme = FALSE, keep_samples = NULL,
+                        base_size = 12, base_family = "sans") {
+  ## every text / line size below follows base_size (12 = the on-screen look)
+  k <- base_size / 12
   n_groups <- max(2L, as.integer(n_groups))
   stopifnot(endpoint %in% names(T2_ENDPOINTS))
   ev <- endpoint; tm <- paste0(endpoint, ".time")
@@ -74,7 +77,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   do_cond <- length(condition) > 0 && pcortype %in% c("y", "both")
 
   ## pull marker probe(s) + covariates + clinical (gitr joins clinpheno)
-  d <- suppressWarnings(gitr(unique(c(y, if (do_cond) condition)),
+  d <- suppressWarnings(gitr_memo(unique(c(y, if (do_cond) condition)),
                              cohort = cohort, nonormal = nonormal, noheme = noheme,
                              dbfile = dbfile, roles = roles, keep_samples = keep_samples))
   miss <- setdiff(c(y, ev, tm, facet, if (do_cond) condition), names(d))
@@ -140,12 +143,13 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
     fit <- survfit(Surv(time, event) ~ grp, data = df)
     pal <- t2_km_palette(nlevels(df$grp))
     g <- ggsurvplot_facet(fit, data = df, facet.by = facet, palette = pal,
-                          conf.int = ci, conf.int.alpha = 0.15, pval = TRUE, pval.size = 3.2,
+                          conf.int = ci, conf.int.alpha = 0.15, pval = TRUE, pval.size = 3.2 * k,
+                          size = k,
                           censor = FALSE, short.panel.labs = TRUE, nrow = NULL,
                           xlim = c(0, xmax), break.time.by = 365,
                           legend.title = paste(ylab, "group"),
                           xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
-                          ggtheme = theme_minimal(base_size = 11)) +
+                          ggtheme = theme_minimal(base_size = 11 * k, base_family = base_family)) +
       ggtitle(title %||% sprintf("%s by %s %s-groups (within panel) — faceted by %s",
                                  T2_ENDPOINTS[[endpoint]], ylab, n_groups, paste(facet, collapse = " × ")))
     g <- .km_strip_ci_border(g)                      # no outline on CI bands
@@ -192,18 +196,34 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   ttl <- title %||% sprintf("%s by %s %s%s", T2_ENDPOINTS[[endpoint]], ylab, grp_desc,
            if (!identical(cohort, "all")) paste0("  [", paste(cohort, collapse = ","), "]") else "  [pan-cancer]")
 
-  g <- ggsurvplot(fit, data = df, pval = stat_txt, pval.size = 4.2,
+  g <- ggsurvplot(fit, data = df, pval = stat_txt, pval.size = 4.2 * k, size = k,
+                  fontsize = 4.5 * k, font.family = base_family,
                   pval.coord = c(0.02 * xmax, 0.07),
                   conf.int = ci, conf.int.alpha = 0.16,
                   xlim = c(0, xmax), break.time.by = 365,
                   risk.table = TRUE, risk.table.height = 0.26, tables.y.text = FALSE,
-                  tables.theme = theme_cleantable(), censor.size = 2, palette = pal,
+                  tables.theme = theme_cleantable(base_size = 12 * k, base_family = base_family),
+                  censor.size = 2 * k, palette = pal,
                   legend.title = paste(ylab, "group"), legend.labs = leglabs,
                   xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
                   title = ttl,
                   subtitle = sprintf("n = %d    median %s:  %s%s%s", nrow(df), endpoint, med_txt, cap_txt, cond_note),
-                  ggtheme = theme_minimal(base_size = 12))
+                  ggtheme = theme_minimal(base_size = 12 * k, base_family = base_family))
   g$plot <- .km_strip_ci_border(g$plot)              # no outline on CI bands
+  ## the risk table's group markers are y-axis "labels" drawn at a fixed 50 pt
+  ## by survminer; keep them in proportion, and in the chosen font
+  if (!is.null(g$table)) {
+    g$table <- g$table + theme(text = element_text(family = base_family))
+    mark <- g$table$theme$axis.text.y           # survminer's own element type
+    if (!is.null(mark) && is.numeric(tryCatch(mark$size, error = function(e) NULL))) {
+      mark$size <- mark$size * k
+      g$table$theme$axis.text.y <- mark
+    }
+    ## survminer labels each row with an escaped dash ("\\-") that current
+    ## ggtext draws literally, as a backslash plus a dash; use a plain dash
+    ysc <- tryCatch(g$table$scales$get_scales("y"), error = function(e) NULL)
+    if (!is.null(ysc) && is.character(ysc$labels)) ysc$labels <- rep("\u2014", length(ysc$labels))
+  }
   attr(g, "stats") <- list(n = nrow(df), logrank_p = lp, HR_per_SD = hr, HR_CI = c(lo, hi),
                            cox_p = cp, medians = medv, n_groups = n_groups,
                            max_time = if (capped) max_time else NA,

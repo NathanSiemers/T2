@@ -41,10 +41,106 @@ inline = function (x) {  shiny::tags$div(style="display:inline-block;", x)  }
 gg_label = function(label, gg = NULL) {
     if (is.null(gg)) label else tagList(label, tags$div(class = "gg-name", gg))
 }
-## one of the fixed Appearance menus (see T2_STYLE in plot_style.R)
-style_select = function(id) {
+## one of the fixed style menus (see T2_STYLE in plot_style.R). `prefix` and
+## `default` give the Publish tab its own copy with print-scale defaults.
+style_select = function(id, prefix = "", default = NULL) {
     st = T2_STYLE[[id]]
-    inline(selectInput(id, gg_label(st$label, st$gg), choices = st$choices, selected = st$default))
+    inline(selectInput(paste0(prefix, id), gg_label(st$label, st$gg), choices = st$choices,
+                       selected = if (is.null(default)) st$default else default))
+}
+## the search box over every other ggplot setting
+tweak_picker = function(prefix = "") {
+    selectizeInput(paste0(prefix, 'tweak_pick'), 'Add settings', choices = t2_tweak_choices(),
+                   multiple = TRUE, width = '100%',
+                   options = list(placeholder = 'type to search, e.g.  angle,  legend,  grid,  shape,  title text ...',
+                                  plugins = list('remove_button'), maxOptions = 2000))
+}
+## one widget per picked setting. `defaults` (id -> value) overrides the
+## registry default shown (a figure preset has its own); an existing widget
+## keeps its current value.
+tweak_widgets = function(input, prefix = "", defaults = list()) {
+    picked = .t2_pick(input[[paste0(prefix, 'tweak_pick')]], names(T2_TWEAKS), 60)
+    if (is.null(picked)) return(NULL)
+    lapply(picked, function(id) {
+        tw = T2_TWEAKS[[id]]
+        iid = t2_tweak_input_id(id, prefix)
+        cur = isolate(input[[iid]])
+        lab = gg_label(tw$label, tw$gg)
+        if (tw$kind == "text") {
+            return(inline(textInput(iid, lab, value = if (is.null(cur)) "" else cur,
+                                    placeholder = "automatic")))
+        }
+        def = if (!is.null(defaults[[id]])) defaults[[id]] else tw$default
+        sel = if (!is.null(cur)) as.character(cur)
+              else if (!is.null(def)) as.character(def) else ""
+        menu = t2_tweak_menu(tw, def)
+        if (tw$kind == "enum") {
+            return(inline(selectInput(iid, lab, choices = menu, selected = sel)))
+        }
+        ## numbers and colours: a menu, plus "type your own"
+        if (nzchar(sel) && !(sel %in% menu)) menu = c(sel, menu)
+        inline(selectizeInput(iid, lab, choices = c("automatic" = "", menu), selected = sel,
+                              options = list(create = TRUE, persist = FALSE,
+                                             placeholder = "automatic")))
+    })
+}
+
+## the Publish tab: a figure of a given physical size and resolution
+publish_tab_ui = function() {
+    pr = T2_FIG_PRESETS[[T2_FIG_DEFAULT_PRESET]]
+    sty = function(id) style_select(id, "pub_", pr$style[[id]])
+    tagList(
+        tags$br(),
+        helpText("A figure for a paper or a slide: choose its real size and resolution, adjust until the ",
+                 "preview reads well, then press ", tags$b("Plot"), " to download the file. The preview is the figure itself, ",
+                 "drawn at the size you asked for. These settings are separate from the Appearance tab: ",
+                 "sizes that suit the screen do not suit a 3.5 inch figure."),
+        fluidRow(
+            column(4,
+                selectInput('pub_preset', 'Start from', width = '100%',
+                            choices = stats::setNames(names(T2_FIG_PRESETS),
+                                                      vapply(T2_FIG_PRESETS, `[[`, "", "label")),
+                            selected = T2_FIG_DEFAULT_PRESET),
+                div(class = "t2-pub-size",
+                    inline(numericInput('pub_width', 'Width', value = pr$width, min = 0.1, step = 0.1, width = '90px')),
+                    inline(numericInput('pub_height', 'Height', value = pr$height, min = 0.1, step = 0.1, width = '90px')),
+                    inline(selectInput('pub_units', 'Units', choices = T2_FIG_UNITS, selected = pr$units, width = '80px')),
+                    inline(selectInput('pub_dpi', 'Resolution (dpi)', choices = T2_FIG_DPI, selected = pr$dpi, width = '130px'))),
+                inline(selectInput('pub_format', 'File format', choices = T2_FIG_FORMATS, selected = "png", width = '200px')),
+                inline(selectInput('pub_family', gg_label('Font', 'theme(text = element_text(family = ))'),
+                                   choices = T2_FIG_FAMILIES, width = '300px')),
+                h5("Sizes at final print size"),
+                div(class = "t2-pub-style",
+                    sty('title_size'), sty('subtitle_size'), sty('axis_title_size'), sty('axis_text_size'),
+                    sty('strip_size'), sty('legend_size'), sty('point_size'), sty('alpha'), sty('ncols')),
+                inline(checkboxInput("pub_show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
+                inline(checkboxInput("pub_source", "Show source line", value = TRUE)),
+                div(class = "t2-cite",
+                    conditionalPanel("!input.pub_source",
+                        tags$b("You have removed the source line."), " That is fine, but please cite T2 in any ",
+                        "publication or presentation that uses this figure:"),
+                    conditionalPanel("input.pub_source", "The source line, and the citation for T2:"),
+                    tags$code(id = "t2_citation", T2_CITATION),
+                    tags$a(href = "#", class = "t2-copy",
+                           onclick = "navigator.clipboard.writeText(document.getElementById('t2_citation').innerText); this.innerText = 'copied'; return false;",
+                           "copy")),
+                h5("More ggplot settings"),
+                tweak_picker("pub_"),
+                div(class = "t2-tweaks", uiOutput('pub_tweak_inputs'))
+            ),
+            column(8,
+                inline(downloadButton('pub_download', 'Plot: download figure')),
+                inline(HTML(nbsp(3))),
+                inline(radioButtons('pub_zoom', NULL, inline = TRUE,
+                                    choices = c("Fit to window" = "fit", "Print size (approx.)" = "print",
+                                                "Pixel for pixel" = "pixels"), selected = "fit")),
+                div(class = "t2-filter-status", textOutput('pub_readout')),
+                div(class = "t2-pub-preview",
+                    withSpinner(imageOutput('pub_preview', height = 'auto'), color = viridis::plasma(1),
+                                proxy.height = "300px"))
+            )
+        )
+    )
 }
 
 ## datasets known at startup: the Filter tab holds one (hidden) Thanos panel
@@ -101,6 +197,16 @@ ui = fluidPage(
         .gg-name { font-style: italic; font-weight: normal; font-size: 80%; color: #2e8b57;
             line-height: 1.2; margin-top: 1px; }
         .t2-tweaks .shiny-input-container { vertical-align: top; }
+        /* Publish tab */
+        .t2-pub-style .shiny-input-container, .t2-pub-style .selectize-control { width: 175px; }
+        .t2-pub-preview { border: 1px solid #dce4ec; background: #f4f6f8; padding: 12px;
+            overflow: auto; max-height: 85vh; text-align: center; min-height: 320px; }
+        .t2-pub-preview img { box-shadow: 0 1px 6px rgba(0,0,0,0.25); background: #fff; }
+        .t2-cite { font-size: 88%; margin: 4px 0 12px 0; padding: 8px 10px; background: #f6f8fa;
+            border-left: 4px solid #3B7DB4; }
+        .t2-cite code { display: block; margin-top: 4px; white-space: normal; color: #2c3e50;
+            background: transparent; padding: 0; }
+        .t2-copy { font-size: 90%; }
     "))),
     uiOutput('app_title'),
     tabsetPanel(id = 'tabs',
@@ -174,14 +280,13 @@ ui = fluidPage(
             helpText("Search every other ggplot setting: all theme elements (axis text angle, legend position, ",
                      "grid lines, backgrounds, spacing ...) and the drawing settings of points, boxplots and the fit line. ",
                      "Each one you pick appears below with its current default; choose from the menu, or type your own number or #hex colour."),
-            selectizeInput('tweak_pick', 'Add settings', choices = t2_tweak_choices(), multiple = TRUE,
-                           width = '100%',
-                           options = list(placeholder = 'type to search, e.g.  angle,  legend,  grid,  shape,  title text ...',
-                                          plugins = list('remove_button'), maxOptions = 2000)),
+            tweak_picker(),
             div(class = "t2-tweaks", uiOutput('tweak_inputs')),
             actionButton("plot_btn2", "Plot")
         ),
-        ## ---- (e) what this is ----
+        ## ---- (e) publication-quality figure export ----
+        tabPanel("Publish", value = "publish", publish_tab_ui()),
+        ## ---- (f) what this is ----
         tabPanel("About", value = "about",
             h4("About T2"),
             tags$p("T2 is a database and plotting tool for large tumor-profiling compendia: ",
@@ -196,8 +301,11 @@ ui = fluidPage(
                 tags$li(tags$b("Filter"), ": interactive histograms and sliders/checkboxes for every selected ",
                         "variable (and any others you add) to fine-tune which samples are plotted."),
                 tags$li(tags$b("Appearance"), ": point size, transparency, label sizes, multi-graph layout, ",
-                        "fit line and survival-plot options.")
+                        "fit line and survival-plot options, and a search over every other ggplot setting."),
+                tags$li(tags$b("Publish"), ": the current plot as a figure of a chosen physical size and ",
+                        "resolution (PNG, TIFF or PDF), with a live preview.")
             ),
+            tags$p(tags$b("Citing T2: "), T2_CITATION),
             h5( paste( 'PI:', a.PI ) ),
             h5( paste('Contributors:', a.credits) ),
             h5( Sys.Date() ),
@@ -362,31 +470,7 @@ server = function(input, output, session) {
     ## Rebuilt when the pick list changes; a widget that already exists keeps
     ## its current value. What these widgets send is validated against the
     ## registry in sanitize_t2_tweaks() before anything reaches ggplot.
-    output$tweak_inputs = renderUI({
-        picked = .t2_pick(input$tweak_pick, names(T2_TWEAKS), 60)
-        if (is.null(picked)) return(NULL)
-        lapply(picked, function(id) {
-            tw = T2_TWEAKS[[id]]
-            iid = t2_tweak_input_id(id)
-            cur = isolate(input[[iid]])
-            lab = gg_label(tw$label, tw$gg)
-            if (tw$kind == "text") {
-                return(inline(textInput(iid, lab, value = if (is.null(cur)) "" else cur,
-                                        placeholder = "automatic")))
-            }
-            sel = if (!is.null(cur)) as.character(cur)
-                  else if (!is.null(tw$default)) as.character(tw$default) else ""
-            menu = t2_tweak_menu(tw)
-            if (tw$kind == "enum") {
-                return(inline(selectInput(iid, lab, choices = menu, selected = sel)))
-            }
-            ## numbers and colours: a menu, plus "type your own"
-            if (nzchar(sel) && !(sel %in% menu)) menu = c(sel, menu)
-            inline(selectizeInput(iid, lab, choices = c("automatic" = "", menu), selected = sel,
-                                  options = list(create = TRUE, persist = FALSE,
-                                                 placeholder = "automatic")))
-        })
-    })
+    output$tweak_inputs = renderUI(tweak_widgets(input))
 
     ## ---- plotting: any of the three Plot buttons ----
     plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3))
@@ -453,6 +537,87 @@ server = function(input, output, session) {
         note = filter_note()
         if (nzchar(note)) paste0(txt, "\n\n", note) else txt
     })
+    ## ---- Publish: the current selections as a figure of a real size ----
+    ## Not tied to the Plot buttons: it draws what the Select tab and the Filter
+    ## tab say right now, with its OWN style values (the pub_ inputs), and the
+    ## download is rendered from the very same specification as the preview.
+    pub_preset = reactive(T2_FIG_PRESETS[[sanitize_t2_figure(input)$preset]])
+    ## choosing a preset fills in its size and its print- or slide-scale sizes
+    observeEvent(input$pub_preset, {
+        pr = pub_preset()
+        updateNumericInput(session, 'pub_width', value = pr$width)
+        updateNumericInput(session, 'pub_height', value = pr$height)
+        updateSelectInput(session, 'pub_units', selected = pr$units)
+        updateSelectInput(session, 'pub_dpi', selected = pr$dpi)
+        for (id in names(pr$style)) updateSelectInput(session, paste0('pub_', id), selected = pr$style[[id]])
+    }, ignoreInit = TRUE)
+    output$pub_tweak_inputs = renderUI(tweak_widgets(input, "pub_", pub_preset()$gg))
+
+    pub_fig = reactive(sanitize_t2_figure(input))
+    ## everything that decides what is drawn (not how large the file is)
+    pub_spec = reactive({
+        b = bundle()
+        inp = sanitize_t2_input(input, b)
+        if (length(inp$x) == 0 || length(inp$y) == 0) return(NULL)
+        fig = pub_fig()
+        pr = T2_FIG_PRESETS[[fig$preset]]
+        st = sanitize_t2_style(input, "pub_", pr$style)
+        st$plot_height = NULL
+        inp[names(st)] = st
+        ## the preset's own defaults for unlisted settings, then the user's picks
+        gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input, "pub_"))
+        list(b = b, inp = inp, keep = filter_state(b)$keep, gg = gg,
+             base_size = fig$base_size, family = fig$family, fig_width = fig$width,
+             caption = if (fig$source_line) T2_CITATION else "")
+    })
+    pub_draw = function(s) {
+        fun_plot1(s$inp, reactive = FALSE, dbfile = s$b$path, roles = s$b$roles,
+                  dataset_label = s$b$label, keep_samples = s$keep, gg = s$gg,
+                  base_size = s$base_size, base_family = s$family, caption = s$caption,
+                  fig_width = s$fig_width)
+    }
+    ## redraw about a second after the last change, not on every keystroke
+    pub_spec_d = debounce(pub_spec, 900)
+    pub_fig_d  = debounce(pub_fig, 900)
+    pub_result = reactive({ s = pub_spec_d(); if (is.null(s)) NULL else pub_draw(s) })
+
+    output$pub_readout = renderText({
+        fig = pub_fig()
+        paste0(t2_figure_readout(fig), if (!is.null(fig$note)) paste0("   NOTE: ", fig$note) else "")
+    })
+    output$pub_preview = renderImage({
+        res = pub_result()
+        obj = t2_figure_object(res)
+        if (is.null(obj)) {
+            msg = if (is.list(res) && !is.null(res$warning)) res$warning
+                  else "Choose X and Y on the Select tab to see a figure here."
+            validate(need(FALSE, msg))
+        }
+        fig = pub_fig_d()
+        zoom = .t2_one(input$pub_zoom, c("fit", "print", "pixels"), "fit")
+        f = tempfile(fileext = ".png")
+        ## the same rendering as the download; a fit-to-window view of a
+        ## high-resolution figure is drawn with fewer pixels, same layout
+        t2_render_figure(obj, f, fig$width, fig$height, t2_preview_dpi(fig, zoom), "png")
+        list(src = f, contentType = "image/png", alt = "figure preview",
+             style = switch(zoom,
+                            fit    = "max-width: 100%; max-height: 80vh; height: auto; width: auto;",
+                            print  = sprintf("width: %.3fin; height: auto;", fig$width),
+                            pixels = ""))
+    }, deleteFile = TRUE)
+    output$pub_download = downloadHandler(
+        filename = function() {
+            b = bundle()
+            t2_figure_filename(sanitize_t2_input(input, b), pub_fig())
+        },
+        content = function(file) {
+            s = pub_spec()
+            obj = if (is.null(s)) NULL else t2_figure_object(pub_draw(s))
+            if (is.null(obj)) stop("Nothing to plot: choose X and Y on the Select tab.")
+            fig = pub_fig()
+            t2_render_figure(obj, file, fig$width, fig$height, fig$dpi, fig$format)
+        })
+
     output$datatypes = renderUI({
         b = bundle()
         type_con = RSQLite::dbConnect(RSQLite::SQLite(), b$path, flags = RSQLite::SQLITE_RO)

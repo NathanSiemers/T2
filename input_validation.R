@@ -76,17 +76,28 @@ sanitize_t2_input = function(input, b) {
     ),
     ## the Appearance menus (plot_style.R): each value snaps to its own menu.
     ## plot_height is returned for the page; it is not a plotter argument.
-    lapply(stats::setNames(names(T2_STYLE), names(T2_STYLE)), function(id) {
-        .t2_num(input[[id]], T2_STYLE[[id]]$choices, T2_STYLE[[id]]$default)
-    }))
+    sanitize_t2_style(input)[names(T2_STYLE)])
+}
+
+## The fixed style menus + the legend switch, read from the Appearance tab
+## (prefix "") or the Publish tab's own copy (prefix "pub_"). `defaults`
+## replaces the menu defaults (a figure preset has its own).
+sanitize_t2_style = function(input, prefix = "", defaults = list()) {
+    ids = names(T2_STYLE)
+    out = lapply(stats::setNames(ids, ids), function(id) {
+        d = if (!is.null(defaults[[id]])) defaults[[id]] else T2_STYLE[[id]]$default
+        .t2_num(input[[paste0(prefix, id)]], T2_STYLE[[id]]$choices, d)
+    })
+    out$show_legend = .t2_flag(input[[paste0(prefix, "show_legend")]], TRUE)
+    out
 }
 
 ## The extra ggplot settings chosen in the Appearance tab's search box:
 ## id -> validated value. Only ids from the registry (T2_TWEAKS) are read, each
 ## from its own generated input, and every value passes t2_validate_tweak().
-sanitize_t2_tweaks = function(input) {
-    picked = .t2_pick(input$tweak_pick, names(T2_TWEAKS), 60)
+sanitize_t2_tweaks = function(input, prefix = "") {
+    picked = .t2_pick(input[[paste0(prefix, "tweak_pick")]], names(T2_TWEAKS), 60)
     vals = lapply(stats::setNames(picked, picked),
-                  function(id) input[[t2_tweak_input_id(id)]])
+                  function(id) input[[t2_tweak_input_id(id, prefix)]])
     t2_validate_tweaks(vals[!vapply(vals, is.null, NA)])
 }

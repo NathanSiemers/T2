@@ -102,6 +102,7 @@ run('300-final_indexing.R')
 run('250-create_views.R')
 run('290-record_environment.R')
 run('295-type_descriptions.R')
+run('297-default_filters.R')
 if(optimize) run('310-optimize.R')
 ## ---- SQL validation against the freshly built (.building) db --------------
 ## Reusable suite (../sql_tests.R). Pre-source gitr + dataset_registry from the

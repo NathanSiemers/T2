@@ -208,7 +208,7 @@ erDiagram
 | samples | samplesidx |  sample  |
 | tcgacati | tcgacatiidx_tsp | type, samplekey, probekey |
 | tcgai | typeidx |  type  |
-| tcgai | tcgaiidx_pts | probekey, type, samplekey |
+| tcgai | tcgaiidx_pts | probekey, type, samplekey, value (covering) |
 | tested | tested_type | type |
 | tested | tested_type_sample | type, sample |
 

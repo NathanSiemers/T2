@@ -1,0 +1,37 @@
+# XcodeGen project description: on the Mac, `brew install xcodegen`, then in this directory
+# `xcodegen` creates T2.xcodeproj. (Or make a new iOS App project in Xcode by hand, add the
+# files in Sources/, and add ../T2Kit as a local Swift package.)
+name: T2
+options:
+  bundleIdPrefix: org.fiveprime
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  T2Kit:
+    path: ../T2Kit
+targets:
+  T2:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    dependencies:
+      - package: T2Kit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.fiveprime.t2
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: T2
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        SWIFT_VERSION: "5.9"
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: T2
+        UILaunchScreen: {}
+        # development only: lets the app talk plain http to a service on this Mac
+        # (an SSH tunnel to the server). Remove once the service is behind https.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true

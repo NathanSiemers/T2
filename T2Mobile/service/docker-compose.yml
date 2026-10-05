@@ -1,0 +1,38 @@
+## t2api, STANDALONE DEVELOPMENT copy: NOT reachable from the internet.
+## The published service is the `t2api` service in /scratch/Docker/ShinyPublic/docker-compose.yml
+## (same image, built from this directory). Use this file to try changes beside it:
+##     docker compose up -d --build
+##     T2API_NET=t2api-dev T2API_HOST=t2api-dev T2API_PORT=3861 ./test.sh
+## - listens on 127.0.0.1:3861 on this host only, and as `t2api-dev` on its own internal
+##   Docker network `t2api-dev`
+## - same lockdown as the public Shiny containers: read-only filesystem, unprivileged
+##   user, no capabilities, memory ceiling without swap; databases mounted read-only
+services:
+  t2api:
+    build: .
+    image: t2api:dev
+    container_name: t2api-dev
+    restart: unless-stopped
+    command: ["-addr", ":8080", "-tcga", "/data/tcga.db", "-datasets", "/data/datasets", "-cache-mb", "512"]
+    user: "999:999"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 4g
+    memswap_limit: 4g
+    oom_score_adj: 800
+    pids_limit: 256
+    cpus: 8
+    ports: ["127.0.0.1:3861:8080"]
+    networks: [t2api-dev]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    volumes:
+      - /scratch/shinyusb/T2/tcga.db:/data/tcga.db:ro
+      - /scratch/shinyusb/T2/datasets:/data/datasets:ro
+
+networks:
+  t2api-dev:
+    name: t2api-dev

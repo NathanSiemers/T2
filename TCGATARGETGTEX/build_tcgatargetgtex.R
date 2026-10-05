@@ -104,6 +104,10 @@ samp_cols <- setdiff(names(expr), "id")
 samp_cols <- intersect(samp_cols, clinpheno$sample)
 if (SUBSET_SAMPLES > 0) samp_cols <- head(samp_cols, SUBSET_SAMPLES)
 expr <- expr[, c("id", samp_cols), with = FALSE]
+## Text in the database must be valid UTF-8 (JSON clients cannot carry anything
+## else). The phenotype file has a stray Mac non-breaking space (byte 0xCA) in
+## "Sympathetic Nervous System": every byte that is not valid UTF-8 becomes a space.
+clinpheno[] <- lapply(clinpheno, function(x) if (is.character(x)) iconv(x, "UTF-8", "UTF-8", sub = " ") else x)
 clinpheno <- clinpheno[clinpheno$sample %in% samp_cols, , drop = FALSE]
 say("after sample intersection:", length(samp_cols), "samples")
 
@@ -235,6 +239,11 @@ dataset_meta <- data.frame(
     "cohort", "CD8A", "study", "", ""),
   stringsAsFactors = FALSE)
 dbWriteTable(con, "dataset_meta", dataset_meta, overwrite = TRUE)
+
+## ready-made sample subsets for clients (GTEx normal tissues, TCGA tumors, ...):
+## definitions and table shape in ../default_filters.R
+source(file.path(ROOT, "default_filters.R"))
+write_default_filters(con, "tcgatargetgtex")
 
 ## ============================================================================
 ## 7. probe_types + indexes + views (shared DDL from ../t2_views.R)

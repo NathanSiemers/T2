@@ -29,8 +29,12 @@ create_t2_core_indexes <- function(con) {
   idx <- c(
     "CREATE INDEX IF NOT EXISTS probe_types_pk  ON probe_types(probekey, type)",
     "CREATE INDEX IF NOT EXISTS probe_types_tp  ON probe_types(type, probekey)",
-    "CREATE INDEX IF NOT EXISTS tcgaiidx_pts    ON tcgai(probekey, type, samplekey)",
-    "CREATE INDEX IF NOT EXISTS tcgacatiidx_pts ON tcgacati(probekey, type, samplekey)",
+    ## COVERING indexes: `value` is in the index, so every value of one probe is
+    ## ONE contiguous index read. Without it each of a probe's ~11,000 values is
+    ## its own scattered table-row read (1-2 s for a gene nobody has asked for
+    ## yet, in gitr() and in the t2api service alike).
+    "CREATE INDEX IF NOT EXISTS tcgaiidx_pts    ON tcgai(probekey, type, samplekey, value)",
+    "CREATE INDEX IF NOT EXISTS tcgacatiidx_pts ON tcgacati(probekey, type, samplekey, value)",
     ## type-leading index so `... WHERE type = X` on the categorical views is an
     ## indexed SEARCH, not a full SCAN of tcgacati (~15x on a selective type).
     "CREATE INDEX IF NOT EXISTS tcgacatiidx_tsp ON tcgacati(type, samplekey, probekey)",

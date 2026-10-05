@@ -167,13 +167,17 @@ dbWriteTable(con, "clinpheno",    clinpheno,     overwrite = TRUE)
 dbWriteTable(con, "cohorts",      cohorts_tbl,   overwrite = TRUE)
 dbWriteTable(con, "dataset_meta", dataset_meta,  overwrite = TRUE)
 
+## ready-made sample subsets for clients (definitions in default_filters.R)
+source("default_filters.R")
+write_default_filters(con, "DEMO")
+
 ## ---------------------------------------------------------------------------
 ## 5. Indexes (mirror the TCGA build's performance indexes)
 ## ---------------------------------------------------------------------------
 dbExecute(con, "CREATE INDEX probe_types_pk ON probe_types(probekey, type)")
 dbExecute(con, "CREATE INDEX probe_types_tp ON probe_types(type, probekey)")
-dbExecute(con, "CREATE INDEX tcgaiidx_pts ON tcgai(probekey, type, samplekey)")
-dbExecute(con, "CREATE INDEX tcgacatiidx_pts ON tcgacati(probekey, type, samplekey)")
+dbExecute(con, "CREATE INDEX tcgaiidx_pts ON tcgai(probekey, type, samplekey, value)")       # covering: see t2_views.R
+dbExecute(con, "CREATE INDEX tcgacatiidx_pts ON tcgacati(probekey, type, samplekey, value)")
 dbExecute(con, "CREATE INDEX tested_type ON tested(type)")
 dbExecute(con, "CREATE INDEX tested_type_sample ON tested(type, sample)")
 dbExecute(con, "CREATE INDEX clinphenoidx ON clinpheno(sample)")

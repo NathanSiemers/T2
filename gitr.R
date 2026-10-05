@@ -126,6 +126,24 @@ t2_sample_keep = function(df, roles = gitr_default_roles, cohort = 'all',
 ## `keep_samples`: NULL = no restriction; otherwise a character vector of
 ## sample ids to keep (the Thanos Filter tab's survivors). character(0) means
 ## "keep nothing". Supplied by the server only, never by the browser.
+## The clinical table of a database file, read once per process and file version.
+## gitr() needs all of it on every call (sample universe, clinical columns,
+## filters); reading and typing its ~13,000 x 56 cells was most of the time of a
+## one-probe call. Keyed by path + size + modification time, so a replaced file
+## is read again; a handful of entries at most (one per dataset file). The cached
+## data frame cannot be altered by callers (R copies on modification).
+.gitr_clin = new.env(parent = emptyenv())
+gitr_clinpheno = function(conn, dbfile) {
+  fi = file.info(dbfile)
+  key = paste(normalizePath(dbfile, mustWork = FALSE), fi$size, as.numeric(fi$mtime))
+  hit = .gitr_clin[[key]]
+  if (!is.null(hit)) return(hit)
+  out = collect(tbl(conn, 'clinpheno'))
+  if (length(ls(.gitr_clin)) >= 8) rm(list = ls(.gitr_clin), envir = .gitr_clin)
+  .gitr_clin[[key]] = out
+  out
+}
+
 gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 cohort = 'all', conn = con,
                 makefactors = TRUE,
@@ -148,7 +166,7 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   probes = unique(probes)
   probes = probes[!is.na(probes) & nzchar(probes)]
 
-  clinpheno = collect(tbl(gitrconn, 'clinpheno'))
+  clinpheno = gitr_clinpheno(gitrconn, dbfile)
   clinpheno_cols = colnames(clinpheno)
   ## synthetic columns created by the phenos=TRUE mutate below
   virtual_cols = c('subtype', 'cohort', 'lcohort')

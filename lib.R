@@ -23,8 +23,24 @@ source('figure_export.R')        # Publish tab: figure presets, validation, rend
 ## dataset is active — analogous to LimmaViewer's load_namespace_bundle().
 ################################################################
 
+## Cached per process and per version of the database file (path + size +
+## modification time): every session and every dataset switch asks for the same
+## lists (135,000 names for TCGA), and reading them from the database took
+## 0.3-0.8 s of each page open. A replaced file is read again.
+.bundle_cache = new.env(parent = emptyenv())
 load_dataset_bundle = function(name) {
-  info  = dataset_info(name)
+  info = dataset_info(name)
+  fi = file.info(info$path)
+  key = paste(info$name, normalizePath(info$path, mustWork = FALSE), fi$size, as.numeric(fi$mtime))
+  hit = .bundle_cache[[key]]
+  if (!is.null(hit)) return(hit)
+  out = .read_dataset_bundle(info)
+  if (length(ls(.bundle_cache)) >= 8) rm(list = ls(.bundle_cache), envir = .bundle_cache)
+  .bundle_cache[[key]] = out
+  out
+}
+
+.read_dataset_bundle = function(info) {
   roles = info$roles
   con_ds = open_dataset_con(info$path)
   on.exit(DBI::dbDisconnect(con_ds), add = TRUE)   # choice lists are collected; don't leak a handle per switch

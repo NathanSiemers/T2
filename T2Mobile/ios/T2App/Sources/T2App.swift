@@ -60,13 +60,18 @@ struct NoDatasetView: View {
 
 /// Type a few letters, pick a variable. The server searches the dataset's variable names;
 /// before anything is typed, the dataset's clinical columns are offered.
+/// With `multiple`, every tap adds a name to a list and the field is ready for the next few
+/// letters; one "Add" at the end hands the whole list over (the web site's quick way of
+/// naming a handful of probes to filter by).
 struct VariablePicker: View {
     let title: String
     let current: String
     var allowNone = true
     /// what the row shows while nothing is chosen
     var placeholder = "none"
-    let choose: (String) -> Void
+    var multiple = false
+    var choose: (String) -> Void = { _ in }
+    var chooseMany: ([String]) -> Void = { _ in }
 
     @Environment(AppModel.self) private var model
     @State private var open = false
@@ -83,9 +88,9 @@ struct VariablePicker: View {
         }
         .accessibilityIdentifier("pick-\(title)")
         .sheet(isPresented: $open) {
-            VariableSearch(title: title, current: current, allowNone: allowNone) { name in
+            VariableSearch(title: title, current: current, allowNone: allowNone, multiple: multiple) { names in
                 open = false
-                choose(name)
+                if multiple { chooseMany(names) } else if let n = names.first { choose(n) }
             }
         }
     }
@@ -95,7 +100,9 @@ struct VariableSearch: View {
     let title: String
     let current: String
     let allowNone: Bool
-    let choose: (String) -> Void
+    var multiple = false
+    /// the chosen names (one, or the list in `multiple` mode; [""] = "none")
+    let done: ([String]) -> Void
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -103,17 +110,21 @@ struct VariableSearch: View {
     @State private var results: [String] = []
     @State private var searching = false
     @State private var searchFailed = false
+    @State private var chosen: [String] = []
     @FocusState private var typing: Bool
+
+    private var q: String { query.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
         NavigationStack {
+            // ONE list whose sections never come and go: the keyboard keeps its focus while
+            // the rows below the field change (with .searchable and a List that switched
+            // between different sections, typing stopped after the first letter)
             List {
-                // a plain text field rather than .searchable: it keeps the keyboard focus while
-                // the results below change (typing more than one letter was unreliable before)
                 Section {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("gene, TP53.mut, clinical variable", text: $query)
+                        TextField(multiple ? "type a few letters, tap a name, type the next" : "gene, TP53.mut, clinical variable", text: $query)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .focused($typing)
                             .submitLabel(.search)
@@ -124,32 +135,52 @@ struct VariableSearch: View {
                         }
                         if searching { ProgressView().controlSize(.small) }
                     }
-                }
-                if allowNone, !current.isEmpty {
-                    Button("None (remove \(current))", role: .destructive) { choose("") }
-                }
-                if query.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Section("Sample and clinical annotation") {
-                        ForEach(model.meta?.clinicalColumns ?? [], id: \.self) { name in row(name) }
+                    if multiple, !chosen.isEmpty {
+                        ForEach(chosen, id: \.self) { name in
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+                                Text(name)
+                                Spacer()
+                                Button { chosen.removeAll { $0 == name } } label: { Image(systemName: "minus.circle").foregroundStyle(.secondary) }
+                                    .buttonStyle(.plain).accessibilityLabel("Remove \(name)")
+                            }
+                            .accessibilityIdentifier("chosen-\(name)")
+                        }
                     }
-                } else if searchFailed {
-                    Label("The search did not reach the server. Check the connection.", systemImage: "wifi.exclamationmark")
-                        .foregroundStyle(.secondary)
-                } else if results.isEmpty, !searching {
-                    Text("No variable of this dataset contains \u{201C}\(query)\u{201D}.").foregroundStyle(.secondary)
-                        .accessibilityIdentifier("search-empty")
-                } else {
-                    Section("\(results.count) match\(results.count == 1 ? "" : "es")\(results.count >= 60 ? " shown; type more to narrow" : "")") {
+                    if allowNone, !current.isEmpty, !multiple {
+                        Button("None (remove \(current))", role: .destructive) { done([""]) }
+                    }
+                } footer: {
+                    if multiple { Text(chosen.isEmpty ? "Each name you tap is kept here; \u{201C}Add\u{201D} puts them all on the Filter screen." : "\(chosen.count) chosen. Keep typing, or tap Add.") }
+                }
+                Section(header: Text(header)) {
+                    if q.isEmpty {
+                        ForEach(model.meta?.clinicalColumns ?? [], id: \.self) { name in row(name) }
+                    } else if searchFailed {
+                        Label("The search did not reach the server. Check the connection.", systemImage: "wifi.exclamationmark")
+                            .foregroundStyle(.secondary)
+                    } else if results.isEmpty, !searching {
+                        Text("No variable of this dataset contains \u{201C}\(q)\u{201D}.").foregroundStyle(.secondary)
+                            .accessibilityIdentifier("search-empty")
+                    } else {
                         ForEach(results, id: \.self) { name in row(name) }
                     }
                 }
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                if multiple {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(chosen.isEmpty ? "Add" : "Add \(chosen.count)") { done(chosen) }
+                            .disabled(chosen.isEmpty)
+                            .accessibilityIdentifier("add-chosen")
+                    }
+                }
+            }
             .onAppear { typing = true }
             .task(id: query) {
-                let q = query.trimmingCharacters(in: .whitespaces)
                 guard !q.isEmpty else { results = []; searching = false; return }
                 searching = true
                 // wait for a pause in the typing before asking the server
@@ -164,19 +195,33 @@ struct VariableSearch: View {
         }
     }
 
+    private var header: String {
+        if q.isEmpty { return "Sample and clinical annotation" }
+        if searchFailed || (results.isEmpty && !searching) { return "Search" }
+        return "\(results.count) match\(results.count == 1 ? "" : "es")\(results.count >= 60 ? " shown; type more to narrow" : "")"
+    }
+
     private func row(_ name: String) -> some View {
-        Button { choose(name) } label: {
+        Button {
+            if multiple {
+                if !chosen.contains(name) { chosen.append(name) }
+                query = ""
+                typing = true
+            } else {
+                done([name])
+            }
+        } label: {
             HStack {
                 Text(name).foregroundStyle(Color.primary)
                 Spacer()
-                if name == current { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                if multiple, chosen.contains(name) { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                else if name == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
             }
         }
+        .accessibilityIdentifier(name)
     }
 }
 
-/// A list of extra variables (more X, more Y, covariates): each with a remove button, then
-/// a row to add another.
 struct ExtraRows: View {
     let title: String
     let names: [String]
@@ -197,9 +242,8 @@ struct ExtraRows: View {
                 .accessibilityIdentifier("remove-\(name)")
             }
         }
-        VariablePicker(title: title, current: "", allowNone: false, placeholder: "add") { v in
-            Task { await model.add(v, to: slot) }
-        }
+        VariablePicker(title: title, current: "", allowNone: false, placeholder: "add", multiple: true,
+                       chooseMany: { names in Task { for v in names { await model.add(v, to: slot) } } })
     }
 }
 

@@ -245,10 +245,14 @@ final class AppModel {
         }
     }
 
-    func addFilterColumn(_ name: String) async {
-        await run("Loading \(name)") {
-            try await self.ensureLoaded([name])
-            self.filter.add(name)
+    func addFilterColumn(_ name: String) async { await addFilterColumns([name]) }
+    /// several at once: one request for all of them, then a panel each
+    func addFilterColumns(_ names: [String]) async {
+        let wanted = names.filter { !$0.isEmpty }
+        guard !wanted.isEmpty else { return }
+        await run("Loading \(wanted.joined(separator: ", "))") {
+            try await self.ensureLoaded(wanted)
+            for n in wanted where self.filter.columns[n] != nil { self.filter.add(n) }
         }
     }
     /// names matching `query`; nil when the search itself failed

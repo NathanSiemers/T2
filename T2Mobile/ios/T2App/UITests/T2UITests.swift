@@ -93,6 +93,31 @@ final class T2UITests: XCTestCase {
     /// the text of a label ("11,005 samples plotted; ...")
     private func text(of id: String) -> String { element(id).label }
 
+    /// the quick multi-pick: open the picker called `title`, then for each pair type the
+    /// letters and tap the name (the field clears for the next one), and finish with Add
+    private func pickMany(_ title: String, _ picks: [(search: String, choose: String)], shotName: String? = nil) {
+        let row = scrollTo("pick-\(title)")
+        row.tap()
+        let field = app.textFields["variable-search"]
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "no search field in the \(title) picker")
+        for (i, p) in picks.enumerated() {
+            field.tap()
+            field.typeText(p.search)
+            let result = app.buttons[p.choose]
+            if !result.waitForExistence(timeout: dataTimeout) {
+                shot("FAILED-search-\(p.search)")
+                XCTFail("search for \(p.search) did not offer \(p.choose)")
+                return
+            }
+            if i == picks.count - 1, let shotName { shot(shotName + "-results") }
+            result.tap()
+            XCTAssertTrue(element("chosen-\(p.choose)").waitForExistence(timeout: 10), "\(p.choose) was not kept in the list")
+        }
+        if let shotName { shot(shotName) }
+        element("add-chosen").tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "the picker did not close")
+    }
+
     /// open the picker called `title`, type `query`, choose `name`
     private func pick(_ title: String, search query: String, choose name: String, shotName: String? = nil) {
         let row = scrollTo("pick-\(title)")
@@ -323,7 +348,7 @@ final class T2UITests: XCTestCase {
         app.terminate()
         launch()
         waitFor("dataset-summary", "the dataset's sample count")
-        pick("Add to Y", search: "CD8B", choose: "CD8B")
+        pickMany("Add to Y", [("CD8B", "CD8B")])
         pick("Remove influences of", search: "PTPRC", choose: "PTPRC")
         shot("46-select-combined-and-adjusted")
         openTab("Plot")
@@ -349,6 +374,14 @@ final class T2UITests: XCTestCase {
             openTab("Plot")
             waitFor("plot-count", "the plot's sample count")
             shot("32-plot-tcgatargetgtex")
+            // after the switch, the Filter tab's picker must search THIS dataset's names:
+            // type a few letters, tap, type the next, then one Add for both
+            openTab("Filter")
+            waitFor("filter-count", "the filter's sample count")
+            pickMany("Add a filter column", [("CD8", "CD8B"), ("GZM", "GZMB")], shotName: "32a-filter-two-picks-after-switch")
+            XCTAssertTrue(element("filter-remove-CD8B").waitForExistence(timeout: dataTimeout), "CD8B did not get a filter panel")
+            XCTAssertTrue(element("filter-remove-GZMB").waitForExistence(timeout: dataTimeout), "GZMB did not get a filter panel")
+            shot("32a2-filter-panels-after-switch")
             // one collection of that dataset as a data source of its own: fewer samples, its own cohorts
             openTab("Select")
             scrollTo("dataset-picker").tap()

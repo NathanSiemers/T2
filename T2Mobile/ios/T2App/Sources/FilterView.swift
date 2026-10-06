@@ -40,9 +40,8 @@ struct FilterView: View {
                             .accessibilityIdentifier("filter-none")
                     }
                 }
-                VariablePicker(title: "Add a filter column", current: "", allowNone: false) { name in
-                    Task { await model.addFilterColumn(name) }
-                }
+                VariablePicker(title: "Add a filter column", current: "", allowNone: false, placeholder: "none", multiple: true,
+                               chooseMany: { names in Task { await model.addFilterColumns(names) } })
                 if model.filter.filters.contains(where: \.isActive) {
                     Button("Remove all restrictions", role: .destructive) { model.resetFilters() }
                         .accessibilityIdentifier("filter-reset")

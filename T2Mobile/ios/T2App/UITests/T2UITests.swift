@@ -49,6 +49,16 @@ final class T2UITests: XCTestCase {
         }
     }
 
+    /// true once the condition holds, false if it does not within the timeout
+    private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        return condition()
+    }
+
     /// scroll down until the element is on screen
     @discardableResult
     private func scrollTo(_ id: String, maxSwipes: Int = 10) -> XCUIElement {
@@ -167,7 +177,13 @@ final class T2UITests: XCTestCase {
         element("plot-fullscreen").tap()
         waitFor("plot-full", "the full-screen plot", timeout: 20)
         shot("02b-plot-full-screen")
-        element("plot-fullscreen-close").tap()
+        // the close button fades out for clean screenshots and returns at a touch
+        let close = element("plot-fullscreen-close")
+        XCTAssertTrue(waitUntil(timeout: 6) { !close.exists || !close.isHittable }, "the close button did not fade out")
+        shot("02c-plot-full-screen-clean")
+        element("plot-full").tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 3), "the close button did not come back at a touch")
+        close.tap()
         waitFor("plot-count", "the plot's sample count")
         app.swipeUp(velocity: .slow)
         shot("03-plot-statistics-and-counts")

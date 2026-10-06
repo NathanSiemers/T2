@@ -138,10 +138,14 @@ struct PlotView: View {
     }
 }
 
-/// Only the plot, as large as the screen allows (turn the phone for a wide figure).
+/// Only the plot, as large as the screen allows (turn the phone for a wide figure). The
+/// close button fades out after a moment so that a screenshot shows the plot alone, and
+/// comes back at the next touch.
 struct FullScreenPlot: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @State private var showClose = true
+    @State private var hide: Task<Void, Never>?
 
     var body: some View {
         let scene = model.scene(fitLine: model.style.showFit)
@@ -157,7 +161,24 @@ struct FullScreenPlot: View {
                     .padding(12).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .opacity(showClose ? 1 : 0)
+            .animation(.easeInOut(duration: 0.4), value: showClose)
             .accessibilityLabel("Close").accessibilityIdentifier("plot-fullscreen-close")
+            .accessibilityHidden(!showClose)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { reveal() }
+        .onAppear { reveal() }
+        .onDisappear { hide?.cancel() }
+    }
+
+    /// show the close button, and hide it again after a short while
+    private func reveal() {
+        showClose = true
+        hide?.cancel()
+        hide = Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            if !Task.isCancelled { showClose = false }
         }
     }
 }

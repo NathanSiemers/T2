@@ -64,7 +64,7 @@ func main() {
 	s := &server{datasets: map[string]*Dataset{}, started: time.Now()}
 	s.contact = contactConfigFromEnv()
 	if s.contact.dir != "" {
-		log.Printf("contact form: messages are kept in %s; mail relay %s", s.contact.dir, map[bool]string{true: "configured", false: "not configured"}[s.contact.smtpHost != ""])
+		log.Printf("contact form: messages are kept in %s", s.contact.dir)
 	}
 	// same discovery rule as discover_datasets() in dataset_registry.R
 	add := func(name, path string) {

@@ -101,9 +101,10 @@ cached.
 
 `POST /v1/contact` with JSON `{"name","affiliation","email","message","started","app"}`
 (`started` = seconds since the form appeared; `website` is a honeypot that must stay
-empty). The server keeps every message in an append-only file and, when an SMTP relay is
-configured (`T2_SMTP_HOST/PORT/USER/PASSWORD`, `T2_CONTACT_FROM`, `T2_CONTACT_TO`), forwards
-it by mail; the recipient's address never reaches a client. Limits: 16 KB body, 200-character
+empty). The server keeps every message in an append-only file (`T2_CONTACT_DIR`), the only
+thing it writes; delivery to the owner is a cron job on the host that mails new lines to the
+local user and keeps a readable `inbox.md` beside the file (`~/bin/t2-contact-mail.sh`). No
+address or credential is in the app or the service. Limits: 16 KB body, 200-character
 name and affiliation, 4,000-character message, valid UTF-8, no control characters, 5
 messages per client address and 200 per day, plus Nginx's 1 request per minute per address.
 Answers: `200 {"ok":true}` (also for a dropped bot), `400`, `415`, `429`, `503` (store full

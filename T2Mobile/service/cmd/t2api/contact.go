@@ -1,23 +1,23 @@
 package main
 
 // The contact form of the iPhone app ("Private deployments" in About). The owner's address
-// never reaches a client: the app POSTs the message here, the server keeps it in an
-// append-only file and, when an SMTP relay is configured, forwards it by mail.
+// never reaches a client: the app POSTs the message here and the server keeps it in an
+// append-only file (one JSON object per line). Delivery to the owner happens outside this
+// service: a cron job on the host reads the file and mails new messages to the local user
+// (~/bin/t2-contact-mail.sh), so no mail credential exists anywhere.
 //
 // Defences: body size limit; every field length-limited, valid UTF-8, control characters
-// removed (newlines allowed only in the message); nothing from the client is ever placed in
-// a mail header except a validated address in Reply-To; a honeypot field and a minimum fill
-// time catch simple bots (they are told "ok" and dropped); per-client and global rate limits
-// in addition to Nginx's; the store stops accepting at a size cap. Responses are generic.
+// removed (newlines allowed only in the message); the address must match a strict pattern;
+// a honeypot field and a minimum fill time catch simple bots (they are told "ok" and
+// dropped); per-client and global rate limits in addition to Nginx's; the store stops
+// accepting at a size cap. Responses are generic.
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
-	"net/smtp"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,21 +29,11 @@ import (
 )
 
 type contactConfig struct {
-	dir      string // where messages are appended (one JSON object per line); "" = feature off
-	to       string // recipient; never sent to clients
-	from     string // envelope / From: address for the relay
-	smtpHost string
-	smtpPort string
-	smtpUser string
-	smtpPass string
+	dir string // where messages are appended (one JSON object per line); "" = feature off
 }
 
 func contactConfigFromEnv() contactConfig {
-	return contactConfig{
-		dir: os.Getenv("T2_CONTACT_DIR"), to: os.Getenv("T2_CONTACT_TO"), from: os.Getenv("T2_CONTACT_FROM"),
-		smtpHost: os.Getenv("T2_SMTP_HOST"), smtpPort: os.Getenv("T2_SMTP_PORT"),
-		smtpUser: os.Getenv("T2_SMTP_USER"), smtpPass: os.Getenv("T2_SMTP_PASSWORD"),
-	}
+	return contactConfig{dir: os.Getenv("T2_CONTACT_DIR")}
 }
 
 const (
@@ -124,7 +114,6 @@ type contactMessage struct {
 	Email       string `json:"email"`
 	Message     string `json:"message"`
 	App         string `json:"app,omitempty"`
-	Mailed      bool   `json:"mailed"`
 }
 
 // clientIP: the address Nginx saw (X-Forwarded-For is set by our own proxy; the direct
@@ -193,15 +182,12 @@ func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusTooManyRequests, "too many messages; please try again tomorrow")
 		return
 	}
-	m.Mailed = mailContact(cfg, m)
 	if err := storeContact(cfg.dir, m); err != nil {
 		log.Printf("contact: could not store a message: %v", err)
-		if !m.Mailed {
-			s.fail(w, http.StatusServiceUnavailable, "the message could not be kept; please try again later")
-			return
-		}
+		s.fail(w, http.StatusServiceUnavailable, "the message could not be kept; please try again later")
+		return
 	}
-	log.Printf("contact: message from %s (%s), mailed=%v", m.Name, ip, m.Mailed)
+	log.Printf("contact: message from %s (%s)", m.Name, ip)
 	ok()
 }
 
@@ -218,90 +204,4 @@ func storeContact(dir string, m contactMessage) error {
 	b, _ := json.Marshal(m) // Marshal escapes everything; one line per message
 	_, err = f.Write(append(b, '\n'))
 	return err
-}
-
-// mailContact forwards the message through the configured relay (STARTTLS + auth). Every
-// header value is our own text or a validated address; the client's text is only in the body.
-func mailContact(cfg contactConfig, m contactMessage) bool {
-	if cfg.smtpHost == "" || cfg.to == "" || cfg.from == "" {
-		return false
-	}
-	port := cfg.smtpPort
-	if port == "" {
-		port = "587"
-	}
-	subject := "T2 contact form: " + m.Name
-	if m.Affiliation != "" {
-		subject += " (" + m.Affiliation + ")"
-	}
-	body := fmt.Sprintf("Name: %s\r\nAffiliation: %s\r\nEmail: %s\r\nTime: %s\r\nFrom app: %s\r\nClient address: %s\r\n\r\n%s\r\n",
-		m.Name, m.Affiliation, m.Email, m.Time, m.App, m.IP, strings.ReplaceAll(m.Message, "\n", "\r\n"))
-	msg := "From: T2 contact form <" + cfg.from + ">\r\n" +
-		"To: " + cfg.to + "\r\n" +
-		"Reply-To: " + m.Email + "\r\n" + // validated by emailPattern: no spaces, no CR/LF
-		"Subject: " + mimeSafe(subject) + "\r\n" +
-		"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + body
-	addr := net.JoinHostPort(cfg.smtpHost, port)
-	done := make(chan error, 1)
-	go func() {
-		c, err := smtp.Dial(addr)
-		if err != nil {
-			done <- err
-			return
-		}
-		defer c.Close()
-		if err := c.StartTLS(&tls.Config{ServerName: cfg.smtpHost}); err != nil {
-			done <- err
-			return
-		}
-		if cfg.smtpUser != "" {
-			if err := c.Auth(smtp.PlainAuth("", cfg.smtpUser, cfg.smtpPass, cfg.smtpHost)); err != nil {
-				done <- err
-				return
-			}
-		}
-		if err := c.Mail(cfg.from); err != nil {
-			done <- err
-			return
-		}
-		if err := c.Rcpt(cfg.to); err != nil {
-			done <- err
-			return
-		}
-		wc, err := c.Data()
-		if err != nil {
-			done <- err
-			return
-		}
-		if _, err := wc.Write([]byte(msg)); err != nil {
-			done <- err
-			return
-		}
-		if err := wc.Close(); err != nil {
-			done <- err
-			return
-		}
-		done <- c.Quit()
-	}()
-	select {
-	case err := <-done:
-		if err != nil {
-			log.Printf("contact: mail not sent: %v", err)
-			return false
-		}
-		return true
-	case <-time.After(15 * time.Second):
-		log.Printf("contact: mail not sent: timeout talking to %s", addr)
-		return false
-	}
-}
-
-// mimeSafe keeps a subject to plain ASCII on one line (non-ASCII is dropped; the body holds the original)
-func mimeSafe(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r < 32 || r > 126 {
-			return -1
-		}
-		return r
-	}, s)
 }

@@ -110,12 +110,21 @@ final class T2UITests: XCTestCase {
                 return
             }
             if i == picks.count - 1, let shotName { shot(shotName + "-results") }
+            var swipes = 0
+            while !result.isHittable && swipes < 6 { app.swipeUp(velocity: .slow); swipes += 1 }   // under the keyboard on a small screen
             result.tap()
             XCTAssertTrue(element("chosen-\(p.choose)").waitForExistence(timeout: 10), "\(p.choose) was not kept in the list")
         }
         if let shotName { shot(shotName) }
         element("add-chosen").tap()
         XCTAssertTrue(row.waitForExistence(timeout: 20), "the picker did not close")
+        sleep(3)
+        if let shotName { shot(shotName + "-after-add") }
+    }
+    /// any text on screen that reports a failure (the model's status line)
+    private var failureText: String {
+        let t = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'failed'")).firstMatch
+        return t.exists ? t.label : "(no failure text on screen)"
     }
 
     /// open the picker called `title`, type `query`, choose `name`
@@ -349,7 +358,7 @@ final class T2UITests: XCTestCase {
         launch()
         waitFor("dataset-summary", "the dataset's sample count")
         pickMany("Add to Y", [("CD8B", "CD8B")])
-        pick("Remove influences of", search: "PTPRC", choose: "PTPRC")
+        pickMany("Remove influences of", [("PTPRC", "PTPRC")])
         shot("46-select-combined-and-adjusted")
         openTab("Plot")
         waitFor("plot-count", "the plot's sample count")
@@ -379,8 +388,10 @@ final class T2UITests: XCTestCase {
             openTab("Filter")
             waitFor("filter-count", "the filter's sample count")
             pickMany("Add a filter column", [("CD8", "CD8B"), ("GZM", "GZMB")], shotName: "32a-filter-two-picks-after-switch")
-            XCTAssertTrue(element("filter-remove-CD8B").waitForExistence(timeout: dataTimeout), "CD8B did not get a filter panel")
-            XCTAssertTrue(element("filter-remove-GZMB").waitForExistence(timeout: dataTimeout), "GZMB did not get a filter panel")
+            if !element("filter-remove-CD8B").waitForExistence(timeout: dataTimeout) {
+                shot("FAILED-no-filter-panel"); XCTFail("CD8B did not get a filter panel; \(failureText); \(text(of: "filter-count"))")
+            }
+            XCTAssertTrue(element("filter-remove-GZMB").waitForExistence(timeout: 20), "GZMB did not get a filter panel; \(failureText)")
             shot("32a2-filter-panels-after-switch")
             // one collection of that dataset as a data source of its own: fewer samples, its own cohorts
             openTab("Select")

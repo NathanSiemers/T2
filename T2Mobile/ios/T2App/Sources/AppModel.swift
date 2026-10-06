@@ -252,7 +252,8 @@ final class AppModel {
         guard !wanted.isEmpty else { return }
         await run("Loading \(wanted.joined(separator: ", "))") {
             try await self.ensureLoaded(wanted)
-            for n in wanted where self.filter.columns[n] != nil { self.filter.add(n) }
+            // at the top of the Filter screen, where they are seen (the cohort panel is long)
+            for n in wanted.reversed() where self.filter.columns[n] != nil { self.filter.add(n, first: true) }
         }
     }
     /// names matching `query` (the best 200: exact, then starting with, then containing the

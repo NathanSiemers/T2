@@ -104,10 +104,11 @@ public struct CrossFilter: Sendable {
     public mutating func load(_ cols: [Column]) {
         for c in cols where c.count == sampleCount { columns[c.name] = c }
     }
-    /// add a column to the filter set (no restriction yet); no-op if already there or unknown
-    public mutating func add(_ name: String) {
+    /// add a column to the filter set (no restriction yet); no-op if already there or unknown.
+    /// `first`: put it at the top of the list (a column the user just asked for), else at the end
+    public mutating func add(_ name: String, first: Bool = false) {
         guard columns[name] != nil, !filters.contains(where: { $0.column == name }) else { return }
-        filters.append(ColumnFilter(column: name))
+        if first { filters.insert(ColumnFilter(column: name), at: 0) } else { filters.append(ColumnFilter(column: name)) }
     }
     /// removing a column removes its filter completely
     public mutating func remove(_ name: String) { filters.removeAll { $0.column == name } }

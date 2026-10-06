@@ -307,7 +307,8 @@ struct SelectView: View {
                 VariablePicker(title: "Color", current: model.color) { v in Task { await model.setVariable(.color, to: v) } }
                 VariablePicker(title: "Size", current: model.size) { v in Task { await model.setVariable(.size, to: v) } }
                 VariablePicker(title: "Graph for each", current: model.facet) { v in Task { await model.setVariable(.facet, to: v) } }
-                if let levels = model.filter.columns["cohort"]?.levels, !levels.isEmpty {
+                if !model.availableCohorts.isEmpty {
+                    let levels = model.availableCohorts
                     NavigationLink {
                         CohortChooser()
                     } label: {

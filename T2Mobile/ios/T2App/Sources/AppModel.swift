@@ -77,9 +77,12 @@ final class AppModel {
         let label: String
         var id: String { preset.map { "\(dataset)|\($0)" } ?? dataset }
     }
-    /// presets offered as data sources, by dataset (labels of its default_filters presets)
+    /// presets offered as data sources, by dataset (labels of its default_filters presets).
+    /// Not "TCGA tumors" of TCGA-TARGET-GTEx: the TCGA data belong to the TCGA dataset
+    /// (tcga.db), which has the full annotation; the Toil re-processing is there for
+    /// comparisons with GTEx and TARGET within one pipeline.
     static let subsetSources: [String: [String]] = [
-        "tcgatargetgtex": ["GTEx normal tissues", "TARGET pediatric cancers", "TCGA tumors"],
+        "tcgatargetgtex": ["GTEx normal tissues", "TARGET pediatric cancers"],
     ]
     var sources: [DataSource] {
         datasets.filter { !$0.isDemo }.flatMap { d -> [DataSource] in

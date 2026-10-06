@@ -53,6 +53,10 @@ if [ "$what" = all ] || [ "$what" = abuse ]; then
     chk "300-character probe name"        "$(code "$u/v1/TCGA/values?probes=$(head -c 300 /dev/zero | tr '\0' a)")" 400
     chk "POST is not allowed"             "$(code -X POST "$u/v1/TCGA/values?probes=CD8A")" 405
     chk "unknown path"                    "$(code "$u/v1/TCGA/../../data/tcga.db")" 404
+    first() { curl -s "$u/v1/TCGA/probes?q=$1&limit=3" | sed 's/.*"probes":\[\([^]]*\)\].*/\1/' | tr -d '"' | cut -d, -f1; }
+    chk "search ranks the exact name first (T)"    "$(first T)" T
+    chk "search ranks the exact name first (MET)"  "$(first MET)" MET
+    chk "search ranks the exact name first (CD8B)" "$(first CD8B)" CD8B
     chk "still healthy afterwards"        "$(code "$u/healthz")" 200
     chk "probes table still there"        "$(code "$u/v1/TCGA/values?probes=CD8A")" 200
     etag=$(curl -s -D - -o /dev/null "$u/v1/TCGA/values?probes=CD8A" | tr -d '\r' | awk 'tolower($1)=="etag:" {print $2}')

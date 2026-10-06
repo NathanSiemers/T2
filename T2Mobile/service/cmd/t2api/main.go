@@ -27,6 +27,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"sync"
+	"slices"
 )
 
 const (
@@ -288,7 +289,11 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
 		limit = min(v, maxSearchLimit)
 	}
-	var starts, contains []string
+	// ranking: the exact name first, then names that start with the query, then names that
+	// contain it; within a group the shorter name first, then alphabetical. So "T", "MET" or
+	// "CD8B" are found however many names contain those letters (table order used to decide
+	// which 60 of 500 matches were shown, and the exact match could be left out).
+	var exact, starts, contains []string
 	total := 0
 	for i, low := range d.probeLower {
 		idx := strings.Index(low, q)
@@ -296,13 +301,24 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 			continue
 		}
 		total++
-		if idx == 0 && len(starts) < limit {
+		switch {
+		case low == q:
+			exact = append(exact, d.probeNames[i])
+		case idx == 0:
 			starts = append(starts, d.probeNames[i])
-		} else if idx > 0 && len(contains) < limit {
+		default:
 			contains = append(contains, d.probeNames[i])
 		}
 	}
-	res := append(starts, contains...)
+	byLength := func(a, b string) int {
+		if len(a) != len(b) {
+			return len(a) - len(b)
+		}
+		return strings.Compare(a, b)
+	}
+	slices.SortFunc(starts, byLength)
+	slices.SortFunc(contains, byLength)
+	res := append(append(exact, starts...), contains...)
 	if len(res) > limit {
 		res = res[:limit]
 	}

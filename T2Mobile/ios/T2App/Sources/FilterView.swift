@@ -78,7 +78,7 @@ struct FilterCard: View {
             case .numeric(let v):
                 numeric(v, h, f)
             case .categorical(let levels, _):
-                categorical(levels, h, f)
+                categorical(levels, model.filter.levelsPresent(name), h, f)
             }
             if col.missingCount > 0 {
                 Toggle("Include samples with no value (\(col.missingCount.formatted()))",
@@ -116,17 +116,20 @@ struct FilterCard: View {
         }
     }
 
-    @ViewBuilder private func categorical(_ levels: [String], _ h: Histogram, _ f: ColumnFilter) -> some View {
-        let chosen: Set<String> = Self.chosen(f, levels)
+    /// `present`: indices of the levels that exist in the chosen data source; the others are
+    /// not shown (nothing to include or exclude)
+    @ViewBuilder private func categorical(_ levels: [String], _ present: [Int], _ h: Histogram, _ f: ColumnFilter) -> some View {
+        let offered = present.map { levels[$0] }
+        let chosen: Set<String> = Self.chosen(f, levels).intersection(offered)
         let top = max(1, h.shown.max() ?? 1)
         let limit = 8
-        let visible = showAllLevels || levels.count <= limit + 2 ? Array(levels.indices) : Array(levels.indices.prefix(limit))
+        let visible = showAllLevels || present.count <= limit + 2 ? present : Array(present.prefix(limit))
         HStack {
             Button("All") { model.filter.set(name, value: nil) }
             Text("\u{00B7}").foregroundStyle(.secondary)
             Button("None") { model.filter.set(name, value: .levels([])) }
             Spacer()
-            Text("\(chosen.count) of \(levels.count) chosen").font(.footnote).foregroundStyle(.secondary)
+            Text("\(chosen.count) of \(offered.count) chosen").font(.footnote).foregroundStyle(.secondary)
         }
         .buttonStyle(.borderless)
         .font(.subheadline)
@@ -135,12 +138,12 @@ struct FilterCard: View {
                      top: top, isOn: chosen.contains(levels[i])) {
                 var s = chosen
                 if s.contains(levels[i]) { s.remove(levels[i]) } else { s.insert(levels[i]) }
-                model.filter.set(name, value: s.count == levels.count ? nil : .levels(s))
+                model.filter.set(name, value: s.count == offered.count ? nil : .levels(s))
             }
         }
-        if visible.count < levels.count {
-            Button("Show all \(levels.count) values") { showAllLevels = true }.font(.subheadline)
-        } else if showAllLevels, levels.count > limit + 2 {
+        if visible.count < present.count {
+            Button("Show all \(present.count) values") { showAllLevels = true }.font(.subheadline)
+        } else if showAllLevels, present.count > limit + 2 {
             Button("Show fewer") { showAllLevels = false }.font(.subheadline)
         }
     }

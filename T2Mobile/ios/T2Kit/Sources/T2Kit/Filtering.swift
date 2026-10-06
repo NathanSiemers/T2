@@ -119,6 +119,17 @@ public struct CrossFilter: Sendable {
     }
     public func filter(_ name: String) -> ColumnFilter? { filters.first { $0.column == name } }
 
+    /// the indices of the levels of a categorical column that have at least one sample in
+    /// the universe (base mask): a level of another part of a split dataset ("TCGA" in the
+    /// GTEx part) is not offered as a filter choice, it would be a no-op
+    public func levelsPresent(_ name: String) -> [Int] {
+        guard let col = columns[name], case .categorical(let levels, let codes) = col.data else { return [] }
+        let b = base()
+        var seen = [Bool](repeating: false, count: levels.count)
+        for i in 0..<min(codes.count, sampleCount) where b[i] && codes[i] >= 0 { seen[codes[i]] = true }
+        return levels.indices.filter { seen[$0] }
+    }
+
     private func base() -> Mask { baseMask ?? Mask(repeating: true, count: sampleCount) }
 
     /// samples passing the universe and every filter

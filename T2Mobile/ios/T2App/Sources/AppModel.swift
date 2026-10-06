@@ -139,7 +139,25 @@ final class AppModel {
     }
 
     /// switch dataset: everything about the previous one is dropped (its variables may not exist here)
+    /// what the user had set up before a dataset switch: kept where the new dataset has the names
+    private struct Carried {
+        var x = "", y = "", color = "", size = "", facet = ""
+        var xMore: [String] = [], yMore: [String] = [], condition: [String] = []
+        var conditionOn = PlotRequest.ConditionTarget.y
+        var zscoreY = false, flip = false, waterfall = false
+        var filters: [ColumnFilter] = []
+        var names: [String] { [x, y, color, size, facet] + xMore + yMore + condition + filters.map(\.column) }
+    }
+
     func open(_ name: String, launch: Bool = false, preset: String? = nil) async throws {
+        // selections and filters are sticky across a switch: everything whose name the new
+        // dataset has is kept (filter levels are kept where they exist too); the rest falls
+        // back to the new dataset's defaults
+        var carried: Carried? = nil
+        if meta != nil, !launch {
+            carried = Carried(x: x, y: y, color: color, size: size, facet: facet, xMore: xMore, yMore: yMore, condition: condition,
+                              conditionOn: conditionOn, zscoreY: zscoreY, flip: flip, waterfall: waterfall, filters: filter.filters)
+        }
         var m = try await api.meta(name)
         var clin: Clinical
         do {
@@ -173,6 +191,19 @@ final class AppModel {
         flip = false
         waterfall = false
         applyPresets()
+        if let c = carried {
+            // one request for every carried name; the ones the dataset does not have come back
+            // missing (a failure here only means nothing is carried over)
+            try? await ensureLoaded(c.names)
+            let has = { (n: String) in !n.isEmpty && self.column(n) != nil }
+            if has(c.x) { x = c.x }
+            if has(c.y) { y = c.y }
+            if has(c.color) || c.color.isEmpty { color = c.color }
+            if has(c.size) || c.size.isEmpty { size = c.size }
+            if has(c.facet) || c.facet.isEmpty { facet = c.facet }
+            xMore = c.xMore.filter(has); yMore = c.yMore.filter(has); condition = c.condition.filter(has)
+            conditionOn = c.conditionOn; zscoreY = c.zscoreY; flip = c.flip; waterfall = c.waterfall
+        }
         try await ensureLoaded([x, y, color, size, facet])
         // a variable the dataset does not have is not kept as a selection
         if column(x) == nil { x = "" }
@@ -181,6 +212,22 @@ final class AppModel {
         if column(size) == nil { size = "" }
         if column(facet) == nil { facet = "" }
         for v in [x, y, color, size] { filter.add(v) }     // plotted variables are filterable from the start
+        if let c = carried {
+            // the filter panels and their settings, where the names and the levels exist
+            for f in c.filters where column(f.column) != nil {
+                filter.add(f.column)
+                switch f.value {
+                case .levels(let s)?:
+                    let present = Set(filter.levelsPresent(f.column).map { filter.columns[f.column]!.levels![$0] })
+                    let kept = s.intersection(present)
+                    filter.set(f.column, value: kept.isEmpty || kept == present ? nil : .levels(kept), includeMissing: f.includeMissing)
+                case .range(let lo, let hi)?:
+                    filter.set(f.column, value: .range(lo: lo, hi: hi), includeMissing: f.includeMissing)
+                case nil:
+                    filter.set(f.column, value: nil, includeMissing: f.includeMissing)
+                }
+            }
+        }
     }
 
     func select(dataset name: String) async {

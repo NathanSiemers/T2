@@ -214,4 +214,13 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(APIClient.maxProbesPerRequest, 100)
         XCTAssertEqual("\(APIClient.APIError.versionChanged)", "the database on the server was updated")
     }
+
+    func testLevelsPresentFollowTheUniverse() {
+        var cf = CrossFilter(sampleCount: 6)
+        cf.load([Column(name: "study", type: "clinical", data: .categorical(levels: ["GTEX", "TARGET", "TCGA"], codes: [0, 0, 1, 2, 2, -1]))])
+        XCTAssertEqual(cf.levelsPresent("study"), [0, 1, 2])
+        cf.baseMask = [true, true, false, false, false, true]        // the GTEx part
+        XCTAssertEqual(cf.levelsPresent("study"), [0])
+        XCTAssertEqual(cf.levelsPresent("nope"), [])
+    }
 }

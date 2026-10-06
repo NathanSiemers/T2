@@ -399,8 +399,10 @@ final class T2UITests: XCTestCase {
             scrollTo("filter-remove-CD8B", maxSwipes: 25)
             scrollTo("filter-remove-GZMB", maxSwipes: 25)
             shot("32a2-filter-panels-after-switch")
-            // one collection of that dataset as a data source of its own: fewer samples, its own cohorts
+            // Y set by hand before the switch: it must survive it (the gene exists in the part)
             openTab("Select")
+            pick("Y", search: "CD19", choose: "CD19")
+            // one collection of that dataset as a data source of its own: fewer samples, its own cohorts
             scrollTo("dataset-picker").tap()
             let gtexOnly = app.buttons["TCGA-TARGET-GTEx (Toil): GTEx normal tissues"]
             XCTAssertTrue(gtexOnly.waitForExistence(timeout: 10), "the GTEx collection is not offered as a data set")
@@ -409,10 +411,20 @@ final class T2UITests: XCTestCase {
             expectation(for: narrowed, evaluatedWith: element("dataset-summary"))
             waitForExpectations(timeout: dataTimeout)
             shot("32b-select-gtex-only")
+            XCTAssertTrue(element("pick-Y").label.contains("CD19"), "Y did not survive the switch: \(element("pick-Y").label)")
             openTab("Plot")
             waitFor("plot-count", "the plot's sample count")
             XCTAssertTrue(text(of: "plot-count").contains("7,429"), text(of: "plot-count"))
             shot("32c-plot-gtex-only")
+            // the filter panels came along, and the study panel offers only the levels of this part
+            openTab("Filter")
+            waitFor("filter-count", "the filter's sample count")
+            scrollTo("filter-remove-CD8B", maxSwipes: 25)
+            scrollTo("filter-remove-GZMB", maxSwipes: 25)
+            scrollTo("level-GTEX", maxSwipes: 30)
+            shot("32d-filter-gtex-only-study-levels")
+            XCTAssertFalse(element("level-TCGA").exists, "TCGA is offered as a study level inside the GTEx part")
+            XCTAssertFalse(element("level-TARGET").exists, "TARGET is offered as a study level inside the GTEx part")
         } else {
             shot("ISSUE-dataset-menu")
             XCTFail("the dataset menu did not open")

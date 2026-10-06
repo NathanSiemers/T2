@@ -178,6 +178,17 @@ final class T2UITests: XCTestCase {
         element("about").tap()
         XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 20), "the About sheet did not open")
         shot("04b-about")
+        // the contact form: Send stays disabled until name, a valid address and a message are there
+        scrollTo("contact-button").tap()
+        XCTAssertTrue(element("contact-send").waitForExistence(timeout: 20), "no contact form")
+        XCTAssertFalse(element("contact-send").isEnabled)
+        element("contact-name").tap(); element("contact-name").typeText("Test Person")
+        element("contact-email").tap(); element("contact-email").typeText("not-an-address")
+        element("contact-message").tap(); element("contact-message").typeText("Just checking the form.")
+        XCTAssertFalse(element("contact-send").isEnabled, "Send enabled with an invalid address")
+        shot("04b2-contact-form")
+        app.buttons["Cancel"].tap()          // nothing is sent by the tests
+        XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 10))
         app.swipeUp(velocity: .slow)
         shot("04c-about-data-types")
         app.buttons["Done"].tap()

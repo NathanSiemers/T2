@@ -57,6 +57,13 @@ if [ "$what" = all ] || [ "$what" = abuse ]; then
     chk "search ranks the exact name first (T)"    "$(first T)" T
     chk "search ranks the exact name first (MET)"  "$(first MET)" MET
     chk "search ranks the exact name first (CD8B)" "$(first CD8B)" CD8B
+    cpost() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H 'Content-Type: application/json' -X POST "$u/v1/contact" --data "$1"; }
+    chk "contact: honeypot filled is swallowed"       "$(cpost '{"name":"Bot","email":"b@x.org","message":"spam","website":"x","started":9}')" 200
+    chk "contact: bad email address"                  "$(cpost '{"name":"A","email":"nope","message":"m","started":9}')" 400
+    chk "contact: unknown field"                      "$(cpost '{"name":"A","email":"a@b.cc","message":"m","started":9,"x":1}')" 400
+    chk "contact: not JSON"                           "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$u/v1/contact" --data 'x=1')" 415
+    chk "contact: oversize body"                      "$(cpost "{\"name\":\"A\",\"email\":\"a@b.cc\",\"started\":9,\"message\":\"$(head -c 20000 /dev/zero | tr '\0' m)\"}")" 400
+    chk "contact: GET is not allowed"                 "$(code "$u/v1/contact")" 405
     chk "still healthy afterwards"        "$(code "$u/healthz")" 200
     chk "probes table still there"        "$(code "$u/v1/TCGA/values?probes=CD8A")" 200
     etag=$(curl -s -D - -o /dev/null "$u/v1/TCGA/values?probes=CD8A" | tr -d '\r' | awk 'tolower($1)=="etag:" {print $2}')

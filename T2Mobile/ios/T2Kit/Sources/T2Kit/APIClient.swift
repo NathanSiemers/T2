@@ -66,6 +66,34 @@ public struct APIClient: Sendable {
         return (columns, missing)
     }
 
+    /// A message to the owner through the server (the recipient's address stays on the
+    /// server). `started`: seconds since the form appeared (a bot deterrent on the server).
+    public struct ContactMessage: Encodable, Sendable {
+        public var name: String
+        public var affiliation: String
+        public var email: String
+        public var message: String
+        public var started: Double
+        public var app: String
+        public init(name: String, affiliation: String, email: String, message: String, started: Double, app: String) {
+            self.name = name; self.affiliation = affiliation; self.email = email; self.message = message; self.started = started; self.app = app
+        }
+    }
+    public func sendContact(_ m: ContactMessage) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("v1/contact"))
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try JSONEncoder().encode(m)
+        let (data, response) = try await fetch(request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport("no HTTP response") }
+        guard http.statusCode == 200 else {
+            let body = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ?? ""
+            throw APIError.http(http.statusCode, body)
+        }
+    }
+
     static let decoder: JSONDecoder = {
         let d = JSONDecoder()
         d.keyDecodingStrategy = .convertFromSnakeCase

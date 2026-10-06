@@ -97,6 +97,18 @@ Names are checked against the dataset's variable list (`allprobes`, plus the cli
 columns) in memory before anything else: a made-up name costs no query and is never
 cached.
 
+## Contact form
+
+`POST /v1/contact` with JSON `{"name","affiliation","email","message","started","app"}`
+(`started` = seconds since the form appeared; `website` is a honeypot that must stay
+empty). The server keeps every message in an append-only file and, when an SMTP relay is
+configured (`T2_SMTP_HOST/PORT/USER/PASSWORD`, `T2_CONTACT_FROM`, `T2_CONTACT_TO`), forwards
+it by mail; the recipient's address never reaches a client. Limits: 16 KB body, 200-character
+name and affiliation, 4,000-character message, valid UTF-8, no control characters, 5
+messages per client address and 200 per day, plus Nginx's 1 request per minute per address.
+Answers: `200 {"ok":true}` (also for a dropped bot), `400`, `415`, `429`, `503` (store full
+or unwritable), `404` when the form is not enabled (`T2_CONTACT_DIR` unset).
+
 ## Replacing a database (operators)
 
 The service loads sample order, key maps and clinical columns from a file once, and every

@@ -46,6 +46,8 @@ type server struct {
 	nReq     atomic.Int64
 	nErr     atomic.Int64
 	stopOnce sync.Once
+	contact      contactConfig
+	contactLimit contactLimiter
 }
 
 func main() {
@@ -60,6 +62,10 @@ func main() {
 	debug.SetMemoryLimit(int64(*memMB) << 20)
 
 	s := &server{datasets: map[string]*Dataset{}, started: time.Now()}
+	s.contact = contactConfigFromEnv()
+	if s.contact.dir != "" {
+		log.Printf("contact form: messages are kept in %s; mail relay %s", s.contact.dir, map[bool]string{true: "configured", false: "not configured"}[s.contact.smtpHost != ""])
+	}
 	// same discovery rule as discover_datasets() in dataset_registry.R
 	add := func(name, path string) {
 		t0 := time.Now()
@@ -100,6 +106,7 @@ func main() {
 	mux.HandleFunc("GET /v1/{ds}/clinical", s.withDataset(s.handleClinical))
 	mux.HandleFunc("GET /v1/{ds}/probes", s.withDataset(s.handleProbes))
 	mux.HandleFunc("GET /v1/{ds}/values", s.withDataset(s.handleValues))
+	mux.HandleFunc("POST /v1/contact", s.handleContact)
 
 	srv := &http.Server{
 		Addr:              *addr,

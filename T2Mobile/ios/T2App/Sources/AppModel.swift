@@ -303,6 +303,10 @@ final class AppModel {
             for n in wanted.reversed() where self.filter.columns[n] != nil { self.filter.add(n, first: true) }
         }
     }
+    /// the contact form's message, through the server
+    func sendContactMessage(_ m: APIClient.ContactMessage) async throws {
+        try await api.sendContact(m)
+    }
     /// names matching `query` (the best 200: exact, then starting with, then containing the
     /// letters) and how many match in all; nil when the search itself failed
     func search(_ query: String) async -> (names: [String], total: Int)? {

@@ -421,8 +421,9 @@ final class T2UITests: XCTestCase {
             waitFor("filter-count", "the filter's sample count")
             scrollTo("filter-remove-CD8B", maxSwipes: 25)
             scrollTo("filter-remove-GZMB", maxSwipes: 25)
-            scrollTo("level-GTEX", maxSwipes: 30)
+            scrollTo("filter-remove-study", maxSwipes: 30)       // the study panel's header
             shot("32d-filter-gtex-only-study-levels")
+            XCTAssertTrue(element("level-GTEX").exists, "the study panel does not show the GTEX level")
             XCTAssertFalse(element("level-TCGA").exists, "TCGA is offered as a study level inside the GTEx part")
             XCTAssertFalse(element("level-TARGET").exists, "TARGET is offered as a study level inside the GTEx part")
         } else {

@@ -1,13 +1,18 @@
 #!/bin/bash
-# mac_setup.sh -- build and run the T2 iPhone app on a Mac, from a fresh checkout or a
-# network mount, without an Apple Developer membership.
+# mac_setup.sh -- build and run the T2 iPhone app on a Mac, from a local copy of
+# T2Mobile, without an Apple Developer membership.
 #
-#     /path/to/T2Mobile/ios/mac_setup.sh            # everything; safe to run again
-#     /path/to/T2Mobile/ios/mac_setup.sh --help
+#     ~/wherever/T2Mobile/ios/mac_setup.sh          # everything, in place; safe to run again
+#     ~/wherever/T2Mobile/ios/mac_setup.sh --help
+#
+# By default the script works IN PLACE: the sources are the T2Mobile/ios folder it lives
+# in (you copied T2Mobile to this Mac yourself), and it writes build/, tools/, screenshots/,
+# logs/ next to ios/ in that T2Mobile folder. With --dest DIR it first copies the sources to
+# DIR/ios and works there instead (for running straight from a network mount).
 #
 # What it does, in order:
 #   1. checks macOS, Xcode and the iOS Simulator, and says what to do if one is missing
-#   2. copies the sources to a LOCAL folder (default ~/T2Mobile; never builds on a mount)
+#   2. uses the sources in place (or, with --dest, copies them to a local folder first)
 #   3. gets XcodeGen (Homebrew if you have it, otherwise the official release binary,
 #      kept inside the local folder) and generates T2.xcodeproj
 #   4. runs the T2Kit unit tests (filtering, statistics, plot geometry)
@@ -27,7 +32,8 @@ usage() {
     cat <<'EOF'
 Usage: mac_setup.sh [options]
 
-  --dest DIR        local working folder (default: ~/T2Mobile, or $T2_DEST)
+  --dest DIR        copy the sources to DIR/ios first and work there (default: in place,
+                    in the T2Mobile folder this script lives in; $T2_DEST also sets DIR)
   --device NAME     simulator to use, e.g. "iPhone 17 Pro" or "iPhone SE (3rd generation)"
                     (default: a booted iPhone, else a recent iPhone that is installed)
   --dark            put the simulator in dark mode (default: light)
@@ -41,8 +47,8 @@ Usage: mac_setup.sh [options]
   --ci              for unattended machines: implies --no-open, longer timeouts
   -h, --help        this text
 
-Everything it writes goes to the working folder:
-  ios/            the copied sources and the generated T2.xcodeproj
+Everything it writes goes to the working folder (T2Mobile, or DIR with --dest):
+  ios/            the sources (a copy, with --dest) and the generated T2.xcodeproj
   build/          Xcode's build products
   tools/          XcodeGen, if it had to be downloaded
   screenshots/    what the app looked like in the simulator
@@ -52,13 +58,15 @@ EOF
 
 # ------------------------------------------------------------------ arguments
 SRC="$(cd "$(dirname "$0")" && pwd)"
-DEST="${T2_DEST:-$HOME/T2Mobile}"
+# in place: the working folder is the T2Mobile folder around ios/; --dest or $T2_DEST = copy first
+COPY=0; DEST="$(dirname "$SRC")"
+if [ -n "${T2_DEST:-}" ]; then COPY=1; DEST="$T2_DEST"; fi
 CI=0; USE_BREW=1; OPEN_UI=1; RUN_UI_TESTS=0
 DEVICE=""; APPEARANCE="light"; TEAM=""; BUNDLE_ID=""
 need_value() { [ $# -ge 2 ] || { echo "mac_setup.sh: $1 needs a value" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
     case "$1" in
-        --dest)      need_value "$@"; DEST="$2"; shift 2 ;;
+        --dest)      need_value "$@"; COPY=1; DEST="$2"; shift 2 ;;
         --device)    need_value "$@"; DEVICE="$2"; shift 2 ;;
         --team)      need_value "$@"; TEAM="$2"; shift 2 ;;
         --bundle-id) need_value "$@"; BUNDLE_ID="$2"; shift 2 ;;
@@ -115,23 +123,28 @@ run_logged() {
 step "Checking this Mac"
 [ "$(uname -s)" = "Darwin" ] || { echo "mac_setup.sh is for macOS; this machine runs $(uname -s). Run it on the Mac." >&2; exit 1; }
 
-case "$DEST" in
-    "$SRC"|"$SRC"/*) die "--dest ($DEST) is inside the source folder. Choose a folder elsewhere, e.g. ~/T2Mobile." ;;
-esac
+if [ "$COPY" = 1 ]; then
+    case "$DEST" in
+        "$SRC"|"$SRC"/*) die "--dest ($DEST) is inside the source folder. Choose a folder elsewhere, e.g. ~/T2Mobile." ;;
+    esac
+fi
 mkdir -p "$DEST" || die "cannot create $DEST"
 DEST="$(cd "$DEST" && pwd)"
+if [ "$COPY" = 1 ]; then IOS="$DEST/ios"; else IOS="$SRC"; fi
 LOGS="$DEST/logs"; SHOTS="$DEST/screenshots"; TOOLS="$DEST/tools"
 mkdir -p "$LOGS" "$SHOTS" "$TOOLS"
 LOG="$DEST/mac_setup.log"
 # from here on, everything this script prints is also in the log
 exec > >(tee "$LOG") 2>&1
-info "$(date '+%Y-%m-%d %H:%M:%S')  mac_setup.sh  source: $SRC  ->  local folder: $DEST"
+if [ "$COPY" = 1 ]; then info "$(date '+%Y-%m-%d %H:%M:%S')  mac_setup.sh  source: $SRC  ->  local folder: $DEST"
+else info "$(date '+%Y-%m-%d %H:%M:%S')  mac_setup.sh  in place: $DEST  (sources: $IOS)"; fi
 
 fs="$(df -P "$DEST" | awk 'NR==2 {print $1}')"
 case "$fs" in
     /dev/*) ok "local folder is on a local disk ($fs)" ;;
     *) die "$DEST is not on a local disk (it is on $fs)." \
-           "Xcode is slow and unreliable on network folders. Use --dest with a folder on this Mac." ;;
+           "Xcode is slow and unreliable on network folders: copy T2Mobile to this Mac and run the copy's" \
+           "ios/mac_setup.sh, or run this one with --dest ~/T2Mobile to let it copy the sources there." ;;
 esac
 
 info "macOS $(sw_vers -productVersion) ($(uname -m))"
@@ -186,15 +199,20 @@ if curl -fsS -m 20 "$SERVICE/healthz" >/dev/null 2>&1; then ok "the T2 data serv
 else warn "the T2 data service does not answer from this Mac ($SERVICE): the app will build, but show a connection error"; fi
 
 # ------------------------------------------------------------------ 2. local copy
-step "Copying the sources to $DEST/ios"
-# what Xcode generates, and this Mac's own settings, stay as they are in the copy
-rsync -a --delete \
-    --exclude '.build' --exclude '*.xcodeproj' --exclude 'DerivedData' --exclude 'xcuserdata' \
-    --exclude 'Local.xcconfig' --exclude '.DS_Store' --exclude '.swiftpm' \
-    "$SRC/" "$DEST/ios/"
-ok "$(find "$DEST/ios" -name '*.swift' | wc -l | tr -d ' ') Swift files copied (re-running copies only what changed)"
+if [ "$COPY" = 1 ]; then
+    step "Copying the sources to $IOS"
+    # what Xcode generates, and this Mac's own settings, stay as they are in the copy
+    rsync -a --delete \
+        --exclude '.build' --exclude '*.xcodeproj' --exclude 'DerivedData' --exclude 'xcuserdata' \
+        --exclude 'Local.xcconfig' --exclude '.DS_Store' --exclude '.swiftpm' \
+        "$SRC/" "$IOS/"
+    ok "$(find "$IOS" -name '*.swift' | wc -l | tr -d ' ') Swift files copied (re-running copies only what changed)"
+else
+    step "Using the sources in place"
+    ok "$(find "$IOS" -name '*.swift' | wc -l | tr -d ' ') Swift files in $IOS (nothing is copied; --dest DIR would copy first)"
+fi
 
-APPDIR="$DEST/ios/T2App"
+APPDIR="$IOS/T2App"
 LOCALCFG="$APPDIR/Config/Local.xcconfig"
 # set KEY = VALUE in Local.xcconfig, replacing an earlier value
 set_local() {
@@ -251,7 +269,7 @@ ok "$APPDIR/T2.xcodeproj  (bundle id $APP_ID)"
 
 # ------------------------------------------------------------------ 4. unit tests
 step "Running the T2Kit unit tests (filtering, statistics, plot geometry)"
-run_logged t2kit-tests "swift test" swift test --package-path "$DEST/ios/T2Kit"
+run_logged t2kit-tests "swift test" swift test --package-path "$IOS/T2Kit"
 summary="$(grep -E 'Executed [0-9]+ tests?, with' "$LOGS/t2kit-tests.log" | tail -1 | sed 's/^[[:space:]]*//' || true)"
 ok "${summary:-all tests passed}"
 
@@ -386,8 +404,7 @@ ${BOLD}The app is built and ran in the simulator ($SIM_NAME).${OFF}
   Screenshots  $SHOTS
   Log          $LOG
 
-Work on the copy in $DEST/ios, or change the files where they came from and run this
-script again (it copies only what changed and keeps your signing settings).
+Work on the sources in $IOS and run this script again (your signing settings are kept).
 In Xcode: choose a simulator in the toolbar and press Run (Cmd-R).
 
 ${BOLD}A. On your own iPhone, with a free Apple ID (no membership needed)${OFF}

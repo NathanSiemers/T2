@@ -4,16 +4,21 @@ Last updated 2026-10-05 (branch `t2mobile-ci`). The log in `../NOTES.md` has the
 
 ## On the Mac: one command
 
-    /path/to/T2/T2Mobile/ios/mac_setup.sh
+Copy the `T2Mobile` folder to the Mac yourself (rsync from the server), then
 
-(the T2 repository as mounted from the Linux server, or a clone of branch `t2mobile-ci`).
+    ~/wherever/T2Mobile/ios/mac_setup.sh
+
+It works in place: the sources are the `ios` folder it lives in, and it writes `build/`,
+`tools/`, `screenshots/`, `logs/` and `mac_setup.log` next to `ios/` in that `T2Mobile`
+folder (all ignored by git). To run it straight from the server's mount instead, add
+`--dest ~/T2Mobile`: it then copies the sources there first and works in the copy.
 It needs Xcode 15 or newer from the App Store and nothing else: no Homebrew, no Apple
 Developer membership, no sudo. It is safe to run again at any time. What it does:
 
 1. checks macOS, Xcode and the iOS Simulator, and says exactly what to do if one is missing
    (it downloads the iOS Simulator itself if Xcode has none);
-2. copies `T2Mobile/ios` to a local folder, `~/T2Mobile/ios` (never builds on a network
-   mount; a re-run copies only what changed and keeps your signing settings);
+2. uses the sources in place (or, with `--dest`, copies `T2Mobile/ios` to a local folder;
+   a re-run copies only what changed and keeps your signing settings);
 3. gets XcodeGen (an installed one or Homebrew if present, otherwise the official release
    binary into `~/T2Mobile/tools`) and generates `T2.xcodeproj`;
 4. runs the T2Kit unit tests;
@@ -26,7 +31,7 @@ Developer membership, no sudo. It is safe to run again at any time. What it does
 Options (`mac_setup.sh --help`): `--dest DIR`, `--device "iPhone 17 Pro"`, `--dark`,
 `--ui-tests` (drive the app through its flows, a screenshot per step), `--team ID`,
 `--bundle-id ID`, `--no-brew`, `--no-open`, `--ci`. Its output is also in
-`~/T2Mobile/mac_setup.log`; each long step has its own log in `~/T2Mobile/logs`.
+`mac_setup.log` in the working folder; each long step has its own log in `logs/` there.
 
 If it fails it stops with `FAILED in step N/7 (...)`, the compiler or test errors, and the
 log to read. Send that text to Claude.

@@ -1,0 +1,6 @@
+# what ios/mac_setup.sh writes when run in place on a Mac
+/build/
+/tools/
+/screenshots/
+/logs/
+/mac_setup.log

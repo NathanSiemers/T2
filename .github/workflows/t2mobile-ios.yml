@@ -31,8 +31,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # the newest image (Xcode 26), and the previous one (Xcode 16) for owners of an older Xcode
-        os: [macos-26, macos-15]
+        # the newest image (Xcode 26), and the previous one (Xcode 16) for owners of an older Xcode.
+        # The newest runs the script IN PLACE, as the owner does on a copy of T2Mobile; the older one
+        # exercises --dest (copy the sources to a local folder first).
+        include:
+          - os: macos-26
+            flags: ""
+            out: T2Mobile
+          - os: macos-15
+            flags: --dest "$HOME/T2Mobile"
+            out: ~/T2Mobile
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -44,7 +52,7 @@ jobs:
           xcrun simctl list runtimes
           xcrun simctl list devices available | grep -E "^--|iPhone" || true
       - name: mac_setup.sh --ci --no-brew
-        run: T2Mobile/ios/mac_setup.sh --ci --no-brew
+        run: T2Mobile/ios/mac_setup.sh --ci --no-brew ${{ matrix.flags }}
       - name: Keep screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -52,10 +60,10 @@ jobs:
           name: mac-setup-${{ matrix.os }}
           if-no-files-found: warn
           path: |
-            ~/T2Mobile/screenshots
-            ~/T2Mobile/logs/*.log
-            ~/T2Mobile/logs/*.out
-            ~/T2Mobile/mac_setup.log
+            ${{ matrix.out }}/screenshots
+            ${{ matrix.out }}/logs/*.log
+            ${{ matrix.out }}/logs/*.out
+            ${{ matrix.out }}/mac_setup.log
 
   ui-tests:
     name: UI tests, ${{ matrix.device }} (${{ matrix.appearance }})
@@ -72,7 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: mac_setup.sh --ci --ui-tests
-        run: T2Mobile/ios/mac_setup.sh --ci --ui-tests --device "${{ matrix.device }}" ${{ matrix.flags }}
+        run: T2Mobile/ios/mac_setup.sh --ci --ui-tests --dest "$HOME/T2Mobile" --device "${{ matrix.device }}" ${{ matrix.flags }}
       - name: Keep screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4

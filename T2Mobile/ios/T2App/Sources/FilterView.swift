@@ -49,7 +49,12 @@ struct FilterView: View {
             } footer: {
                 Text("Each bar shows the samples that pass all the other filters; the coloured part also passes this one.")
             }
-            ForEach(model.filter.filters, id: \.column) { f in
+            // a categorical column with a single value in the chosen data source ("study" inside
+            // the GTEx part) offers no choice: no panel for it
+            ForEach(model.filter.filters.filter { f in
+                guard let col = model.filter.columns[f.column], col.levels != nil else { return true }
+                return model.filter.levelsPresent(f.column).count > 1
+            }, id: \.column) { f in
                 Section {
                     FilterCard(name: f.column)
                 } header: {

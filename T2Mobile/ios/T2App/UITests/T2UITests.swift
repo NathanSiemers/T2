@@ -410,6 +410,9 @@ final class T2UITests: XCTestCase {
             scrollTo("filter-remove-CD8B", maxSwipes: 25)
             scrollTo("filter-remove-GZMB", maxSwipes: 25)
             shot("32a2-filter-panels-after-switch")
+            // in the whole collection the study panel offers its three values
+            scrollTo("filter-remove-study", maxSwipes: 25)
+            XCTAssertTrue(element("level-TCGA").waitForExistence(timeout: 5) || element("level-GTEX").exists, "the study panel shows no levels")
             // Y set by hand before the switch: it must survive it (the gene exists in the part)
             openTab("Select")
             pick("Y", search: "CD19", choose: "CD19")
@@ -432,19 +435,11 @@ final class T2UITests: XCTestCase {
             waitFor("filter-count", "the filter's sample count")
             scrollTo("filter-remove-CD8B", maxSwipes: 25)
             scrollTo("filter-remove-GZMB", maxSwipes: 25)
-            // the study panel (colour variable) must be there; if not, say which panels are
-            let studyHeader = element("filter-remove-study")
+            // inside the GTEx part "study" has one value, so there is no study panel at all
             var ups = 0
-            while !(studyHeader.exists && studyHeader.isHittable) && ups < 30 { app.swipeUp(velocity: .slow); ups += 1 }
-            if !studyHeader.exists {
-                let panels = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'filter-remove-'")).allElementsBoundByIndex.map(\.identifier)
-                shot("FAILED-no-study-panel")
-                XCTFail("no study panel in the GTEx part; panels seen: \(panels); Select says colour = \(element("pick-Color").label)")
-            }
-            shot("32d-filter-gtex-only-study-levels")
-            XCTAssertTrue(element("level-GTEX").exists, "the study panel does not show the GTEX level")
-            XCTAssertFalse(element("level-TCGA").exists, "TCGA is offered as a study level inside the GTEx part")
-            XCTAssertFalse(element("level-TARGET").exists, "TARGET is offered as a study level inside the GTEx part")
+            while ups < 30 && !element("filter-remove-study").exists { app.swipeUp(velocity: .slow); ups += 1 }
+            shot("32d-filter-gtex-only-no-study-panel")
+            XCTAssertFalse(element("filter-remove-study").exists, "a study panel with a single value is shown inside the GTEx part")
         } else {
             shot("ISSUE-dataset-menu")
             XCTFail("the dataset menu did not open")

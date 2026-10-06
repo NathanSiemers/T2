@@ -113,7 +113,13 @@ final class T2UITests: XCTestCase {
             var swipes = 0
             while !result.isHittable && swipes < 6 { app.swipeUp(velocity: .slow); swipes += 1 }   // under the keyboard on a small screen
             result.tap()
-            XCTAssertTrue(element("chosen-\(p.choose)").waitForExistence(timeout: 10), "\(p.choose) was not kept in the list")
+            // the kept names sit at the top of the list; a List only reports rows that are on
+            // screen, so scroll back up to see them when the result was far down
+            let kept = element("chosen-\(p.choose)")
+            var ups = 0
+            while !kept.waitForExistence(timeout: 2) && ups < 6 { app.swipeDown(velocity: .slow); ups += 1 }
+            if !kept.exists { shot("FAILED-not-kept-\(p.choose)") }
+            XCTAssertTrue(kept.exists, "\(p.choose) was not kept in the list")
         }
         if let shotName { shot(shotName) }
         element("add-chosen").tap()
@@ -388,10 +394,10 @@ final class T2UITests: XCTestCase {
             openTab("Filter")
             waitFor("filter-count", "the filter's sample count")
             pickMany("Add a filter column", [("CD8", "CD8B"), ("GZM", "GZMB")], shotName: "32a-filter-two-picks-after-switch")
-            if !element("filter-remove-CD8B").waitForExistence(timeout: dataTimeout) {
-                shot("FAILED-no-filter-panel"); XCTFail("CD8B did not get a filter panel; \(failureText); \(text(of: "filter-count"))")
-            }
-            XCTAssertTrue(element("filter-remove-GZMB").waitForExistence(timeout: 20), "GZMB did not get a filter panel; \(failureText)")
+            // the new panels come after the cohort panel (93 rows): scroll down to them (a List
+            // only reports rows that are on screen)
+            scrollTo("filter-remove-CD8B", maxSwipes: 25)
+            scrollTo("filter-remove-GZMB", maxSwipes: 25)
             shot("32a2-filter-panels-after-switch")
             // one collection of that dataset as a data source of its own: fewer samples, its own cohorts
             openTab("Select")

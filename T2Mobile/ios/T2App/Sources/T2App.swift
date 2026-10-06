@@ -108,6 +108,7 @@ struct VariableSearch: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var results: [String] = []
+    @State private var total = 0
     @State private var searching = false
     @State private var searchFailed = false
     @State private var chosen: [String] = []
@@ -189,7 +190,8 @@ struct VariableSearch: View {
                 let found = await model.search(q)
                 if Task.isCancelled { return }
                 searchFailed = found == nil
-                results = found ?? []
+                results = found?.names ?? []
+                total = found?.total ?? 0
                 searching = false
             }
         }
@@ -198,7 +200,8 @@ struct VariableSearch: View {
     private var header: String {
         if q.isEmpty { return "Sample and clinical annotation" }
         if searchFailed || (results.isEmpty && !searching) { return "Search" }
-        return "\(results.count) match\(results.count == 1 ? "" : "es")\(results.count >= 60 ? " shown; type more to narrow" : "")"
+        if total > results.count { return "\(results.count) of \(total.formatted()) matching names; type more letters to narrow" }
+        return "\(results.count) match\(results.count == 1 ? "" : "es")"
     }
 
     private func row(_ name: String) -> some View {

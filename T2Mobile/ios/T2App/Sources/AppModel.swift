@@ -255,10 +255,12 @@ final class AppModel {
             for n in wanted where self.filter.columns[n] != nil { self.filter.add(n) }
         }
     }
-    /// names matching `query`; nil when the search itself failed
-    func search(_ query: String) async -> [String]? {
-        guard let ds = datasetName else { return [] }
-        return try? await api.searchProbes(ds, query: query, limit: 60).probes
+    /// names matching `query` (the best 200: exact, then starting with, then containing the
+    /// letters) and how many match in all; nil when the search itself failed
+    func search(_ query: String) async -> (names: [String], total: Int)? {
+        guard let ds = datasetName else { return ([], 0) }
+        guard let r = try? await api.searchProbes(ds, query: query, limit: 200) else { return nil }
+        return (r.probes, r.totalMatches)
     }
 
     // MARK: samples

@@ -218,6 +218,10 @@ public enum PlotBuilder {
         var color: (Int) -> RGB = { _ in Palette.single }
         var size: (Int) -> Double = { _ in 1 }
         var legend = PlotLegend()
+        /// a categorical colour also GROUPS the samples: group index per sample (-1 = missing),
+        /// in legend order, with the group colours. Box plots draw one box per group.
+        var groupOf: [Int]? = nil
+        var groupColors: [RGB] = []
     }
     /// How the drawn samples are coloured and sized, and the legend that explains it.
     /// Categorical colours cover only the levels present among `rows` (droplevels), in level order.
@@ -234,6 +238,10 @@ public enum PlotBuilder {
                 for (k, code) in order.enumerated() { byCode[code] = colors[k] }
                 d.legend.entries = order.enumerated().map { PlotLegend.Entry(label: levels[$1], color: colors[$0]) }
                 d.color = { i in codes[i] >= 0 ? (byCode[codes[i]] ?? Palette.missing) : Palette.missing }
+                var slotOf = [Int](repeating: -1, count: levels.count)
+                for (k, code) in order.enumerated() { slotOf[code] = k }
+                d.groupOf = codes.map { $0 >= 0 ? slotOf[$0] : -1 }
+                d.groupColors = colors
             case .numeric(let v):
                 let present = rows.map { v[$0] }.filter { !$0.isNaN }
                 if let lo = present.min(), let hi = present.max(), hi > lo {
@@ -299,13 +307,30 @@ public enum PlotBuilder {
                                     labels: order.map { category.levels[$0] }, title: category.name)
         let valueAxis = numericAxis(rows.map { v[$0] }, title: value.name)
         var panel = horizontal ? PlotPanel(title: "", xAxis: valueAxis, yAxis: categoryAxis) : PlotPanel(title: "", xAxis: categoryAxis, yAxis: valueAxis)
+        // a categorical colour splits every category into one box per colour group, side by
+        // side in legend order (ggplot's position_dodge); a group keeps its place in every
+        // category so that the same colour lines up across them
+        let groups = d.groupColors.count
+        let dodged = groups > 1 && d.groupOf != nil
+        let slotWidth = dodged ? 0.8 / Double(groups) : 0.75
+        func offset(_ g: Int) -> Double { dodged ? (Double(g) - Double(groups - 1) / 2) * slotWidth : 0 }
         for (k, level) in order.enumerated() {
-            if let b = Stats.box(members[level]!.map { v[$0] }) {
+            if dodged, let gOf = d.groupOf {
+                var byGroup: [Int: [Double]] = [:]
+                for r in members[level]! where gOf[r] >= 0 { byGroup[gOf[r], default: []].append(v[r]) }
+                for (g, values) in byGroup.sorted(by: { $0.key < $1.key }) {
+                    if let b = Stats.box(values) {
+                        panel.boxes.append(PlotBox(position: Double(k) + 0.5 + offset(g), halfWidth: slotWidth * 0.45, stats: b,
+                                                   horizontal: horizontal, color: d.groupColors[g]))
+                    }
+                }
+            } else if let b = Stats.box(members[level]!.map { v[$0] }) {
                 panel.boxes.append(PlotBox(position: Double(k) + 0.5, halfWidth: 0.375, stats: b, horizontal: horizontal, color: Palette.single))
             }
         }
         panel.points = rows.map { r in
-            let along = Double(slot[codes[r]]!) + 0.5 + jitter(r) * 0.2
+            let g = dodged ? (d.groupOf![r]) : -1
+            let along = Double(slot[codes[r]]!) + 0.5 + (g >= 0 ? offset(g) : 0) + jitter(r) * (dodged ? slotWidth * 0.3 : 0.2)
             return horizontal ? PlotPoint(x: v[r], y: along, color: d.color(r), size: d.size(r), sample: r)
                               : PlotPoint(x: along, y: v[r], color: d.color(r), size: d.size(r), sample: r)
         }

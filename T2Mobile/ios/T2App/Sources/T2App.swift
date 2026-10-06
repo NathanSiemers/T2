@@ -1,9 +1,15 @@
 import SwiftUI
+import UIKit
 import T2Kit
 
 @main
 struct T2App: App {
     @State private var model = AppModel()
+    init() {
+        // the system slider knob is white: on a white row it was barely visible (seen on the
+        // Filter screen's range sliders); give every slider a knob in the app's accent colour
+        UISlider.appearance().thumbTintColor = UIColor(named: "AccentColor") ?? .systemPurple
+    }
     // the tab shown first can be chosen at launch (-t2Tab select|plot|filter|publish):
     // mac_setup.sh and the UI tests use it to photograph each screen
     @State private var tab = UserDefaults.standard.string(forKey: "t2Tab") ?? "select"
@@ -97,10 +103,28 @@ struct VariableSearch: View {
     @State private var results: [String] = []
     @State private var searching = false
     @State private var searchFailed = false
+    @FocusState private var typing: Bool
 
     var body: some View {
         NavigationStack {
             List {
+                // a plain text field rather than .searchable: it keeps the keyboard focus while
+                // the results below change (typing more than one letter was unreliable before)
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("gene, TP53.mut, clinical variable", text: $query)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            .focused($typing)
+                            .submitLabel(.search)
+                            .accessibilityIdentifier("variable-search")
+                        if !query.isEmpty {
+                            Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                                .buttonStyle(.plain).accessibilityLabel("Clear")
+                        }
+                        if searching { ProgressView().controlSize(.small) }
+                    }
+                }
                 if allowNone, !current.isEmpty {
                     Button("None (remove \(current))", role: .destructive) { choose("") }
                 }
@@ -120,14 +144,10 @@ struct VariableSearch: View {
                     }
                 }
             }
-            .overlay { if searching && results.isEmpty { ProgressView() } }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
-                        prompt: "gene, TP53.mut, clinical variable")
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
+            .onAppear { typing = true }
             .task(id: query) {
                 let q = query.trimmingCharacters(in: .whitespaces)
                 guard !q.isEmpty else { results = []; searching = false; return }
@@ -197,8 +217,16 @@ struct SelectView: View {
                 }
             }
             .navigationTitle("T2")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { about = true } label: { Image(systemName: "questionmark.circle") }
+                        .accessibilityLabel("About T2").accessibilityIdentifier("about")
+                }
+            }
+            .sheet(isPresented: $about) { AboutView() }
         }
     }
+    @State private var about = false
 
     private var variablesHelp: String {
         var s = "Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. Two numbers give a scatter plot; a category on X gives box plots."
@@ -212,13 +240,16 @@ struct SelectView: View {
         @Bindable var model = model
         Form {
             Section("Data set") {
-                Picker("Data set", selection: Binding(get: { model.datasetName ?? "" },
-                                                      set: { name in Task { await model.select(dataset: name) } })) {
-                    ForEach(model.datasets) { Text($0.label).tag($0.name) }
+                // a dataset, or one collection of a dataset that holds several (TCGA-TARGET-GTEx:
+                // GTEx normal tissues, TARGET pediatric cancers, TCGA tumors)
+                Picker("Data set", selection: Binding(get: { model.sourceID },
+                                                      set: { id in Task { await model.select(source: id) } })) {
+                    ForEach(model.sources) { Text($0.label).tag($0.id) }
                 }
                 .accessibilityIdentifier("dataset-picker")
                 if let m = model.meta {
-                    Text("\(m.title)\n\(m.nSamples.formatted()) samples, \(m.nProbes.formatted()) variables")
+                    let n = model.fixedPreset == nil ? m.nSamples : model.filter.selectedCount()
+                    Text("\(m.title)\n\(n.formatted()) samples, \(m.nProbes.formatted()) variables")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("dataset-summary")
                 }
@@ -257,9 +288,12 @@ struct SelectView: View {
                         Toggle(isOn: Binding(get: { model.activePresets.contains(p.label) }, set: { _ in model.toggle(preset: p.label) })) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(p.label)
-                                if !p.description.isEmpty { Text(p.description).font(.footnote).foregroundStyle(.secondary) }
+                                if p.label == model.fixedPreset {
+                                    Text("The chosen data set; always on.").font(.footnote).foregroundStyle(.secondary)
+                                } else if !p.description.isEmpty { Text(p.description).font(.footnote).foregroundStyle(.secondary) }
                             }
                         }
+                        .disabled(p.label == model.fixedPreset)
                         .accessibilityIdentifier("preset-\(p.label)")
                     }
                 } header: {
@@ -285,15 +319,6 @@ struct SelectView: View {
                 Text("Combine and adjust")
             } footer: {
                 Text("Several numeric variables on one axis are combined into one marker: the median of their z-scores. \u{201C}Remove influences of\u{201D} replaces X or Y by what a linear fit on the chosen numeric variables leaves unexplained.")
-            }
-            Section {
-                TextField("Service address", text: $model.baseURL)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                Button("Reconnect") { Task { await model.reconnect() } }
-            } header: {
-                Text("Server")
-            } footer: {
-                Text("Citing T2: \(t2Citation)")
             }
         }
         .overlay(alignment: .top) {

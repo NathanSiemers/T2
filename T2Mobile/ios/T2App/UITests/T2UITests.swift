@@ -97,7 +97,7 @@ final class T2UITests: XCTestCase {
     private func pick(_ title: String, search query: String, choose name: String, shotName: String? = nil) {
         let row = scrollTo("pick-\(title)")
         row.tap()
-        let field = app.searchFields.firstMatch
+        let field = app.textFields["variable-search"]
         XCTAssertTrue(field.waitForExistence(timeout: 20), "no search field in the \(title) picker")
         field.tap()
         field.typeText(query)
@@ -123,10 +123,24 @@ final class T2UITests: XCTestCase {
         waitFor("plot-count", "the plot's sample count")
         XCTAssertTrue(text(of: "plot-count").contains("samples plotted"), text(of: "plot-count"))
         shot("02-plot-default-boxes")
+        // the plot alone, full screen, and back
+        element("plot-fullscreen").tap()
+        waitFor("plot-full", "the full-screen plot", timeout: 20)
+        shot("02b-plot-full-screen")
+        element("plot-fullscreen-close").tap()
+        waitFor("plot-count", "the plot's sample count")
         app.swipeUp(velocity: .slow)
         shot("03-plot-statistics-and-counts")
         app.swipeUp(velocity: .slow)
         shot("04-plot-options")
+        // About: description, attribution, the data types of the dataset
+        openTab("Select")
+        element("about").tap()
+        XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 20), "the About sheet did not open")
+        shot("04b-about")
+        app.swipeUp(velocity: .slow)
+        shot("04c-about-data-types")
+        app.buttons["Done"].tap()
     }
 
     /// search for probes (a gene, a mutation, a clinical column) and plot them
@@ -166,7 +180,7 @@ final class T2UITests: XCTestCase {
         // a search that finds nothing
         openTab("Select")
         scrollTo("pick-Y").tap()      // on a small screen the row can be out of view after the picks above
-        let field = app.searchFields.firstMatch
+        let field = app.textFields["variable-search"]
         XCTAssertTrue(field.waitForExistence(timeout: 20))
         field.tap()
         field.typeText("zzqqxx")
@@ -335,15 +349,30 @@ final class T2UITests: XCTestCase {
             openTab("Plot")
             waitFor("plot-count", "the plot's sample count")
             shot("32-plot-tcgatargetgtex")
+            // one collection of that dataset as a data source of its own: fewer samples, its own cohorts
+            openTab("Select")
+            scrollTo("dataset-picker").tap()
+            let gtexOnly = app.buttons["TCGA-TARGET-GTEx (Toil): GTEx normal tissues"]
+            XCTAssertTrue(gtexOnly.waitForExistence(timeout: 10), "the GTEx collection is not offered as a data set")
+            gtexOnly.tap()
+            let narrowed = NSPredicate(format: "label CONTAINS '7,429'")
+            expectation(for: narrowed, evaluatedWith: element("dataset-summary"))
+            waitForExpectations(timeout: dataTimeout)
+            shot("32b-select-gtex-only")
+            openTab("Plot")
+            waitFor("plot-count", "the plot's sample count")
+            XCTAssertTrue(text(of: "plot-count").contains("7,429"), text(of: "plot-count"))
+            shot("32c-plot-gtex-only")
         } else {
             shot("ISSUE-dataset-menu")
             XCTFail("the dataset menu did not open")
         }
-        // the small synthetic dataset, opened at launch
+        // the synthetic test dataset is not offered: asking for it at launch opens the first real one
         app.terminate()
-        launch(tab: "plot", ["-t2Dataset", "DEMO"])
-        waitFor("plot-count", "the plot's sample count")
-        shot("33-plot-demo")
+        launch(tab: "select", ["-t2Dataset", "DEMO"])
+        waitFor("dataset-summary", "the dataset's sample count")
+        XCTAssertFalse(text(of: "dataset-summary").localizedCaseInsensitiveContains("synthetic"), text(of: "dataset-summary"))
+        shot("33-select-no-demo")
         // a variable the dataset does not have
         app.terminate()
         launch(["-t2Y", "NO_SUCH_PROBE"])

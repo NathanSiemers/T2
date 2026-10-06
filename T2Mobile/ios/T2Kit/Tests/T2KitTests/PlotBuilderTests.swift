@@ -85,6 +85,32 @@ final class PlotBuilderTests: XCTestCase {
 
     // MARK: boxes
 
+    func testBoxPlotIsSplitByACategoricalColour() {
+        // colour by a two-level variable: every tissue gets one box per colour group, side by
+        // side, each box over exactly the samples of that tissue AND that group (ggplot's dodge)
+        var c = columns
+        let grp = [0, 1, 0, 1, 0, 1, 1, 0, 0, 1]       // "a" / "b"
+        c["grp"] = Column(name: "grp", type: "clinical", data: .categorical(levels: ["a", "b"], codes: grp))
+        let s = PlotBuilder.build(PlotRequest(x: ["tissue"], y: ["G2"], color: "grp"), columns: c, keep: keep, context: context)
+        let panel = s.panels[0]
+        // lung: samples 0, 1, 6 -> a: {0}, b: {1, 6}; skin: 2, 7 -> a: {2, 7}; colon: 4, 5 -> a: {4}, b: {5}
+        XCTAssertEqual(panel.boxes.count, 5)
+        let lungA = panel.boxes.first { abs($0.position - (0.5 - 0.2)) < 1e-9 }
+        let lungB = panel.boxes.first { abs($0.position - (0.5 + 0.2)) < 1e-9 }
+        XCTAssertEqual(lungA?.stats, Stats.box([2]))
+        XCTAssertEqual(lungB?.stats, Stats.box([1, 6]))
+        XCTAssertEqual(panel.boxes.first { abs($0.position - (1.5 - 0.2)) < 1e-9 }?.stats, Stats.box([4, 10]))
+        XCTAssertNil(panel.boxes.first { abs($0.position - (1.5 + 0.2)) < 1e-9 })      // no "b" in skin: no empty box
+        XCTAssertNotEqual(lungA?.color, lungB?.color)                                      // the legend's colours
+        XCTAssertEqual(s.legend.entries.map(\.label), ["a", "b"])
+        for pt in panel.points {                                                            // points sit over their own box
+            let centre = Double(tissueCodes[pt.sample]) + 0.5 + (grp[pt.sample] == 0 ? -0.2 : 0.2)
+            XCTAssertLessThanOrEqual(abs(pt.x - centre), 0.4 * 0.3 + 1e-9)
+        }
+        // without a colour the boxes are as before
+        XCTAssertEqual(PlotBuilder.build(PlotRequest(x: ["tissue"], y: ["G2"]), columns: c, keep: keep, context: context).panels[0].boxes.count, 3)
+    }
+
     func testBoxPlotKeepsValuesAndDropsEmptyLevels() {
         let s = PlotBuilder.build(PlotRequest(x: ["tissue"], y: ["G2"]), columns: columns, keep: keep, context: context)
         XCTAssertEqual(s.kind, .box)

@@ -111,6 +111,17 @@ public struct DatasetSummary: Decodable, Sendable, Equatable, Identifiable {
     /// the variables to show first: keys x, y, color, size, condition
     public let defaults: [String: String]
     public var id: String { name }
+    /// the synthetic test dataset (not real data): built for tests, not offered to users
+    public var isDemo: Bool { name == "DEMO" || title.localizedCaseInsensitiveContains("not real data") }
+}
+
+/// One data type of a dataset ("rna", "mut", "sig", ...) as the database describes it.
+public struct DataTypeInfo: Decodable, Sendable, Identifiable, Equatable {
+    public let type: String
+    public let description: String?
+    public let example: String?
+    public let reference: String?
+    public var id: String { type }
 }
 
 public struct DatasetMeta: Decodable, Sendable {
@@ -127,6 +138,8 @@ public struct DatasetMeta: Decodable, Sendable {
     public let survivalEndpoints: [String]
     /// display names of the cohorts (absent from older services)
     public let cohorts: [CohortName]?
+    /// the data types of the dataset with their descriptions (the `types` table; absent from older services)
+    public let types: [DataTypeInfo]?
 
     /// what to call a cohort value on screen: its `cohortstring` ("breast invasive carcinoma ( BRCA )"),
     /// or the value itself when the dataset has no name for it

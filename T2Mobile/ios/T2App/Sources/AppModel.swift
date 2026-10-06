@@ -29,6 +29,9 @@ final class AppModel {
 
     var datasets: [DatasetSummary] = []
     var meta: DatasetMeta?
+    /// the preset that defines the chosen data SOURCE (a named part of a dataset, e.g. "GTEx
+    /// normal tissues" of TCGA-TARGET-GTEx): always on, not offered as a switch
+    var fixedPreset: String?
     var samples: [String] = []
     var filter = CrossFilter(sampleCount: 0)
     var activePresets: Set<String> = []
@@ -64,6 +67,42 @@ final class AppModel {
     var figure = FigureSpec()
 
     var datasetName: String? { meta?.dataset }
+
+    /// What the "Data set" menu offers: every dataset, and for a dataset that is really several
+    /// collections, each collection on its own (one of the dataset's presets, always on, with
+    /// the cohort list and the counts restricted to it).
+    struct DataSource: Identifiable, Equatable {
+        let dataset: String
+        let preset: String?
+        let label: String
+        var id: String { preset.map { "\(dataset)|\($0)" } ?? dataset }
+    }
+    /// presets offered as data sources, by dataset (labels of its default_filters presets)
+    static let subsetSources: [String: [String]] = [
+        "tcgatargetgtex": ["GTEx normal tissues", "TARGET pediatric cancers", "TCGA tumors"],
+    ]
+    var sources: [DataSource] {
+        datasets.filter { !$0.isDemo }.flatMap { d -> [DataSource] in
+            [DataSource(dataset: d.name, preset: nil, label: d.label)] +
+            (Self.subsetSources[d.name] ?? []).map { DataSource(dataset: d.name, preset: $0, label: "\(d.label): \($0)") }
+        }
+    }
+    var sourceID: String { meta.map { m in fixedPreset.map { "\(m.dataset)|\($0)" } ?? m.dataset } ?? "" }
+    var sourceLabel: String { sources.first { $0.id == sourceID }?.label ?? (meta?.label ?? "") }
+
+    func select(source id: String) async {
+        guard id != sourceID, let src = sources.first(where: { $0.id == id }) else { return }
+        await run("Opening \(src.label)") { try await self.open(src.dataset, preset: src.preset) }
+    }
+
+    /// the cohorts that have samples in the chosen data source (all of them for a whole dataset)
+    var availableCohorts: [String] {
+        guard let col = filter.columns["cohort"], case .categorical(let levels, let codes) = col.data else { return [] }
+        guard let mask = filter.baseMask else { return levels }
+        var seen = Set<Int>()
+        for i in codes.indices where mask[i] && codes[i] >= 0 { seen.insert(codes[i]) }
+        return levels.indices.filter { seen.contains($0) }.map { levels[$0] }
+    }
     func column(_ name: String) -> Column? { name.isEmpty ? nil : filter.columns[name] }
 
     // MARK: loading
@@ -84,7 +123,8 @@ final class AppModel {
         await run("Loading datasets") {
             self.datasets = try await self.api.datasets()
             let wanted = UserDefaults.standard.string(forKey: "t2Dataset")
-            let first = self.datasets.first { $0.name == wanted } ?? self.datasets.first
+            let offered = self.datasets.filter { !$0.isDemo }
+            let first = offered.first { $0.name == wanted } ?? offered.first
             if let first, self.meta == nil { try await self.open(first.name, launch: true) }
         }
         failed = meta == nil
@@ -96,7 +136,7 @@ final class AppModel {
     }
 
     /// switch dataset: everything about the previous one is dropped (its variables may not exist here)
-    func open(_ name: String, launch: Bool = false) async throws {
+    func open(_ name: String, launch: Bool = false, preset: String? = nil) async throws {
         var m = try await api.meta(name)
         var clin: Clinical
         do {
@@ -111,7 +151,9 @@ final class AppModel {
         meta = m
         samples = clin.samples
         filter = cf
-        activePresets = Set(m.presets.filter(\.isDefault).map(\.label))
+        fixedPreset = preset.flatMap { label in m.presets.contains { $0.label == label } ? label : nil }
+        if preset != nil && fixedPreset == nil { status = "This dataset has no part called \u{201C}\(preset ?? "")\u{201D}; showing all of it." }
+        activePresets = Set(m.presets.filter(\.isDefault).map(\.label)).union(fixedPreset.map { [$0] } ?? [])
         func first(_ key: String, _ argument: String) -> String {
             (launch ? UserDefaults.standard.string(forKey: argument) : nil) ?? m.defaults[key] ?? ""
         }
@@ -139,8 +181,7 @@ final class AppModel {
     }
 
     func select(dataset name: String) async {
-        guard name != datasetName else { return }
-        await run("Opening \(name)") { try await self.open(name) }
+        await select(source: name)
     }
 
     /// fetch any of these variables that are not on the device yet
@@ -216,6 +257,7 @@ final class AppModel {
     // MARK: samples
 
     func toggle(preset label: String) {
+        if label == fixedPreset { return }       // the data source itself: always on
         if activePresets.contains(label) { activePresets.remove(label) } else { activePresets.insert(label) }
         applyPresets()
     }
@@ -283,7 +325,8 @@ final class AppModel {
         return nil
     }
     func setCohorts(_ chosen: Set<String>?) {
-        guard let all = filter.columns["cohort"]?.levels else { return }
+        let all = availableCohorts
+        guard !all.isEmpty else { return }
         filter.add("cohort")
         if let chosen, chosen.count < all.count { filter.set("cohort", value: .levels(chosen)) }
         else { filter.set("cohort", value: nil) }

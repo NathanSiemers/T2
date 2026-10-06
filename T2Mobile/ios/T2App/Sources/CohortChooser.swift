@@ -7,7 +7,7 @@ struct CohortChooser: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let levels = model.filter.columns["cohort"]?.levels ?? []
+        let levels = model.availableCohorts        // those with samples in the chosen data source
         let chosen = model.chosenCohorts ?? Set(levels)
         List {
             Section {

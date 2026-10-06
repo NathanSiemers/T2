@@ -6,6 +6,7 @@ import T2Kit
 struct PlotView: View {
     @Environment(AppModel.self) private var model
     @State private var tableURL: URL?
+    @State private var fullScreen = false
 
     var body: some View {
         NavigationStack {
@@ -18,6 +19,14 @@ struct PlotView: View {
             }
             .navigationTitle("Plot")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { fullScreen = true } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                        .accessibilityLabel("Plot full screen").accessibilityIdentifier("plot-fullscreen")
+                        .disabled(model.meta == nil)
+                }
+            }
+            .fullScreenCover(isPresented: $fullScreen) { FullScreenPlot() }
         }
     }
 
@@ -126,5 +135,29 @@ struct PlotView: View {
         let passing = model.filter.selectedCount(), all = model.filter.sampleCount
         if scene.kind == .empty { return "\(passing.formatted()) of \(all.formatted()) samples pass the filters" }
         return "\(scene.n.formatted()) samples plotted; \(passing.formatted()) of \(all.formatted()) pass the filters"
+    }
+}
+
+/// Only the plot, as large as the screen allows (turn the phone for a wide figure).
+struct FullScreenPlot: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let scene = model.scene(fitLine: model.style.showFit)
+        ZStack(alignment: .topTrailing) {
+            Color(.systemBackground).ignoresSafeArea()
+            SceneCanvas(scene: scene, style: model.style)
+                .padding(10)
+                .accessibilityElement()
+                .accessibilityLabel(scene.kind == .empty ? scene.message : scene.title)
+                .accessibilityIdentifier("plot-full")
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill").font(.title).foregroundStyle(.secondary)
+                    .padding(12).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close").accessibilityIdentifier("plot-fullscreen-close")
+        }
     }
 }

@@ -420,15 +420,17 @@ final class T2UITests: XCTestCase {
             // type a few letters, tap, type the next, then one Add for both
             openTab("Filter")
             waitFor("filter-count", "the filter's sample count")
-            pickMany("Add a filter column", [("CD8", "CD8B"), ("GZM", "GZMB")], shotName: "32a-filter-two-picks-after-switch")
-            // the new panels come after the cohort panel (93 rows): scroll down to them (a List
-            // only reports rows that are on screen)
+            // (colour stays sample_type, carried over from TCGA, so "study" is added by hand)
+            pickMany("Add a filter column", [("CD8", "CD8B"), ("GZM", "GZMB"), ("stud", "study")], shotName: "32a-filter-picks-after-switch")
+            // added panels go to the top of the list, in the order picked
             scrollTo("filter-remove-CD8B", maxSwipes: 25)
             scrollTo("filter-remove-GZMB", maxSwipes: 25)
-            shot("32a2-filter-panels-after-switch")
             // in the whole collection the study panel offers its three values
             scrollTo("filter-remove-study", maxSwipes: 25)
-            XCTAssertTrue(element("level-TCGA").waitForExistence(timeout: 5) || element("level-GTEX").exists, "the study panel shows no levels")
+            for level in ["TCGA", "TARGET", "GTEX"] {
+                XCTAssertTrue(element("level-\(level)").waitForExistence(timeout: 5), "the study panel does not offer \(level)")
+            }
+            shot("32a2-filter-panels-after-switch")
             // Y set by hand before the switch: it must survive it (the gene exists in the part)
             openTab("Select")
             pick("Y", search: "CD19", choose: "CD19")

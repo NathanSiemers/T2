@@ -56,10 +56,15 @@ source ('030-good.functions.R',echo = TRUE, max.deparse.length = Inf)
 source( 'tablemaker.R')
 source( 'ensure_con.R')
 
-## helper: run a build step, reconnecting to db if needed
+## helper: run a build step, reconnecting to db if needed. One line on stderr when a
+## step starts and when it ends (with its duration), so that a long build can be followed:
+##     grep '==> STEP' build.log
 run = function(script) {
   ensure_con()
+  t0 = Sys.time()
+  message(sprintf('==> STEP %s started %s', script, format(t0, '%Y-%m-%d %H:%M:%S')))
   source(script, echo = TRUE, max.deparse.length = Inf)
+  message(sprintf('==> STEP %s done in %.1f min', script, as.numeric(difftime(Sys.time(), t0, units = 'mins'))))
 }
 ################################################################
 

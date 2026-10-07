@@ -377,6 +377,27 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
     if (scans) FAIL(sprintf("tcgacats WHERE type='%s' SCANs tcgacati -- add tcgacatiidx_tsp(type,...)", ctype))
     else PASS(sprintf("type='%s' indexed", ctype))
   })
+  add("performance", "bytype WHERE type uses probe_types + the covering index (no SCAN)", function() {
+    if (!.has(con, "bytype")) return(SKIP("no bytype view (older build)"))
+    ty <- .q1(con, "SELECT type FROM probe_types LIMIT 1")
+    if (is.na(ty)) return(SKIP("no numeric data"))
+    ## the fact table (alias d) must be reached through its covering index; a scan of
+    ## the small probe_types table is the planner's right choice on a tiny database
+    plan <- .qdf(con, sprintf("EXPLAIN QUERY PLAN SELECT probe, sample, value FROM bytype WHERE type='%s'", ty))
+    if (any(grepl("^SCAN d\\b", plan$detail) | grepl("^SCAN tcgai\\b", plan$detail)))
+      FAIL(sprintf("bytype WHERE type='%s' SCANs tcgai: %s", ty, paste(plan$detail, collapse = " | ")))
+    else if (!any(grepl("tcgaiidx_pts", plan$detail)))
+      FAIL(sprintf("bytype WHERE type='%s' does not use tcgaiidx_pts: %s", ty, paste(plan$detail, collapse = " | ")))
+    else PASS(sprintf("type='%s': %s", ty, paste(grep("^SEARCH (pt|d) ", plan$detail, value = TRUE), collapse = " | ")))
+  })
+  add("performance", "bytype WHERE probe uses the probe index (no SCAN)", function() {
+    if (!.has(con, "bytype")) return(SKIP("no bytype view (older build)"))
+    if (is.na(gene)) return(SKIP("no numeric probe"))
+    plan <- .qdf(con, sprintf("EXPLAIN QUERY PLAN SELECT probe, sample, value FROM bytype WHERE probe='%s'", gene))
+    if (any(grepl("^SCAN d\\b", plan$detail) | grepl("^SCAN tcgai\\b", plan$detail)))
+      FAIL(sprintf("bytype WHERE probe='%s' SCANs tcgai: %s", gene, paste(plan$detail, collapse = " | ")))
+    else PASS(sprintf("probe='%s' indexed (%s)", gene, paste(grep("^SEARCH d ", plan$detail, value = TRUE), collapse = " | ")))
+  })
   add("performance", "categorical PROBE query uses an index (not full SCAN)", function() {
     ## gitr looks up categorical data BY PROBE (mutations/subtypes) via tcgacats;
     ## this must be an indexed SEARCH, else the probekey-leading index is missing.

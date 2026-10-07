@@ -85,6 +85,22 @@ LEFT JOIN sparse sp ON sp.type = pt.type
 JOIN samples sa ON sa.sample = t.sample
 LEFT JOIN tcgai dat ON dat.probekey = pr.key AND dat.samplekey = sa.key AND dat.type = pt.type")
 
+  ## bytype: every numeric value of ONE DATA TYPE with names, or of one probe:
+  ##     SELECT probe, sample, value FROM bytype WHERE type = 'rppa'
+  ##     SELECT probe, sample, value FROM bytype WHERE probe = 'CD8A'
+  ## Starts from probe_types (type -> its probes; CROSS JOIN pins that order) so
+  ## that each probe's rows are one contiguous read of the covering index: rppa
+  ## (2 M rows) in 2 s, all of rna (195 M rows) in ~150 s, with no type-only index
+  ## on tcgai. A bare `SELECT ... FROM tcgai WHERE type = X` scans the whole table.
+  DBI::dbExecute(con, "DROP VIEW IF EXISTS bytype")
+  DBI::dbExecute(con, "
+CREATE VIEW bytype AS
+SELECT pt.type, pr.probe, sa.sample, d.value, d.probekey, d.samplekey
+FROM probe_types pt
+CROSS JOIN tcgai d ON d.probekey = pt.probekey AND d.type = pt.type
+JOIN probes pr ON pr.key = pt.probekey
+JOIN samples sa ON sa.key = d.samplekey")
+
   ## tcgacats: simple categorical (absent = NA at the R level via gitr join)
   DBI::dbExecute(con, "DROP VIEW IF EXISTS tcgacats")
   DBI::dbExecute(con, "

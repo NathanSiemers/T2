@@ -76,8 +76,14 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
 
     ## TYPE - delete old rows and register type
     if( deleteType ) {
-        cat(sprintf("  deleting old type '%s' from %s\n", thistype, dest_table))
-        dbExecute(connection, paste0('delete from ', dest_table, ' where type = "', thistype, '"'))
+        ## only when the type was loaded before (it is then in datatypes): without a
+        ## type-only index the delete is a full scan of the fact table, pointless on a
+        ## fresh build and minutes long once the table is big
+        known = nrow(Q(paste0('select type from datatypes where type = "', thistype, '"'))) > 0
+        if (known) {
+            cat(sprintf("  deleting old type '%s' from %s\n", thistype, dest_table))
+            dbExecute(connection, paste0('delete from ', dest_table, ' where type = "', thistype, '"'))
+        } else cat(sprintf("  type '%s' not loaded before: nothing to delete from %s\n", thistype, dest_table))
         dbExecute(connection, paste0( 'delete from types where type = "', thistype, '"' ))
         dbExecute(connection, paste0( 'delete from nosuffix where type = "', thistype, '"' ))
     }

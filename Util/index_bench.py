@@ -32,7 +32,7 @@ from collections import OrderedDict
 
 SEED = 20261007
 # the kinds of statement, in the order they are run
-TIERS = ["api", "gitr", "big", "typewide", "heavy"]
+TIERS = ["api", "gitr", "big", "typewide", "wholetype", "rna", "heavy"]
 
 
 def connect(path, writable=False):
@@ -142,6 +142,25 @@ def build_suite(con):
     suite.append(("typewide tested samples of one type", "typewide", "SELECT sample FROM tested WHERE type = 'rna'", (), "tested_type / tested_type_sample"))
     suite.append(("typewide allprobes LIKE search", "typewide", "SELECT probe FROM allprobes WHERE probe LIKE 'CD8%'", (), "no index use (LIKE)"))
 
+    # ---- wholetype: "give me all the data of one type", three ways ----------------------
+    # (a) the bare statement, which can use typeidx or must scan; (b) through probe_types
+    # (type -> its probes) and the covering index, one contiguous range per probe; (c) the
+    # probes of the type with their row counts, the same two ways. rna is a third of tcgai
+    # and is the one that takes minutes whatever the route; opt in with --tiers wholetype,rna
+    for t in [t for t in ["estimate", "sig", "rppa"] if has(t)]:
+        suite.append((f"wholetype bare {t}", "wholetype", "SELECT probekey, samplekey, value FROM tcgai WHERE type = ?", (t,), "typeidx or full scan"))
+        suite.append((f"wholetype via probe_types {t}", "wholetype",
+                      "SELECT d.probekey, d.samplekey, d.value FROM probe_types pt JOIN tcgai d ON d.probekey = pt.probekey AND d.type = pt.type WHERE pt.type = ?", (t,),
+                      "probe_types_tp + tcgaiidx_pts"))
+        suite.append((f"wholetype probe counts via probe_types {t}", "wholetype",
+                      "SELECT pt.probekey, count(*) FROM probe_types pt JOIN tcgai d ON d.probekey = pt.probekey AND d.type = pt.type WHERE pt.type = ? GROUP BY pt.probekey", (t,),
+                      "probe_types_tp + tcgaiidx_pts"))
+    if has("rna"):
+        suite.append(("rna bare", "rna", "SELECT probekey, samplekey, value FROM tcgai WHERE type = 'rna'", (), "195 M rows: typeidx or full scan"))
+        suite.append(("rna via probe_types", "rna",
+                      "SELECT d.probekey, d.samplekey, d.value FROM probe_types pt JOIN tcgai d ON d.probekey = pt.probekey AND d.type = pt.type WHERE pt.type = 'rna'", (),
+                      "195 M rows through the covering index"))
+
     # ---- heavy: things no index supports today (full scans), opt in ---------------------
     (sample_key,) = con.execute("SELECT key FROM samples ORDER BY key LIMIT 1 OFFSET min(100, (SELECT count(*) FROM samples) - 1)").fetchone()
     suite.append(("heavy one sample across tcgai", "heavy", "SELECT probekey, type, value FROM tcgai WHERE samplekey = ?", (sample_key,), "FULL SCAN of tcgai: no sample-leading index"))
@@ -239,7 +258,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("database", nargs="?")
     ap.add_argument("--run", action="store_true", help="run the suite")
-    ap.add_argument("--tiers", default="api,gitr,big,typewide", help=f"comma list of {','.join(TIERS)} (heavy = full scans, minutes each)")
+    ap.add_argument("--tiers", default="api,gitr,big,typewide", help=f"comma list of {','.join(TIERS)} (wholetype = all rows of a type; rna and heavy = minutes each)")
     ap.add_argument("--no-cold", action="store_true", help="skip the cold (page-cache-evicted) runs")
     ap.add_argument("--sizes", action="store_true", help="size of every table and index (dbstat; slow)")
     ap.add_argument("--drop", metavar="INDEX", help="drop this index first (bench copy only)")

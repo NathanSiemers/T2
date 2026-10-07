@@ -14,6 +14,8 @@ struct PlotStyle: Equatable {
     var showLegend = true
     var showFit = true
     var showSourceLine = true
+    /// panels side by side in a faceted plot ("Graph for each"); 0 = chosen by their number
+    var facetColumns = 0
 }
 
 /// A figure of a real size: inches and dots per inch, as on the website's Publish tab.

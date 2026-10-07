@@ -14,10 +14,13 @@ extension RGB {
 struct SceneCanvas: View {
     let scene: PlotScene
     let style: PlotStyle
+    /// true when the host gave the canvas extra height for the whole legend (the Plot screen,
+    /// which can scroll); a figure of a fixed size fits its legend into part of its height
+    var legendRoom = false
 
     var body: some View {
         Canvas { ctx, size in
-            SceneDrawing(scene: scene, s: style).draw(&ctx, size)
+            SceneDrawing(scene: scene, s: style, legendRoom: legendRoom).draw(&ctx, size)
         }
         .background(Color.white)
     }
@@ -26,6 +29,7 @@ struct SceneCanvas: View {
 struct SceneDrawing {
     let scene: PlotScene
     let s: PlotStyle
+    var legendRoom = false
 
     let ink = Color(white: 0.2)
     let faint = Color(white: 0.42)
@@ -40,11 +44,7 @@ struct SceneDrawing {
         ctx.resolve(t).measure(in: CGSize(width: width, height: 10_000))
     }
     /// shortened to about `width` points at this font size
-    private func fitted(_ string: String, size: Double, width: CGFloat) -> String {
-        let room = max(3, Int(width / CGFloat(max(1, size) * 0.56)))
-        if string.count <= room { return string }
-        return String(string.prefix(max(1, room - 1))) + "\u{2026}"
-    }
+    private func fitted(_ string: String, size: Double, width: CGFloat) -> String { Self.fitted(string, size: size, width: width) }
 
     // MARK: the whole figure
 
@@ -80,15 +80,18 @@ struct SceneDrawing {
 
         var right = size.width - pad
         if s.showLegend, s.legendSize > 0, !scene.legend.isEmpty {
-            if size.width >= 430 {
-                // beside the panel
-                let column = min(size.width * 0.3, 170)
-                let items = legendItems(ctx, width: column, maxRows: max(2, Int((bottom - top) / CGFloat(s.legendSize * 1.4)) - 2))
-                drawLegend(&ctx, items, origin: CGPoint(x: right - column + 4, y: top + 2))
+            let available = bottom - top
+            let column = min(size.width * 0.3, 170)
+            let beside = size.width >= 430 ? Self.legendPlan(scene.legend, s, width: column, maxHeight: available - 4, shrink: false) : nil
+            if let beside, beside.columns == 1, beside.fontSize == s.legendSize {
+                // beside the panel: every entry in one column at full size
+                drawLegend(&ctx, beside, origin: CGPoint(x: right - column + 4, y: top + 2))
                 right -= column
             } else {
-                // a narrow figure (a phone held upright, a half-page figure): under the panel
-                let items = legendItems(ctx, width: fullWidth, maxRows: 6)
+                // under the panel, complete: the Plot screen made room for all of it; a figure
+                // gives it up to 45% of its height, with more columns and a smaller type if it must
+                let maxH = legendRoom ? max(available - 120, available * 0.45) : available * 0.45
+                let items = Self.legendPlan(scene.legend, s, width: fullWidth, maxHeight: maxH, shrink: true)
                 bottom -= items.height + 2
                 drawLegend(&ctx, items, origin: CGPoint(x: pad, y: bottom + 2))
             }
@@ -96,10 +99,25 @@ struct SceneDrawing {
         drawPanels(&ctx, CGRect(x: pad, y: top, width: max(10, right - pad), height: max(10, bottom - top)))
     }
 
+    /// The height the legend takes under the panel when the canvas is `width` wide, so that a
+    /// scrolling host can give the canvas that much extra room (0 when the legend goes beside
+    /// the panel or is not shown).
+    static func legendHeightBelow(_ scene: PlotScene, _ s: PlotStyle, width: CGFloat) -> CGFloat {
+        guard s.showLegend, s.legendSize > 0, !scene.legend.isEmpty, scene.kind != .empty else { return 0 }
+        let w = max(10, width - 10)
+        if width >= 430 {
+            let beside = legendPlan(scene.legend, s, width: min(width * 0.3, 170), maxHeight: 10_000, shrink: false)
+            if beside.columns == 1, beside.height <= 300 { return 0 }
+        }
+        return legendPlan(scene.legend, s, width: w, maxHeight: 10_000, shrink: false).height + 2
+    }
+
     // MARK: legend
 
-    private struct LegendItems {
+    struct LegendItems {
         var title: String = ""
+        var fontSize: Double = 10
+        var columns = 1
         var swatches: [(rect: CGRect, color: Color, text: String)] = []
         /// a colour bar for a numeric variable: its rectangle and the two end labels
         var bar: CGRect?
@@ -108,57 +126,73 @@ struct SceneDrawing {
         var height: CGFloat = 0
     }
 
-    /// Lays the legend out in a box `width` wide, relative to its top-left corner.
-    private func legendItems(_ ctx: GraphicsContext, width: CGFloat, maxRows: Int) -> LegendItems {
-        let fs = s.legendSize
-        let rowH = CGFloat(fs * 1.35)
-        var out = LegendItems()
-        var y: CGFloat = 0
-        let legend = scene.legend
-        if !legend.title.isEmpty {
-            out.title = fitted(legend.title, size: fs, width: width)
-            y += rowH
-        }
-        if !legend.entries.isEmpty {
-            let swatch = CGFloat(fs * 0.75)
-            let widest = legend.entries.map { measure(ctx, label($0.label, fs, ink)).width }.max() ?? 0
-            let cell = min(width, widest + swatch + 12)
-            let columns = max(1, Int(width / cell))
-            let capacity = max(1, maxRows) * columns
-            var shown = legend.entries
-            var more = 0
-            if shown.count > capacity { more = shown.count - (capacity - 1); shown = Array(shown.prefix(capacity - 1)) }
-            let rows = Int((Double(shown.count + (more > 0 ? 1 : 0)) / Double(columns)).rounded(.up))
-            for (k, e) in shown.enumerated() {
-                // fill column by column, so the order reads downwards
-                let col = k / max(1, rows), row = k % max(1, rows)
-                let x = CGFloat(col) * cell, yy = y + CGFloat(row) * rowH
-                out.swatches.append((CGRect(x: x, y: yy + (rowH - swatch) / 2, width: swatch, height: swatch), e.color.color,
-                                     fitted(e.label, size: fs, width: cell - swatch - 8)))
+    /// about the width of a string at this size (0.56 em per character: no GraphicsContext needed)
+    private static func textWidth(_ string: String, _ size: Double) -> CGFloat { CGFloat(string.count) * CGFloat(size) * 0.56 }
+    private static func fitted(_ string: String, size: Double, width: CGFloat) -> String {
+        let room = max(3, Int(width / CGFloat(max(1, size) * 0.56)))
+        if string.count <= room { return string }
+        return String(string.prefix(max(1, room - 1))) + "\u{2026}"
+    }
+
+    /// Lays the legend out in a box `width` wide, relative to its top-left corner. EVERY entry
+    /// is placed: columns are added as the height requires, and if the columns would get too
+    /// narrow to read and `shrink` allows it, the type is made smaller (never below 5 pt).
+    static func legendPlan(_ legend: PlotLegend, _ s: PlotStyle, width: CGFloat, maxHeight: CGFloat, shrink: Bool) -> LegendItems {
+        var fs = s.legendSize
+        while true {
+            let rowH = CGFloat(fs * 1.35)
+            var out = LegendItems()
+            out.fontSize = fs
+            var y: CGFloat = 0
+            if !legend.title.isEmpty {
+                out.title = fitted(legend.title, size: fs, width: width)
+                y += rowH
             }
-            if more > 0 {
-                let k = shown.count
-                out.lines.append((CGPoint(x: CGFloat(k / max(1, rows)) * cell, y: y + CGFloat(k % max(1, rows)) * rowH), "+ \(more) more"))
+            var fixed = y
+            if legend.range != nil { fixed += CGFloat(fs * 0.7) + 2 + rowH }
+            if legend.sizeRange != nil { fixed += rowH }
+            if !legend.entries.isEmpty {
+                let swatch = CGFloat(fs * 0.75)
+                let widest = legend.entries.map { textWidth($0.label, fs) }.max() ?? 0
+                let natural = widest + swatch + 12
+                let n = legend.entries.count
+                let rowsAvailable = max(1, Int((maxHeight - fixed) / rowH))
+                // as many columns as the height requires, or as fit side by side at their natural width
+                let needed = max(1, Int((Double(n) / Double(rowsAvailable)).rounded(.up)))
+                let fitting = max(1, Int(width / natural))
+                let columns = max(needed, min(n, fitting))
+                let cell = min(natural, width / CGFloat(columns))
+                // a cell must show the swatch and about six characters; otherwise try a smaller type
+                if shrink, fs > 5, cell < swatch + 8 + CGFloat(fs) * 0.56 * 6 { fs -= 1; continue }
+                let rows = Int((Double(n) / Double(columns)).rounded(.up))
+                out.columns = columns
+                for (k, e) in legend.entries.enumerated() {
+                    // fill column by column, so the order reads downwards
+                    let col = k / max(1, rows), row = k % max(1, rows)
+                    let x = CGFloat(col) * cell, yy = y + CGFloat(row) * rowH
+                    out.swatches.append((CGRect(x: x, y: yy + (rowH - swatch) / 2, width: swatch, height: swatch), e.color.color,
+                                         fitted(e.label, size: fs, width: cell - swatch - 8)))
+                }
+                y += CGFloat(rows) * rowH
             }
-            y += CGFloat(rows) * rowH
+            if let range = legend.range {
+                let barW = min(width, 150)
+                out.bar = CGRect(x: 0, y: y + 2, width: barW, height: CGFloat(fs * 0.7))
+                out.barLabels = (PlotFormat.number(range.lowerBound), PlotFormat.number(range.upperBound))
+                y += CGFloat(fs * 0.7) + 2 + rowH
+            }
+            if let sizes = legend.sizeRange {
+                let text = "Size: \(legend.sizeTitle) (\(PlotFormat.number(sizes.lowerBound)) to \(PlotFormat.number(sizes.upperBound)))"
+                out.lines.append((CGPoint(x: 0, y: y), fitted(text, size: fs, width: width)))
+                y += rowH
+            }
+            out.height = y
+            return out
         }
-        if let range = legend.range {
-            let barW = min(width, 150)
-            out.bar = CGRect(x: 0, y: y + 2, width: barW, height: CGFloat(fs * 0.7))
-            out.barLabels = (PlotFormat.number(range.lowerBound), PlotFormat.number(range.upperBound))
-            y += CGFloat(fs * 0.7) + 2 + rowH
-        }
-        if let sizes = legend.sizeRange {
-            let text = "Size: \(legend.sizeTitle) (\(PlotFormat.number(sizes.lowerBound)) to \(PlotFormat.number(sizes.upperBound)))"
-            out.lines.append((CGPoint(x: 0, y: y), fitted(text, size: fs, width: width)))
-            y += rowH
-        }
-        out.height = y
-        return out
     }
 
     private func drawLegend(_ ctx: inout GraphicsContext, _ items: LegendItems, origin: CGPoint) {
-        let fs = s.legendSize
+        let fs = items.fontSize
         let rowH = CGFloat(fs * 1.35)
         if !items.title.isEmpty {
             ctx.draw(label(items.title, fs, ink, bold: true), at: CGPoint(x: origin.x, y: origin.y + rowH / 2), anchor: .leading)
@@ -186,9 +220,16 @@ struct SceneDrawing {
 
     // MARK: panels
 
+    /// how many panels side by side: the style's choice, or 1, 2, 3 or 4 by their number
+    static func panelColumns(_ n: Int, _ s: PlotStyle) -> Int {
+        if n <= 1 { return 1 }
+        if s.facetColumns > 0 { return min(n, s.facetColumns) }
+        return n <= 4 ? 2 : n <= 9 ? 3 : 4
+    }
+
     private func drawPanels(_ ctx: inout GraphicsContext, _ area: CGRect) {
         let n = scene.panels.count
-        let columns = n <= 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4
+        let columns = Self.panelColumns(n, s)
         let rows = Int((Double(n) / Double(columns)).rounded(.up))
         let gap: CGFloat = 6
         let w = (area.width - gap * CGFloat(columns - 1)) / CGFloat(columns)

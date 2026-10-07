@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import ImageIO
 import UniformTypeIdentifiers
+import Photos
 import T2Kit
 
 /// A figure of a real size. The preview and the exported file are the SAME view
@@ -12,6 +13,9 @@ struct PublishView: View {
     @Environment(AppModel.self) private var model
     @State private var exported: URL?
     @State private var message = ""
+    /// what is being rendered right now (nil = nothing): the screen shows it with a spinner
+    @State private var exporting: String?
+    @State private var savedToPhotos = false
     @State private var presetID = FigurePreset.all[0].id
 
     var body: some View {
@@ -69,6 +73,11 @@ struct PublishView: View {
                 Stepper("Axis labels \(Int(model.figure.style.axisTextSize))", value: $model.figure.style.axisTextSize, in: 0...40)
                 Stepper("Legend \(Int(model.figure.style.legendSize))", value: $model.figure.style.legendSize, in: 0...40)
                 LabeledContent("Point size") { Slider(value: $model.figure.style.pointSize, in: 0...6) }
+                if scene.panels.count > 1 {
+                    Stepper(model.figure.style.facetColumns == 0 ? "Panels per row: automatic (\(SceneDrawing.panelColumns(scene.panels.count, model.figure.style)))" : "Panels per row: \(model.figure.style.facetColumns)",
+                            value: $model.figure.style.facetColumns, in: 0...8)
+                        .accessibilityIdentifier("publish-facet-columns")
+                }
                 Toggle("Legend", isOn: $model.figure.style.showLegend)
                 Toggle("Fit line", isOn: $model.figure.style.showFit)
                 Toggle("Source line", isOn: $model.figure.style.showSourceLine)
@@ -81,16 +90,32 @@ struct PublishView: View {
                 Button("Plot: PNG") { export(scene, pdf: false) }.accessibilityIdentifier("export-png")
                 Button("Plot: TIFF (LZW compressed)") { export(scene, pdf: false, tiff: true) }.accessibilityIdentifier("export-tiff")
                 Button("Plot: PDF (vector)") { export(scene, pdf: true) }.accessibilityIdentifier("export-pdf")
+                if let exporting {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text(exporting).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    .accessibilityIdentifier("publish-working")
+                }
                 if let exported {
                     ShareLink(item: exported) { Label("Share or save the file", systemImage: "square.and.arrow.up") }
                         .accessibilityIdentifier("publish-share")
+                    if exported.pathExtension != "pdf" {
+                        Button {
+                            Task { await saveToPhotos(exported) }
+                        } label: {
+                            Label(savedToPhotos ? "Saved to Photos" : "Save to Photos", systemImage: savedToPhotos ? "checkmark.circle" : "photo.on.rectangle")
+                        }
+                        .disabled(savedToPhotos)
+                        .accessibilityIdentifier("publish-save-photos")
+                    }
                     Text(exported.lastPathComponent).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("publish-message") }
             } header: {
                 Text("Export")
             } footer: {
-                Text("Citing T2: \(t2Citation)")
+                Text("Every exported file is also kept in the Files app, under On My iPhone \u{203A} T2 \u{203A} Figures. Citing T2: \(t2Citation)")
             }
         }
     }
@@ -118,15 +143,58 @@ struct PublishView: View {
         model.figure.style = p.style
         exported = nil
         message = ""
+        savedToPhotos = false
     }
 
-    @MainActor private func export(_ scene: PlotScene, pdf: Bool, tiff: Bool = false) {
+    /// the folder the figures are kept in: the app's Documents, which the Files app shows
+    /// (UIFileSharingEnabled / LSSupportsOpeningDocumentsInPlace in the Info.plist)
+    static var figuresFolder: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("Figures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Rendering a large figure takes a moment on the main thread (ImageRenderer runs there):
+    /// show what is happening first, then render, then write the file off the main thread.
+    private func export(_ scene: PlotScene, pdf: Bool, tiff: Bool = false) {
+        guard exporting == nil else { return }
+        let f = model.figure
+        exporting = pdf ? "Writing the PDF\u{2026}" : "Rendering the \(tiff ? "TIFF" : "PNG"), \(f.pixelWidth) x \(f.pixelHeight) pixels\u{2026}"
+        exported = nil
+        message = ""
+        savedToPhotos = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(80))     // one frame, so the progress line is on screen
+            await render(scene, pdf: pdf, tiff: tiff)
+            exporting = nil
+        }
+    }
+
+    /// adds the exported image to the photo library (the file as it is: a PNG or TIFF with its resolution)
+    @MainActor private func saveToPhotos(_ url: URL) async {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else {
+            message = "T2 may not add to your photo library; allow it under Settings \u{203A} Apps \u{203A} T2, or use Share."
+            return
+        }
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: .photo, fileURL: url, options: nil)
+            }
+            savedToPhotos = true
+        } catch {
+            message = "Could not save to Photos: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor private func render(_ scene: PlotScene, pdf: Bool, tiff: Bool) async {
         let f = model.figure
         let base = "T2_\(model.x)_vs_\(model.y)_\(String(format: "%.2fx%.2fin", f.widthIn, f.heightIn))"
             .replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
         let renderer = ImageRenderer(content: figureView(scene))
-        let dir = FileManager.default.temporaryDirectory
-        exported = nil
+        let dir = Self.figuresFolder
         if pdf {
             let url = dir.appendingPathComponent(base + ".pdf")
             var ok = false
@@ -153,15 +221,18 @@ struct PublishView: View {
             guard let image = renderer.cgImage else { message = "Could not render the figure."; return }
             let kind = tiff ? "TIFF" : "PNG"
             let url = dir.appendingPathComponent(base + "_\(Int(f.dpi))dpi." + (tiff ? "tiff" : "png"))
-            // ImageIO, so that the file records its resolution (a 300 dpi image opens at 3.5 in, not 14.6)
-            let type = (tiff ? UTType.tiff : UTType.png).identifier as CFString
-            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, type, 1, nil) else {
-                message = "Could not create the \(kind) file."; return
-            }
-            var properties: [CFString: Any] = [kCGImagePropertyDPIWidth: f.dpi, kCGImagePropertyDPIHeight: f.dpi]
-            if tiff { properties[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFCompression: 5] as [CFString: Any] }   // 5 = LZW
-            CGImageDestinationAddImage(dest, image, properties as CFDictionary)
-            guard CGImageDestinationFinalize(dest) else { message = "Could not write the \(kind) file."; return }
+            let dpi = f.dpi
+            // encoding a large image takes a while too: off the main thread
+            let written = await Task.detached(priority: .userInitiated) { () -> Bool in
+                // ImageIO, so that the file records its resolution (a 300 dpi image opens at 3.5 in, not 14.6)
+                let type = (tiff ? UTType.tiff : UTType.png).identifier as CFString
+                guard let dest = CGImageDestinationCreateWithURL(url as CFURL, type, 1, nil) else { return false }
+                var properties: [CFString: Any] = [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi]
+                if tiff { properties[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFCompression: 5] as [CFString: Any] }   // 5 = LZW
+                CGImageDestinationAddImage(dest, image, properties as CFDictionary)
+                return CGImageDestinationFinalize(dest)
+            }.value
+            guard written else { message = "Could not write the \(kind) file."; return }
             exported = url
             message = "\(kind), \(image.width) x \(image.height) pixels at \(Int(f.dpi)) dpi"
         }

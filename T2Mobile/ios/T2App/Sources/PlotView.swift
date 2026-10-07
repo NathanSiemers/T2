@@ -33,11 +33,15 @@ struct PlotView: View {
     @ViewBuilder private var content: some View {
         @Bindable var model = model
         let scene = model.scene(fitLine: model.style.showFit)
+        // the plot is the point of the app: it takes the whole visible screen (full width, the
+        // height left under the bars, in either orientation); the notes and settings follow
+        GeometryReader { geo in
         List {
             Section {
-                SceneCanvas(scene: scene, style: model.style)
-                    .frame(height: plotHeight(scene))
-                    .listRowInsets(EdgeInsets(top: 6, leading: 4, bottom: 6, trailing: 4))
+                SceneCanvas(scene: scene, style: model.style, legendRoom: true)
+                    .frame(height: plotHeight(scene, visible: geo.size))
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
                     .accessibilityElement()
                     .accessibilityLabel(scene.kind == .empty ? scene.message : scene.title)
                     .accessibilityIdentifier("plot")
@@ -104,6 +108,11 @@ struct PlotView: View {
                 Text("The samples in use with the plotted variables, one row per sample: the numbers behind the plot.")
             }
             Section("Appearance") {
+                if scene.panels.count > 1 {
+                    Stepper(model.style.facetColumns == 0 ? "Panels per row: automatic (\(SceneDrawing.panelColumns(scene.panels.count, model.style)))" : "Panels per row: \(model.style.facetColumns)",
+                            value: $model.style.facetColumns, in: 0...8)
+                        .accessibilityIdentifier("facet-columns")
+                }
                 LabeledContent("Point size") { Slider(value: $model.style.pointSize, in: 0...10) }
                 LabeledContent("Transparency") { Slider(value: $model.style.alpha, in: 0.02...1) }
                 Stepper("Title \(Int(model.style.titleSize)) pt", value: $model.style.titleSize, in: 0...40)
@@ -114,21 +123,30 @@ struct PlotView: View {
                 Toggle("Source line", isOn: $model.style.showSourceLine)
             }
         }
+        .listStyle(.plain)
         .overlay(alignment: .top) {
             if model.busy { ProgressView().padding(8).background(.regularMaterial, in: Capsule()).padding(.top, 4) }
         }
+        }
     }
 
-    /// room for the plot: more for a grid of panels and for a survival plot's risk table
-    private func plotHeight(_ scene: PlotScene) -> CGFloat {
+    /// Room for the plot: the visible screen (less a line for the count), more for a grid of
+    /// many panels, for a survival plot's risk table, and for a legend that goes under the
+    /// panel (every entry is shown; the screen scrolls).
+    private func plotHeight(_ scene: PlotScene, visible: CGSize) -> CGFloat {
         if scene.kind == .empty { return 220 }
+        let screen = max(240, visible.height - 36)
         let n = scene.panels.count
+        var h = screen
         if n > 1 {
-            let columns = n <= 4 ? 2 : n <= 9 ? 3 : 4
+            let columns = SceneDrawing.panelColumns(n, model.style)
             let rows = (n + columns - 1) / columns
-            return min(1400, CGFloat(rows) * 190 + 110)
+            // every panel at least about a third of the screen high
+            h = max(screen, min(4000, CGFloat(rows) * max(170, screen / 3) + 60))
+        } else if scene.kind == .survival {
+            h = max(screen, 500)
         }
-        return scene.kind == .survival ? 500 : 430
+        return h + SceneDrawing.legendHeightBelow(scene, model.style, width: visible.width)
     }
 
     private func countLine(_ scene: PlotScene) -> String {

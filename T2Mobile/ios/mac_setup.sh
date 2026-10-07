@@ -318,8 +318,8 @@ fi
 SIM_RUNTIME="$(echo "$sim" | cut -d'|' -f1)"; SIM_NAME="$(echo "$sim" | cut -d'|' -f2)"; UDID="$(echo "$sim" | cut -d'|' -f3)"
 ok "simulator: $SIM_NAME, $SIM_RUNTIME ($UDID)"
 
-BUILD_ACTION="build"
-if [ "$RUN_UI_TESTS" = 1 ]; then BUILD_ACTION="build-for-testing"; fi
+# built for testing: the app, its unit tests (T2AppTests) and the UI tests in one go
+BUILD_ACTION="build-for-testing"
 run_logged build "xcodebuild $BUILD_ACTION (a first build takes a few minutes)" \
     xcodebuild -project "$APPDIR/T2.xcodeproj" -scheme T2 -configuration Debug \
         -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DEST/build" \
@@ -328,6 +328,16 @@ APP="$DEST/build/Build/Products/Debug-iphonesimulator/T2.app"
 [ -d "$APP" ] || die "the build succeeded but $APP is missing"
 warnings="$(grep -c ' warning: ' "$LOGS/build.log" || true)"
 ok "built $APP  ($warnings compiler warning lines; see $LOGS/build.log)"
+
+# the app's own unit tests (the drawing of figures: type sizes, complete legends, panels per
+# row) need a simulator, so they run here rather than with T2Kit's
+xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+run_logged app-tests "T2AppTests in the simulator (the drawing of figures)" \
+    xcodebuild -project "$APPDIR/T2.xcodeproj" -scheme T2 \
+        -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DEST/build" \
+        -only-testing:T2AppTests test-without-building
+summary="$(grep -E 'Executed [0-9]+ tests?, with' "$LOGS/app-tests.log" | tail -1 | sed 's/^[[:space:]]*//' || true)"
+ok "${summary:-figure tests passed}"
 
 # ------------------------------------------------------------------ 6. simulator
 step "Running the app in the simulator"
@@ -374,7 +384,7 @@ if [ "$RUN_UI_TESTS" = 1 ]; then
     # tests talk to a live service over the network
     TEST_RUNNER_T2_SCREENSHOT_DIR="$UISHOTS" xcodebuild -project "$APPDIR/T2.xcodeproj" -scheme T2 \
         -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath "$DEST/build" \
-        -retry-tests-on-failure -test-iterations 2 \
+        -retry-tests-on-failure -test-iterations 2 -only-testing:T2UITests \
         -resultBundlePath "$LOGS/ui-tests.xcresult" test-without-building > "$LOGS/ui-tests.log" 2>&1 || ui_failed=1
     # the screenshots are also attachments of the result bundle (Xcode shows them there)
     if [ -z "$(ls -A "$UISHOTS" 2>/dev/null)" ]; then

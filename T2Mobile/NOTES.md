@@ -570,6 +570,51 @@ Nathan's notes on the night's round:
   for bit, boxes per probe, panels per probe and per facet value, z-scores per probe), and
   test06 toggles it in the UI.
 
+### 2026-10-07 — both databases rebuilt from scratch and verified; index benchmark (Claude)
+
+Nathan: "run both tcga and tcgatargetgtex build pipelines, almost from scratch (omitting
+downloads) and make sure everything works." Frozen clone `/scratch/nathan/R/T2-rebuild-20261007`
+(main at 4b17c76), two containers at once (330/160 GB caps, peaks 51/48 GB), supervised and
+verified by a Sonnet agent (`progress.md` in the clone has its line-per-milestone log).
+
+- **Toil + DEMO**: 28.3 min + 1 min, exit 0/0. **TCGA**: the first run died after 54 min in
+  `135-viral.R` — it read its table from the GDC URL on every build and GDC reset the
+  connection. Fixed (4b17c76): the file lives in `TCGA/Data/viral_reads_gdc_a55229b3.tsv`
+  like every other input; nothing is downloaded with `download = FALSE`. Restarted run:
+  91 min, PROMOTED. Steps: rna 10.7 min, cnv 25.2, cnc 12.5, mut 5.3, final indexing 14.7,
+  rest < 1 min (the master script now logs `==> STEP ... started/done`, dc630e6).
+- **Verified, all three ready to serve**: rollback journal, no sidecars; SQL suites TCGA
+  39/0/2 warn, Toil 35/0, DEMO 38/0; `sparse` 19 rows all matching the `tablemaker()` calls
+  (rna/cnv/cnc/mut/viral/urna/rabit/hrd/muttest/tmb/estimate/msi sparse with default 0;
+  rppa/pc_gene_program/immune_score/molec_subtype/immune_subtype/fmut/sig dense);
+  `default_filters` 9/11/1 rows; `env_env` 44 vars, no secrets; duplicate barcodes averaged
+  rna 9, rppa 10, viral 93, urna 6, pc_gene_program 8, immune_score 8, estimate 9;
+  equivalence API vs gitr() ALL PASS (66/43/88 probes); **every table identical to the
+  served 5 Oct files** except the build-metadata tables; `tcgai` per-type count/Σvalue/Σkeys
+  identical for all 16 types; tcga.db the same byte count (40,875,065,344). The rebuilt
+  files stay in the clone; nothing deployed (the served data are identical anyway).
+- **Index benchmark** (`Util/index_bench.py`, bench copy of the new tcga.db, deleted after):
+  56 statements — t2api's (probe by key per type), gitr's views (1–5 probes), 20/30/50/100-probe
+  requests, whole-type pulls — cold (page cache evicted) and warm, with plans, then one index
+  dropped at a time. Sizes: `tcgai` 15.5 GB, `tcgaiidx_pts` 15.8 GB, **`typeidx` 8.6 GB**,
+  everything else < 1 GB. Every application statement uses the covering indexes; large
+  requests scale linearly (tcgas 100 rna probes 3.4 s cold, API key batch of 100 0.84 s).
+  `typeidx` was used by no application statement; it only served bare `WHERE type = X`
+  admin queries. All of rna (195 M rows): via probe_types + covering index 151 s, via
+  typeidx 163 s, full scan 216 s. Dropping it from a built file took 31 min (rollback journal).
+  Small indexes: `probesidx`/`samplesidx`/`tested_type` are duplicates (3 MB each, no plan
+  change), `clinpheno_tumtype_sample`, `tcgacatiidx_tsp`, `probe_types_tp` each earn their
+  keep — Nathan: "don't worry about small indexes", so they all stay as they are.
+- **Pipeline change (eee92e6, takes effect at the next build)**: `typeidx` no longer created
+  (tcga.db 41 → ~32 GB); `tablemaker()` deletes a type's old rows only if the type was loaded
+  before; new view **`bytype`** (probe_types CROSS JOIN tcgai, with names) for "all values of
+  one type" or of one probe — rppa 2 s, rna ~150 s, CD8A 0.01 s; two plan tests in
+  `sql_tests.R` (42/0 on the new tcga.db with the view added to a bench copy). README has a
+  rebuild section and the view's usage. Nathan's wish for views so he need not hunt for the
+  query: one view covers all types.
+- Not done / for Nathan: rebuild tcga.db once more from the clone to materialise the smaller
+  file (1.5 h) when convenient; the Mac was not needed this round.
+
 #### Plan: group comparisons and linear models (discussed with Nathan 2026-10-06, not built)
 
 The idea (Nathan): any filter can define a two-class problem, selected vs not selected; the

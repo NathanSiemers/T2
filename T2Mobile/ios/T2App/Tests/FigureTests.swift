@@ -100,13 +100,14 @@ final class FigureTests: XCTestCase {
         }
         let labels6 = inkWith { $0.axisTextSize = 6 }, labels14 = inkWith { $0.axisTextSize = 14 }
         XCTAssertGreaterThan(labels6, none + 50, "6 pt axis labels add no ink")
-        XCTAssertGreaterThan(labels14, labels6 * 1.5, "14 pt axis labels (\(labels14)) are not clearly more than 6 pt ones (\(labels6))")
+        // (the ink the text itself adds, over the bare figure's axes, grid and boxes)
+        XCTAssertGreaterThan(labels14 - none, (labels6 - none) * 1.5, "14 pt axis labels (\(labels14 - none)) are not clearly more than 6 pt ones (\(labels6 - none))")
         let titles7 = inkWith { $0.axisTitleSize = 7 }, titles16 = inkWith { $0.axisTitleSize = 16 }
         XCTAssertGreaterThan(titles7, none + 50, "7 pt axis titles add no ink")
-        XCTAssertGreaterThan(titles16, titles7 * 1.5, "16 pt axis titles (\(titles16)) are not clearly more than 7 pt ones (\(titles7))")
+        XCTAssertGreaterThan(titles16 - none, (titles7 - none) * 1.5, "16 pt axis titles (\(titles16 - none)) are not clearly more than 7 pt ones (\(titles7 - none))")
         let legend6 = inkWith { $0.showLegend = true; $0.legendSize = 6 }, legend14 = inkWith { $0.showLegend = true; $0.legendSize = 14 }
         XCTAssertGreaterThan(legend6, none + 50, "a 6 pt legend adds no ink")
-        XCTAssertGreaterThan(legend14, legend6 * 1.5, "a 14 pt legend (\(legend14)) is not clearly more than a 6 pt one (\(legend6))")
+        XCTAssertGreaterThan(legend14 - none, (legend6 - none) * 1.5, "a 14 pt legend (\(legend14 - none)) is not clearly more than a 6 pt one (\(legend6 - none))")
         let source = inkWith { $0.showSourceLine = true; $0.axisTextSize = 8 } - inkWith { $0.axisTextSize = 8 }
         XCTAssertGreaterThan(source, 50, "the source line adds no ink")
         // the print preset against the same with every text removed

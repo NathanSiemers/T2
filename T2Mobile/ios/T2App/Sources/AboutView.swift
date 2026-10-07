@@ -7,6 +7,7 @@ struct AboutView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var advanced = false
+    @State private var clinical = false
     @State private var contact = false
 
     var body: some View {
@@ -53,6 +54,27 @@ struct AboutView: View {
                         Text("Data types in \(m.label)")
                     } footer: {
                         Text("A variable's suffix names its type (TP53.mut, CDKN2A.cnv, NK.sig); a bare gene name is RNA expression. Values are exactly those of the T2 database.")
+                    }
+                    if let described = m.clinicalDescriptions, !described.isEmpty {
+                        Section {
+                            DisclosureGroup(isExpanded: $clinical) {
+                                ForEach(described) { c in
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(c.column).font(.callout.monospaced())
+                                        Text(c.description).font(.footnote)
+                                        if let s = c.source, !s.isEmpty { Text(s).font(.caption2).foregroundStyle(.secondary) }
+                                    }
+                                    .accessibilityIdentifier("clinical-\(c.column)")
+                                }
+                            } label: {
+                                Text("\(described.count) clinical variables")
+                            }
+                            .accessibilityIdentifier("clinical-variables")
+                        } header: {
+                            Text("Clinical variables in \(m.label)")
+                        } footer: {
+                            Text("The sample annotations that can be plotted and filtered on, with what each one means and where it comes from. The survival endpoints (OS, DSS, DFI, PFI) follow the TCGA Pan-Cancer Clinical Data Resource.")
+                        }
                     }
                 }
                 Section {

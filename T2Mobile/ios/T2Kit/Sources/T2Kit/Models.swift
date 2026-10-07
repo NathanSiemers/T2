@@ -124,6 +124,14 @@ public struct DataTypeInfo: Decodable, Sendable, Identifiable, Equatable {
     public var id: String { type }
 }
 
+/// What a clinical column means (the service's `clinical_descriptions`).
+public struct ClinicalDescription: Decodable, Sendable, Identifiable, Equatable {
+    public let column: String
+    public let description: String
+    public let source: String?
+    public var id: String { column }
+}
+
 public struct DatasetMeta: Decodable, Sendable {
     public let dataset: String
     public let title: String
@@ -140,6 +148,11 @@ public struct DatasetMeta: Decodable, Sendable {
     public let cohorts: [CohortName]?
     /// the data types of the dataset with their descriptions (the `types` table; absent from older services)
     public let types: [DataTypeInfo]?
+    /// what the clinical columns mean, in the order of `clinicalColumns` (absent from older services)
+    public let clinicalDescriptions: [ClinicalDescription]?
+
+    /// the description of a clinical column, if the service has one
+    public func describe(_ column: String) -> ClinicalDescription? { clinicalDescriptions?.first { $0.column == column } }
 
     /// what to call a cohort value on screen: its `cohortstring` ("breast invasive carcinoma ( BRCA )"),
     /// or the value itself when the dataset has no name for it

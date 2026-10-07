@@ -1,0 +1,62 @@
+column	datasets	description	source
+sample_type	*	Kind of tissue the sample is: Primary Tumor, Metastatic, Recurrent Tumor, Solid Tissue Normal, Primary Blood Derived Cancer (leukaemias), etc. The website's "Exclude Non-tumor" and the GTEx "Normal Tissue" / "Cell Line" labels use this column.	TCGA sample barcode (the two digits after the participant), decoded with the GDC sample type codes; Toil hub phenotype file
+sample_type_id	TCGA	The two-digit sample type code of the TCGA barcode: 01 Primary Solid Tumor, 02 Recurrent Solid Tumor, 03 Primary Blood Derived Cancer (peripheral blood), 05 Additional New Primary, 06 Metastatic, 07 Additional Metastatic, 11 Solid Tissue Normal.	GDC sample type codes
+cohort	*	The TCGA study (cancer type) the sample belongs to, by its four-letter code (BRCA = breast invasive carcinoma, LUAD = lung adenocarcinoma, ...). In the Toil collection the cohort is the disease or tissue name across TCGA, TARGET and GTEx.	TCGA project codes; the Toil "disease" field
+tumtype	TCGA	The same TCGA study code as "cohort" (kept under its original name).	TCGA project codes
+lcohort	TCGA	The cohort spelled out in words (lower case), e.g. "breast invasive carcinoma".	TCGA project names
+Patient	TCGA	The participant barcode (TCGA-XX-XXXX): all samples of one patient share it. A patient can have more than one sample (a tumour and its matched normal, a primary and a metastasis).	TCGA barcode
+age_at_initial_pathologic_diagnosis	TCGA	Age in years when the cancer was first diagnosed by pathology.	TCGA-CDR (Liu et al., Cell 2018)
+gender	*	Sex recorded in the clinical record (MALE / FEMALE).	TCGA-CDR; Toil hub phenotype file
+race	TCGA	Self-reported race, in the US census categories used by TCGA.	TCGA-CDR
+ajcc_pathologic_tumor_stage	TCGA	AJCC pathologic stage (Stage I to IV with sub-stages) from the surgical specimen. Not recorded for cancers that are not staged this way (e.g. gliomas, leukaemias).	TCGA-CDR
+clinical_stage	TCGA	Clinical stage (before surgery; FIGO stage for gynaecological cancers), recorded for the cancer types that stage clinically.	TCGA-CDR
+histological_type	TCGA	Histological type of the tumour as written in the pathology report (e.g. "Infiltrating Ductal Carcinoma", "Lung Adenocarcinoma Mixed Subtype").	TCGA-CDR
+histological_grade	TCGA	Tumour grade G1 (well differentiated) to G4 (undifferentiated); GX = cannot be assessed; GB = borderline (ovarian). Recorded only for the cancer types that grade tumours.	TCGA-CDR
+initial_pathologic_dx_year	TCGA	Calendar year of the initial pathological diagnosis.	TCGA-CDR
+menopause_status	TCGA	Menopausal status at diagnosis (pre, peri, post, indeterminate), for breast and gynaecological cancers.	TCGA-CDR
+birth_days_to	TCGA	Days from birth to the initial diagnosis, as a negative number (so -20000 is about 55 years old). Ages over 90 are capped by TCGA for privacy.	TCGA-CDR
+vital_status	TCGA	Alive or Dead at the last follow-up.	TCGA-CDR
+tumor_status	TCGA	Whether the patient had evidence of tumour at the last follow-up (WITH TUMOR / TUMOR FREE). Used by the CDR to decide disease-specific deaths and progression events.	TCGA-CDR
+last_contact_days_to	TCGA	Days from the initial diagnosis to the last follow-up contact (for living patients).	TCGA-CDR
+death_days_to	TCGA	Days from the initial diagnosis to death (for deceased patients).	TCGA-CDR
+cause_of_death	TCGA	Recorded cause of death where known (the cancer, another malignancy, a non-malignant disease).	TCGA-CDR
+new_tumor_event_type	TCGA	Kind of the new tumour event(s) after the initial treatment: locoregional recurrence, distant metastasis, new primary tumour, progression of disease, biochemical evidence of disease. Several events are joined with "|".	TCGA-CDR
+new_tumor_event_site	TCGA	Site (organ) of the new tumour event(s), "|"-separated when there were several.	TCGA-CDR
+new_tumor_event_site_other	TCGA	Free text for a site not in the standard list.	TCGA-CDR
+new_tumor_event_dx_days_to	TCGA	Days from the initial diagnosis to the first new tumour event.	TCGA-CDR
+treatment_outcome_first_course	TCGA	Response to the first course of treatment: Complete Remission/Response, Partial Remission/Response, Stable Disease, Progressive Disease, Persistent Disease, etc. Complete remission is one of the ways a patient is counted as disease-free for the DFI endpoint.	TCGA-CDR
+margin_status	TCGA	Surgical resection margins: Negative (no tumour at the margin), Close, or Positive (tumour at the margin).	TCGA-CDR
+residual_tumor	TCGA	Residual tumour after surgery: R0 none, R1 microscopic, R2 macroscopic, RX cannot be assessed. R0 is one of the ways a patient is counted as disease-free for the DFI endpoint.	TCGA-CDR
+OS	TCGA	Overall survival event: 1 = died (any cause), 0 = alive at last contact (censored). Pair with OS.time.	TCGA-CDR: time from the initial diagnosis to death from any cause, or to the last contact
+OS.time	TCGA	Days from the initial diagnosis to death or to the last contact (the follow-up time for OS).	TCGA-CDR
+DSS	TCGA	Disease-specific survival event: 1 = died of the cancer (died with tumour, or the cause of death was the cancer), 0 = alive or died of something else (censored). An approximation: the cause of death is not always verified. Pair with DSS.time.	TCGA-CDR
+DSS.time	TCGA	Days from the initial diagnosis to death or to the last contact (the follow-up time for DSS).	TCGA-CDR
+DFI	TCGA	Disease-free interval event, for patients who became disease-free after the initial treatment (complete remission, no residual tumour): 1 = a new tumour event (locoregional recurrence, distant metastasis, new primary tumour in the same organ) or death from the cancer, 0 = none of these (censored; a new primary in another organ censors). Patients who were never disease-free (e.g. stage IV) have no DFI. Pair with DFI.time.	TCGA-CDR
+DFI.time	TCGA	Days from the initial diagnosis to the first new tumour event, death, or the last contact (the follow-up time for DFI).	TCGA-CDR
+PFI	TCGA	Progression-free interval event: 1 = a new tumour event (progression, locoregional recurrence, distant metastasis, new primary tumour) or death with tumour, 0 = alive without such an event or died without tumour (censored). The CDR's recommended endpoint for most cancer types (follow-up is shorter than for OS, so there are more events). Not meaningful for LAML and DLBC. Pair with PFI.time.	TCGA-CDR
+PFI.time	TCGA	Days from the initial diagnosis to the first new tumour event, death, or the last contact (the follow-up time for PFI).	TCGA-CDR
+Redaction	TCGA	"Redacted" marks a case TCGA withdrew after publication (e.g. a consent or identity problem); its clinical data should not be used. Empty for all other patients.	TCGA-CDR
+Subtype_Selected	TCGA	The molecular subtype the Pan-Cancer Atlas chose as the best-established one for each cancer type (its "selected" platform), written as COHORT.subtype, e.g. BRCA.LumA, GBM.Classical, COAD.CIN. ".NA" means no subtype was assigned. This is the "subtype" variable of the website.	TCGA Pan-Cancer Atlas subtypes table (Hoadley et al., Cell 2018 and the per-cancer marker papers)
+subtype	TCGA	The same as Subtype_Selected (the website's virtual "subtype" variable).	TCGA Pan-Cancer Atlas subtypes table
+Subtype_Selected.molec_subtype	TCGA	Subtype_Selected restricted to the samples of the "molec_subtype" data type (the same labels).	TCGA Pan-Cancer Atlas subtypes table
+Subtype_mRNA	TCGA	Subtype from mRNA expression clustering (e.g. BRCA PAM50 LumA/LumB/Her2/Basal/Normal, GBM Classical/Mesenchymal/Proneural/Neural, LUSC classical/basal/secretory/primitive).	TCGA Pan-Cancer Atlas subtypes table
+Subtype_mRNA.molec_subtype	TCGA	Subtype_mRNA for the samples of the "molec_subtype" data type.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_DNAmeth	TCGA	Subtype from DNA methylation clustering (e.g. CIMP-high / CIMP-low, "hyper-methylated", numbered methylation clusters).	TCGA Pan-Cancer Atlas subtypes table
+Subtype_DNAmeth.molec_subtype	TCGA	Subtype_DNAmeth for the samples of the "molec_subtype" data type.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_CNA	TCGA	Subtype from somatic copy-number alteration patterns (e.g. "CIN" chromosomally unstable vs "genome stable", numbered CNA clusters).	TCGA Pan-Cancer Atlas subtypes table
+Subtype_CNA.molec_subtype	TCGA	Subtype_CNA for the samples of the "molec_subtype" data type.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_miRNA	TCGA	Subtype from microRNA expression clustering (numbered clusters per cancer type).	TCGA Pan-Cancer Atlas subtypes table
+Subtype_miRNA.molec_subtype	TCGA	Subtype_miRNA for the samples of the "molec_subtype" data type.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_protein	TCGA	Subtype from reverse-phase protein array (RPPA) clustering (numbered or named protein clusters).	TCGA Pan-Cancer Atlas subtypes table
+Subtype_protein.molec_subtype	TCGA	Subtype_protein for the samples of the "molec_subtype" data type.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_Integrative	TCGA	Subtype from the integrative (multi-platform, iCluster) analysis of each cancer type.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_Integrative.molec_subtype	TCGA	Subtype_Integrative for the samples of the "molec_subtype" data type.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_other	TCGA	A cancer-type-specific classification that fits none of the platforms above: e.g. PRAD by driver fusion or mutation (ERG, ETV1, ETV4, FLI1, SPOP, FOXA1, IDH1), LGG by IDH / 1p19q status, THCA by BRAF-like vs RAS-like, UCEC by POLE / MSI / copy number.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_other.molec_subtype	TCGA	Subtype_other for the samples of the "molec_subtype" data type.	TCGA Pan-Cancer Atlas subtypes table
+Subtype_Immune_Model_Based	TCGA	The pan-cancer immune subtype C1 to C6 (Thorsson et al., Immunity 2018): C1 wound healing, C2 IFN-gamma dominant, C3 inflammatory, C4 lymphocyte depleted, C5 immunologically quiet, C6 TGF-beta dominant. ".NA" = not assigned.	TCGA Pan-Cancer Atlas, The Immune Landscape of Cancer
+Subtype_Immune_Model_Based.immune_subtype	TCGA	The immune subtype for the samples of the "immune_subtype" data type (the same C1 to C6 labels).	TCGA Pan-Cancer Atlas, The Immune Landscape of Cancer
+study	tcgatargetgtex	Which of the three projects the sample comes from: TCGA (adult cancers), TARGET (paediatric cancers) or GTEX (normal tissues of post-mortem donors).	UCSC Toil RNA-seq recompute, TcgaTargetGTEX phenotype file
+disease	tcgatargetgtex	The cancer type (TCGA and TARGET) or the tissue (GTEx) the sample is from, spelled out; the "cohort" of this collection.	UCSC Toil TcgaTargetGTEX phenotype file
+primary_site	tcgatargetgtex	The organ or tissue of origin (Breast, Lung, Blood, Brain, ...), shared by tumours and normal tissues of the same site.	UCSC Toil TcgaTargetGTEX phenotype file
+detailed_category	tcgatargetgtex	A finer description than "disease": the GTEx tissue sub-region (e.g. "Brain - Cortex", "Skin - Sun Exposed") or the full TCGA / TARGET cancer name.	UCSC Toil TcgaTargetGTEX phenotype file
+subtype	tcgatargetgtex	In this collection the "subtype" variable is the study (TCGA, TARGET or GTEX).	UCSC Toil TcgaTargetGTEX phenotype file

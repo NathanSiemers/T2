@@ -207,6 +207,10 @@ final class T2UITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 10))
         app.swipeUp(velocity: .slow)
         shot("04c-about-data-types")
+        // the clinical variables and what they mean (served with the dataset's meta)
+        scrollTo("clinical-variables", maxSwipes: 12).tap()
+        XCTAssertTrue(element("clinical-OS").waitForExistence(timeout: 5), "no description of OS among the clinical variables")
+        shot("04d-about-clinical-variables")
         app.buttons["Done"].tap()
     }
 

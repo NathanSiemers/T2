@@ -658,6 +658,7 @@ func (d *Dataset) buildMeta() error {
 		"roles": d.Roles, "defaults": d.Defaults,
 		"presets": d.presets,
 		"clinical_columns": d.clinOrder,
+		"clinical_descriptions": clinicalDescriptions(d.Name, d.clinOrder),
 		"survival_endpoints": []string{"OS", "PFI", "DSS", "DFI"},
 		"cohorts":            table("SELECT * FROM cohorts"),
 		"types":              types,

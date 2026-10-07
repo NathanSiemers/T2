@@ -440,3 +440,47 @@ Claude to sync and run the build script there. Sync with `rsync -az --delete` **
 `ios/mac_setup.sh --no-open --ui-tests --device "iPhone 18 Pro"` in place; a full UI run
 takes 13–15 minutes. Do not redeploy the API while a UI run is going (a 409 fails every
 test). Test cycles are delegated to a low-cost agent.
+
+### 2026-10-06 (evening) — Nathan's second round of notes (Claude)
+
+From `app.notes.md` (4:56 pm entry):
+
+- **Export (PNG/TIFF/PDF)**: a progress line while rendering (ImageRenderer is main-thread; the
+  file is encoded off it), files kept in **Documents/Figures** (shown by the Files app under
+  On My iPhone › T2 › Figures; `UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`),
+  **Save to Photos** for PNG/TIFF (add-only permission, `NSPhotoLibraryAddUsageDescription`),
+  Share stays. The simulator's share sheet is unreliable; Files and Photos are not.
+- **Legend**: no "+ N more" anywhere. `SceneDrawing.legendPlan` (pure, no GraphicsContext)
+  places every entry: beside the panel only when all fit in one column at full size; else
+  under the panel with as many columns as fit at natural width or as the height requires,
+  the type reduced (never below 5 pt) only when `shrink` is allowed (fixed-size figures).
+  The Plot screen passes `legendRoom: true` and grows by `legendHeightBelow` so the legend
+  is complete at full size there.
+- **Plot fills the screen**: the Plot tab's canvas is the visible height (GeometryReader, so
+  it follows the orientation), full width (`listStyle(.plain)`, no row insets); the sample
+  count sits ABOVE the plot where it stays visible; a new plot is shown from the top
+  (`onAppear` + ScrollViewReader).
+- **Panels per row** (`PlotStyle.facetColumns`, 0 = automatic) on the Plot screen's
+  Appearance section and the Publish screen's sizes section, drawn by `panelColumns`.
+- **FigureTests** (`T2App/Tests`, target `T2AppTests`, runs in the simulator after the build in
+  `mac_setup.sh`, `-only-testing:T2AppTests`): renders figures to pixels and checks that each
+  type size, the point size, the legend and the source line change the ink as they should,
+  that every legend entry is placed however little room there is, and that `facetColumns`
+  takes effect. Measures ink ADDED over a bare figure (axes, grid and boxes are always drawn).
+- **Clinical variables explained**: `service/cmd/t2api/clinical_descriptions.tsv` (column,
+  datasets, description, source) is embedded in the service and served in `/meta` as
+  `clinical_descriptions` for the dataset's columns; the About panel lists them under
+  "Clinical variables". Sources: TCGA-CDR (Liu et al., Cell 2018) for the clinical fields and
+  the OS/DSS/DFI/PFI definitions, the Pan-Cancer Atlas subtypes table, Thorsson et al. 2018 for
+  the immune subtypes, the Toil phenotype file. **The Shiny site does not show these yet**
+  (its About tab lists only the data types) — a follow-up.
+- UI-test lessons: `isEnabled` of a toolbar button is unreliable on the GitHub runners' iOS
+  (Xcode 26) though fine on the Mac (Xcode 27/iOS 27): the contact form exposes
+  `accessibilityValue` "ready"/"incomplete" instead. A List reports only on-screen rows, so a
+  long section (56 clinical variables) must be scrolled to.
+- Service image `t2api:2026.10` rebuilt and redeployed for the descriptions (rollback tag
+  `t2api:pre-clinical-20261006`).
+
+Apple: Nathan signed the Program agreement and logged `nosapple@fiveprime.org` into Xcode, but
+was never asked to pay, so the paid membership is probably not active yet; no team chosen in
+Xcode, no signing certificate. `mac_setup.sh --team ID` is ready for when the Team ID is known.

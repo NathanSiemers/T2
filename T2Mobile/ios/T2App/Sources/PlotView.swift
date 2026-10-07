@@ -170,7 +170,7 @@ struct PlotView: View {
     private func countLine(_ scene: PlotScene) -> String {
         let passing = model.filter.selectedCount(), all = model.filter.sampleCount
         if scene.kind == .empty { return "\(passing.formatted()) of \(all.formatted()) samples pass the filters" }
-        return "\(scene.n.formatted()) samples plotted; \(passing.formatted()) of \(all.formatted()) pass the filters"
+        return "\(scene.countText) plotted; \(passing.formatted()) of \(all.formatted()) pass the filters"
     }
 }
 

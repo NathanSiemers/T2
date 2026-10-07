@@ -512,6 +512,38 @@ From `app.notes.md` (8:27 pm entry):
   part and the TARGET part. Image `t2api:2026.10` redeployed (rollback `t2api:pre-heme-20261006`).
   The databases themselves were not touched.
 
+### 2026-10-07 — Kruskal-Wallis removed, GTEx as a whole study, Y probes individually (Claude)
+
+Nathan's notes on the night's round:
+
+- **No test statistics on box plots** until real models exist: the Kruskal-Wallis line (and
+  the per-panel `p =`) is gone from the plot and the figure. `Stats.kruskalWallis` stays in
+  T2Kit, tested against R, for the model work. Scatter plots keep the correlation.
+- **GTEx = the whole study.** The data sources for the parts of Toil are now presets defined
+  in the app (`AppModel.subsetSources`, source "app"): GTEx = `study in GTEX` (7,862: the
+  7,429 normal tissues AND the 433 EBV-transformed lymphocyte / cultured fibroblast samples
+  the database calls "Cell Line" — the only cell lines in any of the databases), TARGET =
+  `study in TARGET`. So "Exclude cell lines" is a real choice inside GTEx, as Nathan wanted.
+  The database's "GTEx normal tissues" and "All normal tissue" presets come to exactly the
+  same samples as that exclusion within GTEx, so they are not offered as groups there (a
+  group identical to an offered exclusion yields to the exclusion). `default_filters.R` is
+  unchanged: its presets are right as groups within the whole collection.
+- **Plot Y probes individually** (the website's `multi_y`): `PlotRequest.yIndividually`;
+  `PlotBuilder.stacked` makes one copy of every sample per Y probe with a categorical `probe`
+  column and calls the ordinary builder on the stacked data, so box plots, scatter plots,
+  facets, z-scores (per probe, over the samples in use), conditioning and the legend all
+  work unchanged. No colour chosen → the colour is the probe (one box per probe per X
+  category, as the website's colour menu switches to "probe"); a colour of the user's own →
+  one graph per probe (and per "Graph for each" value: a combined `probe / facet` column).
+  A Y probe that is also X, colour, size, graph variable or covariate is dropped from Y with
+  a warning; at most 10 probes (T2_LIMITS$multi_y); the correlation line is dropped (a
+  correlation over several genes' values at once means nothing); the sample summary is that of
+  the real samples. The Select screen shows the switch under "Add to Y" whenever there is
+  more than one Y; switching on remembers the colour and shows "Y probe" in the Color row,
+  switching off gives it back (`setIndividualY`). Tests: two in PlotBuilderTests (values bit
+  for bit, boxes per probe, panels per probe and per facet value, z-scores per probe), and
+  test06 toggles it in the UI.
+
 #### Plan: group comparisons and linear models (discussed with Nathan 2026-10-06, not built)
 
 The idea (Nathan): any filter can define a two-class problem, selected vs not selected; the

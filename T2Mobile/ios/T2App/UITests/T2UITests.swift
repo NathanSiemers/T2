@@ -445,6 +445,25 @@ final class T2UITests: XCTestCase {
         openTab("Plot")
         waitFor("plot-count", "the plot's sample count")
         shot("47-plot-combined-and-adjusted")
+        let combined = text(of: "plot-count")
+
+        // the same probes plotted individually: the colour becomes the probe, every sample is
+        // drawn once per probe, and switching back gives the colour back
+        openTab("Select")
+        let before = scrollTo("pick-Color").label      // (the list is still scrolled to "Add to Y")
+        scrollTo("y-individually").coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        shot("48-select-y-individually")
+        XCTAssertTrue(scrollTo("pick-Color").label.contains("Y probe"), element("pick-Color").label)
+        openTab("Plot")
+        waitFor("plot-count", "the plot's sample count")
+        shot("49-plot-y-individually")
+        let individual = text(of: "plot-count")
+        XCTAssertNotEqual(individual, combined, "plotting the probes individually did not change the plot")
+        func plotted(_ t: String) -> Int { Int(t.split(separator: " ").first?.filter(\.isNumber) ?? "") ?? 0 }
+        XCTAssertTrue(plotted(individual) > plotted(combined), "individual plot does not draw more points: \(individual) vs \(combined)")
+        openTab("Select")
+        scrollTo("y-individually").coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        XCTAssertEqual(scrollTo("pick-Color").label, before, "colour not given back")
     }
 
     /// the other datasets (chosen with the picker), and what the app says when things go wrong
@@ -485,27 +504,33 @@ final class T2UITests: XCTestCase {
             pick("Y", search: "CD19", choose: "CD19")
             // one collection of that dataset as a data source of its own: fewer samples, its own cohorts
             scrollTo("dataset-picker").tap()
-            let gtexOnly = app.buttons["TCGA-TARGET-GTEx (Toil): GTEx normal tissues"]
+            let gtexOnly = app.buttons["TCGA-TARGET-GTEx (Toil): GTEx"]
             XCTAssertTrue(gtexOnly.waitForExistence(timeout: 10), "the GTEx collection is not offered as a data set")
             gtexOnly.tap()
-            let narrowed = NSPredicate(format: "label CONTAINS '7,429'")
+            // the whole GTEx study: 7,429 normal tissues and 433 EBV-lymphocyte/fibroblast "cell lines"
+            let narrowed = NSPredicate(format: "label CONTAINS '7,862'")
             expectation(for: narrowed, evaluatedWith: element("dataset-summary"))
             waitForExpectations(timeout: dataTimeout)
             shot("32b-select-gtex-only")
             XCTAssertTrue(element("pick-Y").label.contains("CD19"), "Y did not survive the switch: \(element("pick-Y").label)")
-            // within the GTEx part the dataset's groups (TCGA tumours, TARGET, all normal tissue)
-            // are empty or the whole part, so none is offered; "Exclude cell lines" removes nothing
-            // (the part is normal tissue by definition); the heme exclusion (blood, spleen,
-            // EBV lymphocytes) is the one choice that makes a difference
+            // within GTEx the dataset's groups are empty (TCGA tumours, TARGET), the whole part,
+            // or the same thing as "Exclude cell lines" (GTEx normal tissues, All normal tissue),
+            // so none is offered; the two exclusions (cell lines; heme: blood, spleen, EBV
+            // lymphocytes) are the choices that make a difference
             scrollTo("select-count")
             shot("32b2-select-gtex-only-samples")
-            XCTAssertFalse(element("group-all").exists, "sample groups offered inside the GTEx part")
-            XCTAssertFalse(app.switches["preset-Exclude cell lines"].exists, "Exclude cell lines offered inside the GTEx part, where it changes nothing")
-            XCTAssertTrue(app.switches["preset-Exclude tumors of heme origin"].exists, "no heme exclusion inside the GTEx part")
-            XCTAssertTrue(text(of: "select-count").contains("of 7,429 samples"), "the count is not out of the part's samples: " + text(of: "select-count"))
+            XCTAssertFalse(element("group-all").exists, "sample groups offered inside GTEx")
+            XCTAssertTrue(app.switches["preset-Exclude cell lines"].exists, "no cell-line exclusion inside GTEx")
+            XCTAssertTrue(app.switches["preset-Exclude tumors of heme origin"].exists, "no heme exclusion inside GTEx")
+            XCTAssertTrue(text(of: "select-count").contains("of 7,862 samples"), "the count is not out of the part's samples: " + text(of: "select-count"))
+            // the cell lines out: the 7,429 normal tissues are left
+            app.switches["preset-Exclude cell lines"].coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            XCTAssertTrue(waitUntil(timeout: 10) { self.text(of: "select-count").hasPrefix("7,429 of 7,862") }, text(of: "select-count"))
+            app.switches["preset-Exclude cell lines"].coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            XCTAssertTrue(waitUntil(timeout: 10) { self.text(of: "select-count").hasPrefix("7,862 of 7,862") }, text(of: "select-count"))
             openTab("Plot")
             waitFor("plot-count", "the plot's sample count")
-            XCTAssertTrue(text(of: "plot-count").contains("7,429"), text(of: "plot-count"))
+            XCTAssertTrue(text(of: "plot-count").contains("7,862"), text(of: "plot-count"))
             shot("32c-plot-gtex-only")
             // the filter panels came along, and the study panel offers only the levels of this part
             openTab("Filter")

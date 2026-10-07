@@ -29,6 +29,9 @@ public struct PlotRequest: Sendable, Equatable {
     /// order the levels of a categorical X by the median of Y
     public var waterfall: Bool
     public var waterfallDescending: Bool
+    /// several Y probes each on their own (the website's "Plot Y probes individually") instead
+    /// of combined into one marker
+    public var yIndividually: Bool = false
     /// least-squares line when both axes are numeric
     public var fitLine: Bool
     /// use only samples that have every plotted variable (the website's default)
@@ -230,8 +233,16 @@ public struct PlotScene: Sendable, Equatable {
     public var warnings: [String]
     /// why there is no plot (kind == .empty)
     public var message: String
-    /// samples drawn, over all panels
+    /// points drawn, over all panels: one per sample, or one per sample and Y probe when
+    /// the probes are plotted individually
     public var n: Int
+    /// Y probes plotted individually (each sample drawn once per probe); 0 otherwise
+    public var probesStacked: Int = 0
+    /// what `n` counts, for the screen: "4,312 samples" or "8,624 points (4,312 samples x 2 probes)"
+    public var countText: String {
+        guard probesStacked > 1 else { return "\(n.formatted()) samples" }
+        return "\(n.formatted()) points (\((n / probesStacked).formatted()) samples \u{00D7} \(probesStacked) probes)"
+    }
 
     public init(kind: Kind, title: String = "", subtitle: String = "", panels: [PlotPanel] = [], legend: PlotLegend = PlotLegend(),
                 stats: [StatLine] = [], summary: [String] = [], warnings: [String] = [], message: String = "", n: Int = 0) {

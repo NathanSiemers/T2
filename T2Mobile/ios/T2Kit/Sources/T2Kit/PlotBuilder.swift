@@ -60,6 +60,14 @@ public enum PlotBuilder {
             return scene
         }
 
+        // several Y probes plotted individually: every sample once per probe, as the website's
+        // "Plot Y probes individually" (lib.R pivots to long form)
+        if request.yIndividually, yNames.count > 1 {
+            var scene = stacked(request, yNames: yNames, columns: columns, keep: keep, context: context)
+            scene.summary = summary
+            return scene
+        }
+
         // z-scores and combined probes are worked out over the samples in use, as the website
         // does (its data frame only holds them): lib.R scales after gitr() has applied the
         // cohort, the exclusions and the Filter tab's survivors
@@ -131,6 +139,101 @@ public enum PlotBuilder {
         }
         scene.summary = summary
         scene.warnings = warnings
+        return scene
+    }
+
+    // MARK: several Y probes, each on its own
+
+    /// the most Y probes plotted individually (T2_LIMITS$multi_y on the website)
+    public static let maxIndividualY = 10
+    /// the name the colour (or "Graph for each") takes when the probes are told apart
+    public static let probeVariable = "probe"
+
+    /// The website's "Plot Y probes individually": the data are stacked, one copy of every
+    /// sample per Y probe, with a categorical `probe` column saying which; Y is the probe's
+    /// value. With no colour chosen the points are coloured by probe (box plots get one box
+    /// per probe in every X category); with a colour of the user's own, there is one graph
+    /// per probe instead (and per "Graph for each" value), coloured as asked.
+    static func stacked(_ request: PlotRequest, yNames: [String], columns: [String: Column], keep: Mask, context: Context) -> PlotScene {
+        var warnings: [String] = []
+        var use = yNames
+        let others = Set((request.x + [request.color, request.size, request.facet] + request.condition).filter { !$0.isEmpty })
+        let clashing = use.filter { others.contains($0) }
+        if !clashing.isEmpty {
+            warnings.append("Plotted individually, a Y variable cannot also be X, color, size, a graph variable or a covariate. Dropped from Y: \(clashing.joined(separator: ", ")).")
+            use.removeAll { others.contains($0) }
+        }
+        let notNumeric = use.filter { !(columns[$0]?.isNumeric ?? false) }
+        if !notNumeric.isEmpty {
+            warnings.append("Individual Y plots need numbers. Not used: \(notNumeric.joined(separator: ", ")).")
+            use.removeAll { notNumeric.contains($0) }
+        }
+        if use.count > maxIndividualY {
+            warnings.append("At most \(maxIndividualY) Y probes are plotted individually; the first \(maxIndividualY) are used.")
+            use = Array(use.prefix(maxIndividualY))
+        }
+        guard use.count > 1 else {
+            // nothing left to tell apart: the ordinary plot of what remains
+            var plain = request
+            plain.yIndividually = false
+            plain.y = use.isEmpty ? [yNames[0]] : use
+            var scene = build(plain, columns: columns, keep: keep, context: context)
+            scene.warnings = warnings + scene.warnings
+            return scene
+        }
+        let n = keep.count, k = use.count
+        func repeated(_ c: Column) -> Column {
+            switch c.data {
+            case .numeric(let v): return Column(name: c.name, type: c.type, data: .numeric(Array([[Double]](repeating: v, count: k).joined())))
+            case .categorical(let levels, let codes): return Column(name: c.name, type: c.type, data: .categorical(levels: levels, codes: Array([[Int]](repeating: codes, count: k).joined())))
+            }
+        }
+        // the probe's values, z-scored over the samples in use when asked (per probe, as the
+        // website scales each Y column before stacking)
+        var values: [Double] = []
+        values.reserveCapacity(n * k)
+        for name in use {
+            let v = columns[name]!.numbers!
+            values += request.zscoreY ? Stats.zscore(v.indices.map { keep[$0] ? v[$0] : .nan }) : v
+        }
+        let yName = use.count <= 3 ? use.joined(separator: ", ") : "\(use.count) Y probes"
+        var stackedColumns: [String: Column] = [:]
+        for name in Set(request.variables + ["cohort", "sample_type"]) where !use.contains(name) {
+            if let c = columns[name] { stackedColumns[name] = repeated(c) }
+        }
+        stackedColumns[yName] = Column(name: yName, type: "stacked", data: .numeric(values))
+        stackedColumns[probeVariable] = Column(name: probeVariable, type: "factor",
+                                               data: .categorical(levels: use, codes: (0..<k).flatMap { [Int](repeating: $0, count: n) }))
+        var sub = request
+        sub.y = [yName]
+        sub.yIndividually = false
+        sub.zscoreY = false
+        if request.color.isEmpty || request.color == probeVariable {
+            sub.color = probeVariable
+        } else if request.facet.isEmpty {
+            sub.facet = probeVariable
+        } else if let f = columns[request.facet], case .categorical(let levels, let codes) = f.data {
+            // one graph per probe AND per value of the chosen graph variable
+            let both = "\(probeVariable) / \(request.facet)"
+            var lv: [String] = [], cd: [Int] = []
+            cd.reserveCapacity(n * k)
+            for (p, probe) in use.enumerated() {
+                let base = lv.count
+                lv += levels.map { "\(probe) / \($0)" }
+                for i in 0..<n { cd.append(codes[i] < 0 ? -1 : base + codes[i]) }
+                _ = p
+            }
+            stackedColumns[both] = Column(name: both, type: "factor", data: .categorical(levels: lv, codes: cd))
+            sub.facet = both
+        } else {
+            sub.facet = probeVariable
+        }
+        var scene = build(sub, columns: stackedColumns, keep: Array([Mask](repeating: keep, count: k).joined()), context: context)
+        scene.probesStacked = k
+        // a correlation over several genes' values at once means nothing
+        scene.stats.removeAll { $0.label.hasPrefix("Pearson") || $0.label.hasPrefix("Spearman") }
+        scene.title = title(x: request.x.filter { !$0.isEmpty }.joined(separator: "."), y: "\(use.joined(separator: ", ")) (individually)", dataset: context.datasetLabel)
+        scene.warnings = warnings + scene.warnings
         return scene
     }
 
@@ -335,10 +438,9 @@ public enum PlotBuilder {
                               : PlotPoint(x: along, y: v[r], color: d.color(r), size: d.size(r), sample: r)
         }
         panel.n = rows.count
-        var stats: [StatLine] = [StatLine("Data points", "\(rows.count)"), StatLine("Groups", "\(order.count)")]
-        if order.count >= 2, let kw = Stats.kruskalWallis(rows.map { v[$0] }, group: rows.map { codes[$0] }) {
-            stats.append(StatLine("Kruskal-Wallis p", PlotFormat.pValue(kw.p)))
-        }
+        // (no test statistic here: an omnibus test over the X groups says nothing a reader can
+        // use; group comparisons belong to the model screen, when it exists)
+        let stats: [StatLine] = [StatLine("Data points", "\(rows.count)"), StatLine("Groups", "\(order.count)")]
         return PlotScene(kind: .box, panels: [panel], legend: d.legend, stats: stats, n: rows.count)
     }
 
@@ -394,7 +496,6 @@ public enum PlotBuilder {
             // what the single plot shows as statistics goes into the panel, shortened
             var note = "n = \(panel.n)"
             if let r = scene.stats.first(where: { $0.label == "Pearson r" }) { note += ", r = \(r.value)" }
-            if let p = scene.stats.first(where: { $0.label == "Kruskal-Wallis p" }) { note += ", p = \(p.value)" }
             panel.note = note
             panels.append(panel)
         }

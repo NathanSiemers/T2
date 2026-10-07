@@ -133,8 +133,7 @@ final class PlotBuilderTests: XCTestCase {
         XCTAssertEqual(panel.boxes[2].stats, Stats.box([7, 5]))                      // colon: 4, 5
         XCTAssertFalse(panel.boxes[0].horizontal)
         XCTAssertEqual(s.stats.first { $0.label == "Groups" }?.value, "3")
-        let kw = Stats.kruskalWallis(rows.map { g2[$0] }, group: rows.map { tissueCodes[$0] })!
-        XCTAssertEqual(s.stats.first { $0.label == "Kruskal-Wallis p" }?.value, PlotFormat.pValue(kw.p))
+        XCTAssertNil(s.stats.first { $0.label.contains("Kruskal") }, "no omnibus test on a box plot (removed 2026-10-07)")
         // drawing it twice puts every point in the same place
         XCTAssertEqual(PlotBuilder.build(PlotRequest(x: ["tissue"], y: ["G2"]), columns: columns, keep: keep, context: context), s)
     }
@@ -236,6 +235,65 @@ final class PlotBuilderTests: XCTestCase {
         let w = PlotBuilder.build(PlotRequest(x: ["tissue"], y: ["G2", "grade"]), columns: columns, keep: keep)
         XCTAssertEqual(w.panels[0].yAxis.title, "G2"); XCTAssertEqual(w.warnings.count, 1); XCTAssertTrue(w.warnings[0].contains("grade"))
         XCTAssertEqual(bits(w.panels[0].points.map(\.y)), bits([0, 1, 2, 4, 5, 6, 7].map { g2[$0] }))
+    }
+
+    // MARK: several Y probes plotted individually
+
+    func testIndividualYStacksTheSamplesAndColoursByProbe() {
+        var r = PlotRequest(x: ["tissue"], y: ["G1", "G2"])
+        r.yIndividually = true
+        let s = PlotBuilder.build(r, columns: columns, keep: keep, context: context)
+        XCTAssertEqual(s.kind, .box); XCTAssertEqual(s.panels.count, 1)
+        let panel = s.panels[0]
+        // G1 rows: kept, tissue and G1 present -> 0 1 3 4 5 6 7 ; G2 rows: 0 1 2 4 5 6 7
+        XCTAssertEqual(panel.points.count, 14)
+        XCTAssertEqual(s.n, 14)
+        XCTAssertEqual(s.probesStacked, 2)
+        XCTAssertEqual(s.countText, "14 points (7 samples \u{00D7} 2 probes)")
+        // the colour tells the probes apart, in the order given
+        XCTAssertEqual(s.legend.title, "probe")
+        XCTAssertEqual(s.legend.entries.map(\.label), ["G1", "G2"])
+        // every value drawn is a column value, untouched: G1's then G2's
+        let g1Rows = [0, 1, 3, 4, 5, 6, 7], g2Rows = [0, 1, 2, 4, 5, 6, 7]
+        XCTAssertEqual(bits(panel.points.map(\.y)), bits(g1Rows.map { g1[$0] } + g2Rows.map { g2[$0] }))
+        // one box per probe in every tissue: 3 tissues x 2 probes
+        XCTAssertEqual(panel.boxes.count, 6)
+        XCTAssertNil(s.stats.first { $0.label.hasPrefix("Pearson") })
+        XCTAssertTrue(s.title.contains("G1, G2 (individually)"), s.title)
+        // the sample summary is that of the real samples, not of the stacked copies
+        XCTAssertEqual(s.summary.first, "Total samples after filters: 9")
+    }
+
+    func testIndividualYWithAColourOfItsOwnMakesOneGraphPerProbe() {
+        var r = PlotRequest(x: ["G1"], y: ["G2", "G1"], color: "tissue")
+        r.yIndividually = true
+        var s = PlotBuilder.build(r, columns: columns, keep: keep, context: context)
+        // G1 is X too, so it leaves Y; one probe is left: the ordinary plot, with a warning
+        XCTAssertEqual(s.kind, .scatter); XCTAssertEqual(s.panels.count, 1)
+        XCTAssertTrue(s.warnings.contains { $0.contains("Dropped from Y: G1") }, "\(s.warnings)")
+
+        var c = columns
+        c["G3"] = Column(name: "G3", type: "rna", data: .numeric(g2.map { $0 * 2 }))
+        r = PlotRequest(x: ["tissue"], y: ["G2", "G3"], color: "grade")
+        r.yIndividually = true
+        s = PlotBuilder.build(r, columns: c, keep: keep, context: context)
+        // a colour of the user's own: one graph per probe, coloured as asked (grade has one
+        // level among the drawn samples, so the colour is dropped, as always)
+        XCTAssertEqual(s.panels.map(\.title), ["G2", "G3"])
+        XCTAssertEqual(bits(s.panels[1].points.map(\.y)), bits([0, 1, 2, 4, 5, 6, 7].map { g2[$0] * 2 }))
+
+        // z-scores are per probe, over the samples in use
+        r.zscoreY = true
+        s = PlotBuilder.build(r, columns: c, keep: keep, context: context)
+        let z = Stats.zscore(g2.indices.map { keep[$0] ? g2[$0] : .nan })
+        XCTAssertEqual(bits(s.panels[0].points.map(\.y)), bits([0, 1, 2, 4, 5, 6, 7].map { z[$0] }))
+        XCTAssertEqual(bits(s.panels[1].points.map(\.y)), bits([0, 1, 2, 4, 5, 6, 7].map { z[$0] }))   // G3 = 2 x G2: the same z-scores
+
+        // a graph variable as well: one graph per probe and per value
+        r = PlotRequest(x: ["G1"], y: ["G2", "G3"], color: "grade", facet: "tissue")
+        r.yIndividually = true
+        s = PlotBuilder.build(r, columns: c, keep: keep, context: context)
+        XCTAssertEqual(s.panels.map(\.title), ["G2 / lung", "G2 / skin", "G2 / colon", "G3 / lung", "G3 / skin", "G3 / colon"])
     }
 
     func testRemoveInfluencesOf() {

@@ -48,6 +48,11 @@ final class AppModel {
     /// more numeric variables on an axis: combined with the first into the median of their z-scores
     var xMore: [String] = []
     var yMore: [String] = []
+    /// several Y probes plotted each on their own (the website's "Plot Y probes individually")
+    /// rather than combined; the colour then tells the probes apart unless one is chosen
+    var yIndividually = false
+    /// the colour chosen before "individually" took it over, given back when it is switched off
+    private var colorBeforeIndividual = ""
     /// "Remove influences of": numeric covariates, and the axis they are removed from
     var condition: [String] = []
     var conditionOn = PlotRequest.ConditionTarget.y
@@ -79,18 +84,33 @@ final class AppModel {
         let label: String
         var id: String { preset.map { "\(dataset)|\($0)" } ?? dataset }
     }
-    /// presets offered as data sources, by dataset (labels of its default_filters presets).
+    /// The parts of a dataset offered as data sources of their own, by dataset: presets
+    /// defined here (source "app"), by study, so that a part is the whole of a study — GTEx
+    /// includes its EBV-transformed lymphocyte and cultured fibroblast "cell lines" (the only
+    /// cell lines in any of the databases), and the "Exclude cell lines" switch applies to it.
     /// Not "TCGA tumors" of TCGA-TARGET-GTEx: the TCGA data belong to the TCGA dataset
     /// (tcga.db), which has the full annotation; the Toil re-processing is there for
     /// comparisons with GTEx and TARGET within one pipeline.
-    static let subsetSources: [String: [String]] = [
-        "tcgatargetgtex": ["GTEx normal tissues", "TARGET pediatric cancers"],
+    static let subsetSources: [String: [Preset]] = [
+        "tcgatargetgtex": [
+            Preset(label: "GTEx", description: "The GTEx study: normal tissues, and its EBV-transformed lymphocyte and fibroblast cell lines",
+                   source: "app", rules: [Preset.Rule(column: "study", op: "in", values: ["GTEX"])]),
+            Preset(label: "TARGET", description: "The TARGET pediatric cancers",
+                   source: "app", rules: [Preset.Rule(column: "study", op: "in", values: ["TARGET"])]),
+        ],
     ]
     var sources: [DataSource] {
         datasets.filter { !$0.isDemo }.flatMap { d -> [DataSource] in
             [DataSource(dataset: d.name, preset: nil, label: d.label)] +
-            (Self.subsetSources[d.name] ?? []).map { DataSource(dataset: d.name, preset: $0, label: "\(d.label): \($0)") }
+            (Self.subsetSources[d.name] ?? []).map { DataSource(dataset: d.name, preset: $0.label, label: "\(d.label): \($0.label)") }
         }
+    }
+    /// the open dataset's presets: its own (default_filters) and the app's parts of it
+    var allPresets: [Preset] {
+        guard let m = meta else { return [] }
+        let app = Self.subsetSources[m.dataset] ?? []
+        let appLabels = Set(app.map(\.label))
+        return app + m.presets.filter { !appLabels.contains($0.label) }
     }
     var sourceID: String { meta.map { m in fixedPreset.map { "\(m.dataset)|\($0)" } ?? m.dataset } ?? "" }
     var sourceLabel: String { sources.first { $0.id == sourceID }?.label ?? (meta?.label ?? "") }
@@ -146,7 +166,7 @@ final class AppModel {
         var x = "", y = "", color = "", size = "", facet = ""
         var xMore: [String] = [], yMore: [String] = [], condition: [String] = []
         var conditionOn = PlotRequest.ConditionTarget.y
-        var zscoreY = false, flip = false, waterfall = false
+        var zscoreY = false, flip = false, waterfall = false, yIndividually = false
         var filters: [ColumnFilter] = []
         var names: [String] { [x, y, color, size, facet] + xMore + yMore + condition + filters.map(\.column) }
     }
@@ -158,7 +178,7 @@ final class AppModel {
         var carried: Carried? = nil
         if meta != nil, !launch {
             carried = Carried(x: x, y: y, color: color, size: size, facet: facet, xMore: xMore, yMore: yMore, condition: condition,
-                              conditionOn: conditionOn, zscoreY: zscoreY, flip: flip, waterfall: waterfall, filters: filter.filters)
+                              conditionOn: conditionOn, zscoreY: zscoreY, flip: flip, waterfall: waterfall, yIndividually: yIndividually, filters: filter.filters)
         }
         var m = try await api.meta(name)
         var clin: Clinical
@@ -174,10 +194,11 @@ final class AppModel {
         meta = m
         samples = clin.samples
         filter = cf
-        presetMasks = Dictionary(m.presets.map { ($0.label, $0.mask(columns: cf.columns, sampleCount: cf.sampleCount)) }, uniquingKeysWith: { a, _ in a })
-        fixedPreset = preset.flatMap { label in m.presets.contains { $0.label == label } ? label : nil }
+        let presets = allPresets
+        presetMasks = Dictionary(presets.map { ($0.label, $0.mask(columns: cf.columns, sampleCount: cf.sampleCount)) }, uniquingKeysWith: { a, _ in a })
+        fixedPreset = preset.flatMap { label in presets.contains { $0.label == label } ? label : nil }
         if preset != nil && fixedPreset == nil { status = "This dataset has no part called \u{201C}\(preset ?? "")\u{201D}; showing all of it." }
-        activePresets = Set(m.presets.filter(\.isDefault).map(\.label)).union(fixedPreset.map { [$0] } ?? [])
+        activePresets = Set(presets.filter(\.isDefault).map(\.label)).union(fixedPreset.map { [$0] } ?? [])
         func first(_ key: String, _ argument: String) -> String {
             (launch ? UserDefaults.standard.string(forKey: argument) : nil) ?? m.defaults[key] ?? ""
         }
@@ -193,6 +214,7 @@ final class AppModel {
         zscoreY = false
         flip = false
         waterfall = false
+        yIndividually = false
         applyPresets()
         if let c = carried {
             // one request for every carried name; the ones the dataset does not have come back
@@ -206,6 +228,7 @@ final class AppModel {
             if has(c.facet) || c.facet.isEmpty { facet = c.facet }
             xMore = c.xMore.filter(has); yMore = c.yMore.filter(has); condition = c.condition.filter(has)
             conditionOn = c.conditionOn; zscoreY = c.zscoreY; flip = c.flip; waterfall = c.waterfall
+            yIndividually = c.yIndividually && yMore.count >= 1
         }
         try await ensureLoaded([x, y, color, size, facet])
         // a variable the dataset does not have is not kept as a selection
@@ -290,10 +313,28 @@ final class AppModel {
     func remove(_ name: String, from slot: ListSlot) {
         switch slot {
         case .xMore: xMore.removeAll { $0 == name }
-        case .yMore: yMore.removeAll { $0 == name }
+        case .yMore:
+            yMore.removeAll { $0 == name }
+            if yMore.isEmpty, yIndividually { setIndividualY(false) }     // one Y left: nothing to tell apart
         case .condition: condition.removeAll { $0 == name }
         }
     }
+
+    /// "Plot Y probes individually": on, the colour becomes the probe (as the website's colour
+    /// menu switches to "probe"), unless the user then picks a colour of their own, which
+    /// gives one graph per probe instead; off, the colour from before comes back.
+    func setIndividualY(_ on: Bool) {
+        guard on != yIndividually else { return }
+        yIndividually = on
+        if on {
+            colorBeforeIndividual = color
+            color = ""
+        } else if color.isEmpty {
+            color = column(colorBeforeIndividual) != nil ? colorBeforeIndividual : ""
+        }
+    }
+    /// what the Color row shows: the probe, while individual Y probes are told apart by colour
+    var colorLabel: String { color.isEmpty && yIndividually && !yMore.isEmpty ? "Y probe" : color }
 
     func addFilterColumn(_ name: String) async { await addFilterColumns([name]) }
     /// several at once: one request for all of them, then a panel each
@@ -347,11 +388,19 @@ final class AppModel {
         }
         return kept > 0 && kept < inBase
     }
-    /// the groups a user can choose from within the data source
+    /// the groups a user can choose from within the data source. A group that comes to the
+    /// same samples as an exclusion offered here (within GTEx, "GTEx normal tissues" is
+    /// exactly "Exclude cell lines") is left to the exclusion, the clearer control.
     var groupChoices: [Preset] {
-        guard let m = meta else { return [] }
         let base = sourceMask
-        return m.presets.filter { $0.label != fixedPreset && !Self.isExclusion($0) && narrows($0.label, within: base) }
+        let exclusions = allPresets.filter { $0.label != fixedPreset && Self.isExclusion($0) && narrows($0.label, within: base) }
+        return allPresets.filter { p in
+            guard p.label != fixedPreset, !Self.isExclusion(p), narrows(p.label, within: base), let pm = presetMasks[p.label] else { return false }
+            return !exclusions.contains { e in
+                guard let em = presetMasks[e.label] else { return false }
+                return base.indices.allSatisfy { !base[$0] || pm[$0] == em[$0] }
+            }
+        }
     }
     /// the group in use, if any
     var chosenGroup: String? {
@@ -359,10 +408,9 @@ final class AppModel {
     }
     /// the exclusions that would make a difference to the source and the chosen group
     var exclusionChoices: [Preset] {
-        guard let m = meta else { return [] }
         var base = sourceMask
         if let g = chosenGroup, let gm = presetMasks[g] { base = zip(base, gm).map { $0 && $1 } }
-        return m.presets.filter { $0.label != fixedPreset && Self.isExclusion($0) && narrows($0.label, within: base) }
+        return allPresets.filter { $0.label != fixedPreset && Self.isExclusion($0) && narrows($0.label, within: base) }
     }
 
     func choose(group label: String?) {
@@ -378,13 +426,13 @@ final class AppModel {
     /// the universe = samples in every active preset. A preset that is no longer offered
     /// (an exclusion that would empty the set after a change of group) is switched off.
     private func applyPresets() {
-        guard let m = meta else { return }
+        guard meta != nil else { return }
         let groups = Set(groupChoices.map(\.label))
         if let g = chosenGroup { activePresets.subtract(groups.subtracting([g])) }   // one group at most
         let offered = groups.union(exclusionChoices.map(\.label)).union(fixedPreset.map { [$0] } ?? [])
         activePresets = activePresets.intersection(offered)
         var mask: Mask? = nil
-        for p in m.presets where activePresets.contains(p.label) {
+        for p in allPresets where activePresets.contains(p.label) {
             guard let pm = presetMasks[p.label] else { continue }
             if let old = mask { mask = zip(old, pm).map { $0 && $1 } } else { mask = pm }
         }
@@ -405,6 +453,7 @@ final class AppModel {
         request.kmGroups = kmGroups
         request.kmMaxDays = kmMaxDays
         request.zscoreY = zscoreY
+        request.yIndividually = yIndividually && !yMore.isEmpty
         request.flip = flip
         request.waterfall = waterfall
         request.fitLine = fitLine

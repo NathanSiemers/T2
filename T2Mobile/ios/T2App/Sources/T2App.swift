@@ -331,7 +331,7 @@ struct SelectView: View {
             Section {
                 VariablePicker(title: "X", current: model.x, allowNone: false) { v in Task { await model.setVariable(.x, to: v) } }
                 VariablePicker(title: "Y", current: model.y, allowNone: false) { v in Task { await model.setVariable(.y, to: v) } }
-                VariablePicker(title: "Color", current: model.color) { v in Task { await model.setVariable(.color, to: v) } }
+                VariablePicker(title: "Color", current: model.colorLabel) { v in Task { await model.setVariable(.color, to: v) } }
                 VariablePicker(title: "Size", current: model.size) { v in Task { await model.setVariable(.size, to: v) } }
                 VariablePicker(title: "Graph for each", current: model.facet) { v in Task { await model.setVariable(.facet, to: v) } }
                 if !model.availableCohorts.isEmpty {
@@ -398,6 +398,10 @@ struct SelectView: View {
             Section {
                 ExtraRows(title: "Add to X", names: model.xMore, slot: .xMore)
                 ExtraRows(title: "Add to Y", names: model.yMore, slot: .yMore)
+                if !model.yMore.isEmpty {
+                    Toggle("Plot Y probes individually", isOn: Binding(get: { model.yIndividually }, set: { model.setIndividualY($0) }))
+                        .accessibilityIdentifier("y-individually")
+                }
                 ExtraRows(title: "Remove influences of", names: model.condition, slot: .condition)
                 if !model.condition.isEmpty {
                     Picker("Remove them from", selection: $model.conditionOn) {
@@ -410,7 +414,7 @@ struct SelectView: View {
             } header: {
                 Text("Combine and adjust")
             } footer: {
-                Text("Several numeric variables on one axis are combined into one marker: the median of their z-scores. \u{201C}Remove influences of\u{201D} replaces X or Y by what a linear fit on the chosen numeric variables leaves unexplained.")
+                Text("Several numeric variables on one axis are combined into one marker: the median of their z-scores. Plotted individually, every sample appears once per Y probe, with the probe as the colour; choose a colour of your own and there is one graph per probe instead. \u{201C}Remove influences of\u{201D} replaces X or Y by what a linear fit on the chosen numeric variables leaves unexplained.")
             }
         }
         .overlay(alignment: .top) {

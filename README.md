@@ -40,6 +40,23 @@ min, cnv 25.2, cnc 12.5, mut 5.3, final indexing 14.7, the rest under a minute e
 
 A finished database is one file in rollback-journal mode (bytes 18-19 `0101`), with the
 tables `sparse` (how each type was loaded), `default_filters` (presets), `types`, `env_env`.
+
+### Pulling all the data of one type
+
+Do not write `SELECT ... FROM tcgai WHERE type = 'rna'`: there is no type-only index (it
+cost 8.6 GB and nothing used it), so that is a full scan of the 577 M-row table (3.5 min).
+Use the view `bytype` (builds from 2026-10-07 on), which starts from `probe_types` and reads
+each probe's rows as one contiguous range of the covering index:
+
+    SELECT probe, sample, value FROM bytype WHERE type = 'rppa';   -- 2 M rows, 2 s
+    SELECT probe, sample, value FROM bytype WHERE type = 'rna';    -- 195 M rows, ~150 s
+    SELECT probe, count(*) FROM bytype WHERE type = 'sig' GROUP BY probe;
+    SELECT sample, value FROM bytype WHERE probe = 'CD8A';         -- 0.01 s
+
+(`probekey` and `samplekey` are in the view too.) Categorical data by type: the `tcgacats`
+view, `WHERE type = 'fmut'`, which has its own type-leading index. `Util/index_bench.py`
+measures all of this on a bench copy; its 2026-10-07 results are summarised in
+`T2Mobile/NOTES.md`.
 Verify before serving: the SQL suite counts, `T2Mobile/service/test.sh equiv` against a private
 `t2api` on the new files, and a diff against the served files; `Util/index_bench.py` measures
 the indexes. Serve from a NEW directory and change the compose volumes; never overwrite a

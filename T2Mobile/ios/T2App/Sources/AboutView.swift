@@ -7,7 +7,6 @@ struct AboutView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var advanced = false
-    @State private var clinical = false
     @State private var contact = false
 
     var body: some View {
@@ -57,23 +56,14 @@ struct AboutView: View {
                     }
                     if let described = m.clinicalDescriptions, !described.isEmpty {
                         Section {
-                            DisclosureGroup(isExpanded: $clinical) {
-                                ForEach(described) { c in
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(c.column).font(.callout.monospaced())
-                                        Text(c.description).font(.footnote)
-                                        if let s = c.source, !s.isEmpty { Text(s).font(.caption2).foregroundStyle(.secondary) }
-                                    }
-                                    .accessibilityIdentifier("clinical-\(c.column)")
-                                }
+                            NavigationLink {
+                                ClinicalVariablesView(label: m.label, described: described)
                             } label: {
-                                Text("\(described.count) clinical variables")
+                                LabeledContent("Clinical variables", value: "\(described.count)")
                             }
                             .accessibilityIdentifier("clinical-variables")
-                        } header: {
-                            Text("Clinical variables in \(m.label)")
                         } footer: {
-                            Text("The sample annotations that can be plotted and filtered on, with what each one means and where it comes from. The survival endpoints (OS, DSS, DFI, PFI) follow the TCGA Pan-Cancer Clinical Data Resource.")
+                            Text("The sample annotations that can be plotted and filtered on, with what each one means and where it comes from.")
                         }
                     }
                 }
@@ -183,5 +173,39 @@ struct ContactView: View {
             problem = "The message could not be sent: \(error). Please try again later."
         }
         sending = false
+    }
+}
+
+/// What each clinical column means and where it comes from (the service's descriptions).
+struct ClinicalVariablesView: View {
+    let label: String
+    let described: [ClinicalDescription]
+    @State private var search = ""
+
+    private var shown: [ClinicalDescription] {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        if q.isEmpty { return described }
+        return described.filter { $0.column.localizedCaseInsensitiveContains(q) || $0.description.localizedCaseInsensitiveContains(q) }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(shown) { c in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(c.column).font(.callout.monospaced())
+                        Text(c.description).font(.footnote)
+                        if let s = c.source, !s.isEmpty { Text(s).font(.caption2).foregroundStyle(.secondary) }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("clinical-\(c.column)")
+                }
+            } footer: {
+                Text("The survival endpoints (OS, DSS, DFI, PFI) and the clinical fields follow the TCGA Pan-Cancer Clinical Data Resource (Liu et al., Cell 2018); the Subtype columns come from the Pan-Cancer Atlas; the Toil collection's columns from its phenotype file.")
+            }
+        }
+        .searchable(text: $search, prompt: "Find a variable")
+        .navigationTitle("Clinical variables")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

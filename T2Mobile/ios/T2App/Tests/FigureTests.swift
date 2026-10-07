@@ -70,41 +70,57 @@ final class FigureTests: XCTestCase {
         XCTAssertEqual(render(s, .forPrint).pixels, render(s, .forPrint).pixels)
     }
 
+    /// a style with no marks and no text at all; a test switches on the one thing it measures
+    /// (the panel's axis lines and grid stay: a few hundred ink units, the same in every variant)
+    private var bare: PlotStyle {
+        var s = PlotStyle()
+        s.pointSize = 0; s.titleSize = 0; s.subtitleSize = 0; s.axisTitleSize = 0; s.axisTextSize = 0; s.legendSize = 0
+        s.showLegend = false; s.showSourceLine = false
+        return s
+    }
+
     func testTitleSizeIsRespected() {
         let s = scene()
-        var none = PlotStyle(); none.titleSize = 0; none.subtitleSize = 0
-        var small = none; small.titleSize = 10
-        var large = none; large.titleSize = 20
-        // the top band holds the title: no ink without one, more ink with a larger one
+        var small = bare; small.titleSize = 10
+        var large = bare; large.titleSize = 20
+        // the top band holds the title: a larger title puts clearly more ink there
         let band = 0..<70
-        XCTAssertEqual(ink(render(s, none), rows: band), 0, accuracy: 0.5, "a title of size 0 still leaves ink at the top")
+        let none = ink(render(s, bare), rows: band)
         let a = ink(render(s, small), rows: band), b = ink(render(s, large), rows: band)
-        XCTAssertGreaterThan(a, 5, "a 10 pt title draws nothing")
-        XCTAssertGreaterThan(b, a * 1.5, "a 20 pt title (\(b)) is not clearly larger than a 10 pt one (\(a))")
+        XCTAssertGreaterThan(a, none + 100, "a 10 pt title adds no ink at the top (\(none) -> \(a))")
+        XCTAssertGreaterThan(b, a + 100, "a 20 pt title (\(b)) is not clearly larger than a 10 pt one (\(a))")
     }
 
-    func testAxisAndLegendSizesChangeTheDrawing() {
+    /// each text size on its own: more points, more ink; 0 = none
+    func testAxisAndLegendSizesAreRespected() {
         let s = scene()
-        let base = render(s, .forPrint)
-        var bigger = PlotStyle.forPrint
-        bigger.axisTextSize = 14
-        XCTAssertGreaterThan(ink(render(s, bigger)), ink(base) * 1.3, "larger axis labels do not add ink")
-        bigger = .forPrint; bigger.axisTitleSize = 16
-        XCTAssertGreaterThan(ink(render(s, bigger)), ink(base) * 1.1, "larger axis titles do not add ink")
-        bigger = .forPrint; bigger.legendSize = 14
-        XCTAssertGreaterThan(ink(render(s, bigger)), ink(base) * 1.1, "a larger legend does not add ink")
-        var noLegend = PlotStyle.forPrint; noLegend.showLegend = false
-        XCTAssertLessThan(ink(render(s, noLegend)), ink(base), "hiding the legend does not remove ink")
+        let none = ink(render(s, bare))
+        func inkWith(_ change: (inout PlotStyle) -> Void) -> Double {
+            var st = bare; change(&st); return ink(render(s, st))
+        }
+        let labels6 = inkWith { $0.axisTextSize = 6 }, labels14 = inkWith { $0.axisTextSize = 14 }
+        XCTAssertGreaterThan(labels6, none + 50, "6 pt axis labels add no ink")
+        XCTAssertGreaterThan(labels14, labels6 * 1.5, "14 pt axis labels (\(labels14)) are not clearly more than 6 pt ones (\(labels6))")
+        let titles7 = inkWith { $0.axisTitleSize = 7 }, titles16 = inkWith { $0.axisTitleSize = 16 }
+        XCTAssertGreaterThan(titles7, none + 50, "7 pt axis titles add no ink")
+        XCTAssertGreaterThan(titles16, titles7 * 1.5, "16 pt axis titles (\(titles16)) are not clearly more than 7 pt ones (\(titles7))")
+        let legend6 = inkWith { $0.showLegend = true; $0.legendSize = 6 }, legend14 = inkWith { $0.showLegend = true; $0.legendSize = 14 }
+        XCTAssertGreaterThan(legend6, none + 50, "a 6 pt legend adds no ink")
+        XCTAssertGreaterThan(legend14, legend6 * 1.5, "a 14 pt legend (\(legend14)) is not clearly more than a 6 pt one (\(legend6))")
+        let source = inkWith { $0.showSourceLine = true; $0.axisTextSize = 8 } - inkWith { $0.axisTextSize = 8 }
+        XCTAssertGreaterThan(source, 50, "the source line adds no ink")
+        // the print preset against the same with every text removed
         var noText = PlotStyle.forPrint
         noText.titleSize = 0; noText.subtitleSize = 0; noText.axisTitleSize = 0; noText.axisTextSize = 0; noText.legendSize = 0; noText.showSourceLine = false
-        XCTAssertLessThan(ink(render(s, noText)), ink(base) * 0.7, "removing every text leaves most of the ink")
+        XCTAssertLessThan(ink(render(s, noText)), ink(render(s, .forPrint)) * 0.7, "removing every text leaves most of the ink")
     }
 
-    func testPointSizeChangesTheDrawing() {
+    func testPointSizeIsRespected() {
         let s = scene()
-        var fine = PlotStyle.forPrint; fine.pointSize = 0.8
-        var coarse = PlotStyle.forPrint; coarse.pointSize = 4
-        XCTAssertGreaterThan(ink(render(s, coarse)), ink(render(s, fine)) * 1.2)
+        var fine = bare; fine.pointSize = 0.8
+        var coarse = bare; coarse.pointSize = 4
+        XCTAssertGreaterThan(ink(render(s, fine)), ink(render(s, bare)) + 20, "0.8 pt points add no ink")
+        XCTAssertGreaterThan(ink(render(s, coarse)), ink(render(s, fine)) * 1.5)
     }
 
     // MARK: legend

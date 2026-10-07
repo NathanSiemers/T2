@@ -341,6 +341,7 @@ final class T2UITests: XCTestCase {
         shot("25-publish-full-width-half-high")
         scrollTo("export-png").tap()
         waitFor("publish-share", "the share link", timeout: 60)
+        scrollTo("publish-message")          // the export section grew: the message may be below the screen
         XCTAssertTrue(text(of: "publish-message").hasPrefix("PNG"), text(of: "publish-message"))
         XCTAssertTrue(element("publish-save-photos").exists, "no Save to Photos for a PNG")
         XCTAssertFalse(element("publish-working").exists, "the progress line stayed after the export")
@@ -353,6 +354,7 @@ final class T2UITests: XCTestCase {
         XCTAssertTrue(waitUntil(timeout: 10) { text(of: "publish-file") != firstFile }, "the second export reused the first file's name")
         scrollTo("export-tiff").tap()
         waitFor("publish-share", "the share link", timeout: 60)
+        scrollTo("publish-message")
         XCTAssertTrue(text(of: "publish-message").hasPrefix("TIFF"), text(of: "publish-message"))
         shot("26b-publish-tiff-exported")
         scrollTo("export-pdf").tap()

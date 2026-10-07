@@ -98,7 +98,9 @@ struct PublishView: View {
                     .accessibilityIdentifier("publish-working")
                 }
                 if let exported {
+                    // (.id: a new file gets a new share control, never a cached preview of the old one)
                     ShareLink(item: exported) { Label("Share or save the file", systemImage: "square.and.arrow.up") }
+                        .id(exported)
                         .accessibilityIdentifier("publish-share")
                     if exported.pathExtension != "pdf" {
                         Button {
@@ -110,6 +112,7 @@ struct PublishView: View {
                         .accessibilityIdentifier("publish-save-photos")
                     }
                     Text(exported.lastPathComponent).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                        .accessibilityIdentifier("publish-file")
                 }
                 if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("publish-message") }
             } header: {
@@ -189,10 +192,23 @@ struct PublishView: View {
         }
     }
 
+    /// T2_<y>_by_<x>[_per_<facet>]_<size>_<time>: what the figure shows, and unique for every
+    /// export (the same name for new content left the share sheet and Photos with the old file)
+    private func fileBase() -> String {
+        let f = model.figure
+        var parts = ["T2", model.y, "by", model.x]
+        if !model.facet.isEmpty { parts += ["per", model.facet] }
+        if !model.color.isEmpty { parts += ["color", model.color] }
+        parts.append(String(format: "%.2fx%.2fin", f.widthIn, f.heightIn))
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        parts.append(stamp.string(from: Date()))
+        return parts.joined(separator: "_").replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
+    }
+
     @MainActor private func render(_ scene: PlotScene, pdf: Bool, tiff: Bool) async {
         let f = model.figure
-        let base = "T2_\(model.x)_vs_\(model.y)_\(String(format: "%.2fx%.2fin", f.widthIn, f.heightIn))"
-            .replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
+        let base = fileBase()
         let renderer = ImageRenderer(content: figureView(scene))
         let dir = Self.figuresFolder
         if pdf {

@@ -197,11 +197,15 @@ final class T2UITests: XCTestCase {
         // the contact form: Send stays disabled until name, a valid address and a message are there
         scrollTo("contact-button").tap()
         XCTAssertTrue(element("contact-send").waitForExistence(timeout: 20), "no contact form")
-        XCTAssertFalse(element("contact-send").isEnabled)
+        XCTAssertEqual(element("contact-send").value as? String, "incomplete", "Send is ready with an empty form")
         element("contact-name").tap(); element("contact-name").typeText("Test Person")
         element("contact-email").tap(); element("contact-email").typeText("not-an-address")
         element("contact-message").tap(); element("contact-message").typeText("Just checking the form.")
-        XCTAssertFalse(element("contact-send").isEnabled, "Send enabled with an invalid address")
+        XCTAssertEqual(element("contact-send").value as? String, "incomplete", "Send is ready with an invalid address")
+        element("contact-email").tap()
+        element("contact-email").typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "not-an-address".count))
+        element("contact-email").typeText("someone@example.org")
+        XCTAssertTrue(waitUntil(timeout: 5) { (element("contact-send").value as? String) == "ready" }, "Send not ready with name, a valid address and a message")
         shot("04b2-contact-form")
         app.buttons["Cancel"].tap()          // nothing is sent by the tests
         XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 10))

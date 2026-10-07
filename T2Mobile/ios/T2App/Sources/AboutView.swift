@@ -158,6 +158,8 @@ struct ContactView: View {
                         }
                         .disabled(!canSend)
                         .accessibilityIdentifier("contact-send")
+                        // (XCUITest's isEnabled is not reliable for a toolbar button on every iOS: the tests read this)
+                        .accessibilityValue(canSend ? "ready" : "incomplete")
                     }
                 }
             }

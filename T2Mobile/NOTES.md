@@ -62,7 +62,30 @@ indexed lookup that can be cached, and "hundreds of users" becomes easy.
 
 ## Status
 
-(see the bottom of this file: "Log" — newest entry last)
+(details at the bottom of this file: "Log" — newest entry last)
+
+As of 2026-10-07 (commit 3d2fd4e): service live and current (image `t2api:2026.10`, rollback
+`t2api:pre-heme-20261006`); app at feature parity with the website for selection, presets,
+cross-filter, box/scatter/survival/count plots, facets, combined and individual Y probes,
+conditioning, export of figures (PNG/TIFF/PDF, Files app, Photos) and of the data table; all
+of Nathan's notes through the 8:27 pm 6 Oct entry of `app.notes.md` done. Tests: T2Kit 57,
+FigureTests 7, UI 6 (all green on the Mac, Xcode 27 / iPhone 18 Pro).
+
+Next, in order of Nathan's interest: (1) the Model screen — see "Plan: group comparisons and
+linear models" in the log (not started); (2) Apple: when the Developer Program membership is
+active and a Team ID known, `mac_setup.sh --team ID`, then a device install step and a
+TestFlight archive/upload step; (3) show the clinical descriptions on the Shiny site's About
+tab; (4) the Kruskal-Wallis line was removed on 2026-10-07 at Nathan's request — no test
+statistics on box plots until real models exist.
+
+How Claude runs the Mac (2026-10-06/07): `rsync -az --delete` of `ios/` to
+`nathan@10.13.13.4:~/Claude/T2Mobile/ios/` excluding `.build/`, `Info.plist`, `build/`,
+`tools/`, `screenshots/`, `logs/`, `*.xcodeproj`, `Local.xcconfig` (forgetting `.build/`
+once pushed a Linux build cache onto the Mac; `rm -rf ios/T2Kit/.build` there fixes it), then
+`./ios/mac_setup.sh --ui-tests` over ssh in the background (~20 min; without `--ui-tests` the
+script stops after the simulator screenshots). A single UI test reruns in ~3–4 min with
+`xcodebuild ... build-for-testing` then `-only-testing:T2UITests/T2UITests/testNN_... test-without-building`
+with `TEST_RUNNER_T2_SCREENSHOT_DIR` set; screenshots land in `screenshots/ui-*/`.
 
 ## How to run the service here
 
@@ -76,9 +99,12 @@ R is not installed on this host; the tests run R inside the `shinyt2t:2026.10` i
 
 ## What Claude needs from Nathan
 
-See docs/IOS.md "What you need to do". In short: a Mac with Xcode 15 or newer to build and
-run the app in the simulator (free); an Apple ID to run it on your own iPhone (free, 7-day
-installs); the Apple Developer Program ($99/year) only for TestFlight / App Store.
+See docs/IOS.md "What you need to do". The Mac is in place (ssh, Xcode 27). Still needed:
+the Apple Developer Program membership to become active (agreement signed, account
+`nosapple@fiveprime.org` logged into Xcode on 2026-10-06, never asked to pay) and its Team
+ID, for installs on his and friends' phones (TestFlight) — `mac_setup.sh --team ID` is ready.
+Decisions for the Model screen (plan in the log): which R packages beyond lm/emmeans/limma,
+and whether the model service may live beside t2api in ShinyPublic.
 
 ## Open questions (none block the current work)
 

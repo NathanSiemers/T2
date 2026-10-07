@@ -35,6 +35,8 @@ final class AppModel {
     var samples: [String] = []
     var filter = CrossFilter(sampleCount: 0)
     var activePresets: Set<String> = []
+    /// the samples of every preset of the open dataset, by label (worked out once per dataset)
+    private var presetMasks: [String: Mask] = [:]
 
     // what is plotted
     var x = ""
@@ -172,6 +174,7 @@ final class AppModel {
         meta = m
         samples = clin.samples
         filter = cf
+        presetMasks = Dictionary(m.presets.map { ($0.label, $0.mask(columns: cf.columns, sampleCount: cf.sampleCount)) }, uniquingKeysWith: { a, _ in a })
         fixedPreset = preset.flatMap { label in m.presets.contains { $0.label == label } ? label : nil }
         if preset != nil && fixedPreset == nil { status = "This dataset has no part called \u{201C}\(preset ?? "")\u{201D}; showing all of it." }
         activePresets = Set(m.presets.filter(\.isDefault).map(\.label)).union(fixedPreset.map { [$0] } ?? [])
@@ -317,17 +320,72 @@ final class AppModel {
 
     // MARK: samples
 
+    // The dataset's presets are of two kinds. A GROUP picks a set of samples ("GTEx normal
+    // tissues", "Primary tumors only": a rule with `in`); groups are alternatives, so one at
+    // most is in use. An EXCLUSION only removes samples ("Exclude cell lines", "Exclude
+    // tumors of heme origin": every rule a `not in`); any number can be on. A choice is
+    // offered only where it changes the samples in use: a group that is empty within the
+    // data source, or is the whole of it, is not offered, and nor is an exclusion that would
+    // remove nothing, or everything, from the source and the chosen group.
+
+    /// a preset that only removes samples
+    static func isExclusion(_ p: Preset) -> Bool { !p.rules.isEmpty && p.rules.allSatisfy { $0.op == "not in" } }
+
+    /// the samples of the data source: the fixed preset's, or all of them
+    private var sourceMask: Mask {
+        fixedPreset.flatMap { presetMasks[$0] } ?? Mask(repeating: true, count: filter.sampleCount)
+    }
+    /// how many samples the data source has (the "of" in "n of N samples in use")
+    var sourceCount: Int { fixedPreset == nil ? filter.sampleCount : sourceMask.reduce(0) { $0 + ($1 ? 1 : 0) } }
+    /// does this preset keep some, but not all, of `base`?
+    private func narrows(_ label: String, within base: Mask) -> Bool {
+        guard let pm = presetMasks[label], pm.count == base.count else { return false }
+        var inBase = 0, kept = 0
+        for i in base.indices where base[i] {
+            inBase += 1
+            if pm[i] { kept += 1 }
+        }
+        return kept > 0 && kept < inBase
+    }
+    /// the groups a user can choose from within the data source
+    var groupChoices: [Preset] {
+        guard let m = meta else { return [] }
+        let base = sourceMask
+        return m.presets.filter { $0.label != fixedPreset && !Self.isExclusion($0) && narrows($0.label, within: base) }
+    }
+    /// the group in use, if any
+    var chosenGroup: String? {
+        groupChoices.first { activePresets.contains($0.label) }?.label
+    }
+    /// the exclusions that would make a difference to the source and the chosen group
+    var exclusionChoices: [Preset] {
+        guard let m = meta else { return [] }
+        var base = sourceMask
+        if let g = chosenGroup, let gm = presetMasks[g] { base = zip(base, gm).map { $0 && $1 } }
+        return m.presets.filter { $0.label != fixedPreset && Self.isExclusion($0) && narrows($0.label, within: base) }
+    }
+
+    func choose(group label: String?) {
+        for p in groupChoices { activePresets.remove(p.label) }
+        if let label { activePresets.insert(label) }
+        applyPresets()
+    }
     func toggle(preset label: String) {
         if label == fixedPreset { return }       // the data source itself: always on
         if activePresets.contains(label) { activePresets.remove(label) } else { activePresets.insert(label) }
         applyPresets()
     }
-    /// the universe = samples in every active preset
+    /// the universe = samples in every active preset. A preset that is no longer offered
+    /// (an exclusion that would empty the set after a change of group) is switched off.
     private func applyPresets() {
         guard let m = meta else { return }
+        let groups = Set(groupChoices.map(\.label))
+        if let g = chosenGroup { activePresets.subtract(groups.subtracting([g])) }   // one group at most
+        let offered = groups.union(exclusionChoices.map(\.label)).union(fixedPreset.map { [$0] } ?? [])
+        activePresets = activePresets.intersection(offered)
         var mask: Mask? = nil
         for p in m.presets where activePresets.contains(p.label) {
-            let pm = p.mask(columns: filter.columns, sampleCount: filter.sampleCount)
+            guard let pm = presetMasks[p.label] else { continue }
             if let old = mask { mask = zip(old, pm).map { $0 && $1 } } else { mask = pm }
         }
         filter.baseMask = mask
@@ -357,22 +415,45 @@ final class AppModel {
     /// is X a survival endpoint of this dataset (so the plot is a Kaplan-Meier plot)?
     var isSurvival: Bool { meta?.usableSurvivalEndpoints.contains(x) ?? false }
 
-    /// The table behind the plot (the website's "Download Table"): the samples in use, with
-    /// the plotted variables, written to a CSV file. Returns nil if there is nothing to write.
-    func writeTable() -> URL? {
-        guard let m = meta else { return nil }
+    /// The columns of the export table: every probe the user has asked for in this dataset
+    /// (the plotted ones first, then the other filter columns and anything else loaded), then
+    /// all of the dataset's clinical columns, in its order. A clinical column that is also
+    /// plotted is written once, in its plotted place.
+    var tableColumns: [String] {
+        guard let m = meta else { return [] }
+        let clinical = Set(m.clinicalColumns)
         // (built step by step: Xcode 16 cannot type-check one long chain of `+` on arrays)
-        var wanted: [String] = ["cohort", "sample_type", x]
+        var wanted: [String] = [x]
         wanted.append(contentsOf: xMore)
         wanted.append(y)
         wanted.append(contentsOf: yMore)
         wanted.append(contentsOf: [color, size, facet])
         wanted.append(contentsOf: condition)
-        if isSurvival { wanted.append(x + ".time") }
+        wanted.append(contentsOf: filter.filters.map(\.column))
+        wanted.append(contentsOf: filter.columns.keys.filter { !clinical.contains($0) }.sorted())
+        wanted.append(contentsOf: m.clinicalColumns)
         var names: [String] = []
         for v in wanted where !v.isEmpty && filter.columns[v] != nil && !names.contains(v) { names.append(v) }
+        return names
+    }
+
+    /// how many of the table's columns are probes (not clinical columns)
+    var tableProbeCount: Int {
+        let clinical = Set(meta?.clinicalColumns ?? [])
+        return tableColumns.filter { !clinical.contains($0) }.count
+    }
+
+    /// The export table (the website's "Download Table"): one row per sample in use, exactly
+    /// as the presets and the filters leave them, with `tableColumns`, written to a new CSV
+    /// file. Returns nil if there is nothing to write.
+    func writeTable() -> URL? {
+        guard let m = meta else { return nil }
+        let names = tableColumns
         let csv = TableExport.csv(samples: samples, columns: names.compactMap { filter.columns[$0] }, keep: filter.mask())
-        let file = "T2_\(m.dataset)_\(x)_\(y).csv".replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyyMMdd-HHmmss"
+        let file = "T2_table_\(m.dataset)_\(filter.selectedCount())samples_\(names.count)columns_\(stamp.string(from: Date())).csv"
+            .replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(file)
         do { try csv.write(to: url, atomically: true, encoding: .utf8) } catch { return nil }
         return url

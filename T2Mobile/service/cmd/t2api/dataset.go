@@ -549,6 +549,7 @@ func (d *Dataset) loadPresets() error {
 		return nil
 	}
 	defer rows.Close()
+	defer d.ensureHemePreset()
 	byLabel := map[string]int{}
 	for rows.Next() {
 		var label, col, op, val string
@@ -595,27 +596,42 @@ func contains(xs []string, x string) bool {
 }
 
 func (d *Dataset) derivePresets() {
-	keep := func(col string, vals []string) []string {
-		out := []string{}
-		for _, v := range vals {
-			if contains(d.levels[col], v) {
-				out = append(out, v)
-			}
-		}
-		return out
-	}
 	if st := d.Roles.SampletypeCol; st != "" {
-		if v := keep(st, d.Roles.NormalLabel); len(v) > 0 {
+		if v := d.knownLevels(st, d.Roles.NormalLabel); len(v) > 0 {
 			d.presets = append(d.presets, Preset{Label: "Exclude non-tumor", Description: "Tumor samples only", Source: "derived",
 				Rules: []PresetRule{{Column: st, Op: "not in", Values: v}}})
 		}
 	}
-	if _, ok := d.levels["cohort"]; ok {
-		if v := keep("cohort", d.Roles.HemeValues); len(v) > 0 {
-			d.presets = append(d.presets, Preset{Label: "Exclude tumors of heme origin", Description: "Drop blood and lymphoid cohorts", Source: "derived",
-				Rules: []PresetRule{{Column: "cohort", Op: "not in", Values: v}}})
+	d.ensureHemePreset()
+}
+
+// ensureHemePreset adds the classic "Exclude tumors of heme origin" from the role map's
+// heme values when the dataset's own presets do not already drop cohorts: the choice
+// belongs to every collection with blood or lymphoid cohorts (TCGA, TARGET, GTEx), whether
+// or not its default_filters table thought of it.
+func (d *Dataset) ensureHemePreset() {
+	for _, p := range d.presets {
+		for _, r := range p.Rules {
+			if r.Column == "cohort" && r.Op == "not in" {
+				return
+			}
 		}
 	}
+	if v := d.knownLevels("cohort", d.Roles.HemeValues); len(v) > 0 {
+		d.presets = append(d.presets, Preset{Label: "Exclude tumors of heme origin", Description: "Drop blood and lymphoid cohorts", Source: "derived",
+			Rules: []PresetRule{{Column: "cohort", Op: "not in", Values: v}}})
+	}
+}
+
+// knownLevels: the values among vals that are levels of the column (none if the column is unknown)
+func (d *Dataset) knownLevels(col string, vals []string) []string {
+	out := []string{}
+	for _, v := range vals {
+		if contains(d.levels[col], v) {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // buildMeta: roles, defaults, cohort display names and the data-type descriptions.

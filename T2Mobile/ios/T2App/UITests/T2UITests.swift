@@ -273,6 +273,18 @@ final class T2UITests: XCTestCase {
         waitFor("dataset-summary", "the dataset's sample count")
         // the first of the dataset's presets: tap the switch itself (its right-hand side)
         let all = text(of: "dataset-summary")
+        // the sample groups are alternatives: choosing one narrows the samples, "All samples" undoes it
+        scrollTo("group-Primary tumors only").tap()
+        scrollTo("select-count")
+        shot("14-select-group-chosen")
+        XCTAssertFalse(text(of: "select-count").hasPrefix("12,804 of"), "the group did not change the samples in use: " + text(of: "select-count"))
+        XCTAssertEqual(element("group-Primary tumors only").value as? String, "chosen")
+        // within the primary tumours "Tumor samples only" removes nothing, so it is not offered
+        XCTAssertFalse(app.switches["preset-Tumor samples only"].exists, "a switch that changes nothing is offered")
+        scrollTo("group-all").tap()
+        scrollTo("select-count")
+        XCTAssertTrue(text(of: "select-count").hasPrefix("12,804 of"), "All samples did not restore the samples: " + text(of: "select-count"))
+        // an exclusion: tap the switch itself (its right-hand side)
         let preset = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH 'preset-'")).firstMatch
         var swipes = 0
         while !(preset.exists && preset.isHittable) && swipes < 8 { app.swipeUp(velocity: .slow); swipes += 1 }
@@ -409,6 +421,19 @@ final class T2UITests: XCTestCase {
         scrollTo("table-make").tap()
         scrollTo("table-share")
         shot("45-table-made")
+        // the file is named after the samples and columns it holds: the two cohorts' samples
+        // (fewer than the dataset's) and all 56 clinical columns plus the probes that are not
+        // clinical (X is cohort here, so one: Y)
+        let tableFile = text(of: "table-file")
+        XCTAssertTrue(tableFile.hasPrefix("T2_table_TCGA_") && tableFile.hasSuffix(".csv"), tableFile)
+        let counts = tableFile.split(separator: "_").compactMap { part -> Int? in
+            part.hasSuffix("samples") || part.hasSuffix("columns") ? Int(part.filter(\.isNumber)) : nil
+        }
+        XCTAssertEqual(counts.count, 2, tableFile)
+        if counts.count == 2 {
+            XCTAssertTrue(counts[0] > 100 && counts[0] < 12_804, "sample count in the file name: \(tableFile)")
+            XCTAssertTrue(counts[1] >= 56 + 1, "column count in the file name: \(tableFile)")
+        }
 
         // two probes combined on Y, and the influence of a third removed
         app.terminate()
@@ -468,6 +493,16 @@ final class T2UITests: XCTestCase {
             waitForExpectations(timeout: dataTimeout)
             shot("32b-select-gtex-only")
             XCTAssertTrue(element("pick-Y").label.contains("CD19"), "Y did not survive the switch: \(element("pick-Y").label)")
+            // within the GTEx part the dataset's groups (TCGA tumours, TARGET, all normal tissue)
+            // are empty or the whole part, so none is offered; "Exclude cell lines" removes nothing
+            // (the part is normal tissue by definition); the heme exclusion (blood, spleen,
+            // EBV lymphocytes) is the one choice that makes a difference
+            scrollTo("select-count")
+            shot("32b2-select-gtex-only-samples")
+            XCTAssertFalse(element("group-all").exists, "sample groups offered inside the GTEx part")
+            XCTAssertFalse(app.switches["preset-Exclude cell lines"].exists, "Exclude cell lines offered inside the GTEx part, where it changes nothing")
+            XCTAssertTrue(app.switches["preset-Exclude tumors of heme origin"].exists, "no heme exclusion inside the GTEx part")
+            XCTAssertTrue(text(of: "select-count").contains("of 7,429 samples"), "the count is not out of the part's samples: " + text(of: "select-count"))
             openTab("Plot")
             waitFor("plot-count", "the plot's sample count")
             XCTAssertTrue(text(of: "plot-count").contains("7,429"), text(of: "plot-count"))

@@ -484,3 +484,78 @@ From `app.notes.md` (4:56 pm entry):
 Apple: Nathan signed the Program agreement and logged `nosapple@fiveprime.org` into Xcode, but
 was never asked to pay, so the paid membership is probably not active yet; no team chosen in
 Xcode, no signing certificate. `mac_setup.sh --team ID` is ready for when the Team ID is known.
+
+### 2026-10-06 (night) — export table, sample presets per data source, model plan (Claude)
+
+From `app.notes.md` (8:27 pm entry):
+
+- **Export table** (Plot screen › Table): one row per sample in use, exactly as the presets and
+  the filters leave them (`filter.mask()`), with EVERY probe asked for in this dataset so far
+  (plotted ones first, then the filter columns, then anything else loaded) and ALL of the
+  dataset's clinical columns in its order (`AppModel.tableColumns`). New file per export,
+  named `T2_table_<dataset>_<n>samples_<k>columns_<time>.csv`; UI test checks the counts.
+- **Samples section**: the dataset's presets are split by their rules into GROUPS (a rule with
+  `in`: "GTEx normal tissues", "Primary tumors only"; alternatives, one at most, check-mark
+  rows `group-<label>` plus `group-all`) and EXCLUSIONS (every rule `not in`: "Exclude cell
+  lines", "Exclude tumors of heme origin"; switches `preset-<label>`). Each is offered only
+  where it changes the sample set: a group that is empty within the data source or is the whole
+  source is hidden, and so is an exclusion that would remove nothing, or everything, from the
+  source and the chosen group (`AppModel.narrows`). An exclusion that stops being offered
+  after a group change is switched off, so nothing hidden ever applies. Consequences: inside
+  "GTEx normal tissues" no groups are offered and "Exclude cell lines" is gone (that part is
+  normal tissue by definition: the 433 GTEx cell lines are not in it); inside "Primary tumors
+  only" the "Tumor samples only" switch disappears. Nothing is hard-coded per dataset.
+- **Service**: `ensureHemePreset()` adds the derived "Exclude tumors of heme origin" (the role
+  map's heme values that exist as cohort levels) to a dataset whose `default_filters` table
+  drops no cohort — Toil now has it (9 values: the leukaemias, DLBC, thymoma, GTEx whole blood,
+  spleen, EBV lymphocytes, the CML line), so it is offered in the whole collection, the GTEx
+  part and the TARGET part. Image `t2api:2026.10` redeployed (rollback `t2api:pre-heme-20261006`).
+  The databases themselves were not touched.
+
+#### Plan: group comparisons and linear models (discussed with Nathan 2026-10-06, not built)
+
+The idea (Nathan): any filter can define a two-class problem, selected vs not selected; the
+variables we mechanically "remove the influence of" are better treated as covariates in a
+model; a decent modelling package with contrasts, not bare `lm`.
+
+Proposed shape:
+
+1. **One model specification** (T2Kit, `ModelSpec`, JSON-serialisable): response (the plotted
+   Y, or the median z-score of Y + "Add to Y"); the **term of interest**: a filter marked
+   "compare" on the Filter screen (group A = passes it, group B = does not; the universe is
+   presets ∧ all OTHER filters, i.e. `mask(excluding:)`, samples with no value in that
+   column are left out of both groups), or any categorical variable (X when categorical,
+   sample_type, a `.mut`); **covariates**: cohort (on by default whenever the universe has
+   more than one), the "Remove influences of" variables (on by default), any added variable,
+   at most one interaction (term × covariate); **family** from the response: Gaussian for
+   numeric Y, Cox for a survival endpoint (X is the endpoint, as the KM plot), binomial for a
+   two-level categorical Y; the universe as a bit mask over the dataset's sample order plus
+   the dataset `version` (19k samples = 2.4 KB; the server already shares the order).
+2. **Where it runs**: an R model service (plumber, container beside t2api, Nginx `/api/t2m/`),
+   built on the T2 R code so that the data are `gitr()`'s (same rule as the service), using
+   `lm`/`glm`/`coxph` + `emmeans` (marginal means, pairwise or vs-reference contrasts, Holm
+   or Tukey) + `car::Anova` (type II) + optional HC3 errors (`sandwich`) + `limma` for the
+   genome-wide version. The same R function serves the Shiny site (a Model tab there) and the
+   phone, so the two cannot disagree. A later on-device OLS (QR, treatment coding, emmeans-
+   style contrasts) in T2Kit can give instant single-response answers; it would be validated
+   against the service's R output anyway, so the service comes first.
+3. **Results screen** (phone and site): adjusted means per group with 95% CI (dot-and-whisker,
+   drawn by the existing scene code), contrasts (estimate, CI, p, adjusted p), ANOVA table,
+   fit summary (n per group, R², residual SE; for Cox the hazard ratios, concordance), small
+   residual-vs-fitted and QQ panels, warnings, a one-paragraph **methods sentence** and CSV
+   export of the tables with the formula.
+4. **Genome-wide group comparison** (the limma step, server only): "which variables differ
+   between the groups?" with the same design (group + covariates), over the rna (and sig)
+   probes, moderated t, Benjamini–Hochberg; a volcano plot and a top table; tapping a gene
+   sets Y and draws it. This is the comparison the phone cannot do alone and the thing a
+   two-class filter is really for.
+5. **Guard rails in the spec, not the UI**: refuse a term that is the response or a covariate
+   (a filter on CD8A compared on CD8A is circular); report aliased coefficients when the
+   design is rank-deficient (GTEx-vs-TCGA with cohort as a covariate is perfectly confounded);
+   minimum 3 samples per level, warn below 10; drop covariate levels that have no samples in
+   the universe; cap pairwise contrasts (33 cohorts = 528 pairs → offer vs-reference or
+   vs-grand-mean); Holm by default, Tukey for all-pairwise; cohort as a covariate is the
+   default because tissue differences dominate every pan-cancer comparison.
+6. **Order of work**: (a) `ModelSpec` + the Filter-screen "compare" mark + the Model screen
+   skeleton; (b) the R function `t2_model(spec)` with equivalence tests (lm/emmeans/coxph
+   outputs for fixed specs) and the plumber service; (c) results screen + CSV; (d) limma.

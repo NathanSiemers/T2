@@ -101,17 +101,19 @@ struct PlotView: View {
                 }
             }
             Section {
-                Button("Make the table (CSV)") { tableURL = model.writeTable() }
+                Button("Export the table (CSV)") { tableURL = model.writeTable() }
                     .accessibilityIdentifier("table-make")
                 if let tableURL {
                     ShareLink(item: tableURL) { Label("Share or save the table", systemImage: "square.and.arrow.up") }
                         .accessibilityIdentifier("table-share")
+                        .id(tableURL)
                     Text(tableURL.lastPathComponent).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("table-file")
                 }
             } header: {
                 Text("Table")
             } footer: {
-                Text("The samples in use with the plotted variables, one row per sample: the numbers behind the plot.")
+                Text("One row per sample in use (\(model.filter.selectedCount().formatted()), exactly as the presets and filters leave them), with every variable asked for in this dataset so far (\(model.tableProbeCount) probes) and all \(model.meta?.clinicalColumns.count ?? 0) clinical columns.")
             }
             Section("Appearance") {
                 if scene.panels.count > 1 {

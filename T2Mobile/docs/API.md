@@ -66,7 +66,14 @@ A sample is in the preset if **every** rule holds; a rule holds if the sample's 
 the dataset is first opened. They come from the dataset's own `default_filters` table
 (`source: "database"`; defined in `default_filters.R` in the T2 repository and written by
 every dataset build). A database built before that table existed gets two presets derived
-from its roles (`source: "derived"`): exclude non-tumor, exclude heme.
+from its roles (`source: "derived"`): exclude non-tumor, exclude heme. A database whose table
+drops no cohort also gets the derived "Exclude tumors of heme origin" (the role map's heme
+values that are levels of `cohort`), so every collection with blood or lymphoid cohorts
+offers it.
+
+How the app shows them: a preset with an `in` rule is a **group** (alternatives: one at
+most is in use), one whose rules are all `not in` is an **exclusion** (any number); each is
+offered only where it changes the samples of the chosen data source.
 
 ## Caching
 

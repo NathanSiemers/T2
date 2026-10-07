@@ -250,6 +250,33 @@ struct ExtraRows: View {
     }
 }
 
+/// One of the sample groups to choose from: a row with a check mark on the one in use.
+struct GroupRow: View {
+    let label: String
+    let description: String
+    let isOn: Bool
+    let choose: () -> Void
+
+    var body: some View {
+        Button(action: choose) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label).foregroundStyle(.primary)
+                    if !description.isEmpty { Text(description).font(.footnote).foregroundStyle(.secondary) }
+                }
+                Spacer()
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+            }
+            .contentShape(Rectangle())  // the whole row takes the tap, not just the text
+        }
+        .buttonStyle(.plain)        // (a List button is otherwise all accent colour)
+        .accessibilityLabel(label)
+        .accessibilityValue(isOn ? "chosen" : "not chosen")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}
+
 struct SelectView: View {
     let showPlot: () -> Void
     @Environment(AppModel.self) private var model
@@ -329,26 +356,43 @@ struct SelectView: View {
             if !model.status.isEmpty {
                 Section { Text(model.status).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("status") }
             }
-            // the dataset's ready-made subsets (its default_filters table)
-            if let presets = model.meta?.presets, !presets.isEmpty {
+            // the dataset's ready-made subsets (its default_filters table): the groups one can
+            // choose from (one at a time), then the exclusions (any number); only the choices
+            // that make a difference within the chosen data source are shown
+            let groups = model.groupChoices
+            let exclusions = model.exclusionChoices
+            if !groups.isEmpty || !exclusions.isEmpty {
                 Section {
-                    ForEach(presets) { p in
+                    if !groups.isEmpty {
+                        GroupRow(label: "All samples", description: model.fixedPreset.map { "Everything in \($0)." } ?? "", isOn: model.chosenGroup == nil) { model.choose(group: nil) }
+                            .accessibilityIdentifier("group-all")
+                        ForEach(groups) { p in
+                            GroupRow(label: p.label, description: p.description, isOn: model.chosenGroup == p.label) { model.choose(group: p.label) }
+                                .accessibilityIdentifier("group-\(p.label)")
+                        }
+                    }
+                    ForEach(exclusions) { p in
                         Toggle(isOn: Binding(get: { model.activePresets.contains(p.label) }, set: { _ in model.toggle(preset: p.label) })) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(p.label)
-                                if p.label == model.fixedPreset {
-                                    Text("The chosen data set; always on.").font(.footnote).foregroundStyle(.secondary)
-                                } else if !p.description.isEmpty { Text(p.description).font(.footnote).foregroundStyle(.secondary) }
+                                if !p.description.isEmpty { Text(p.description).font(.footnote).foregroundStyle(.secondary) }
                             }
                         }
-                        .disabled(p.label == model.fixedPreset)
                         .accessibilityIdentifier("preset-\(p.label)")
                     }
                 } header: {
                     Text("Samples")
                 } footer: {
-                    Text("\(model.filter.selectedCount().formatted()) of \(model.filter.sampleCount.formatted()) samples in use. Narrow them further on the Filter tab.")
+                    Text("\(model.filter.selectedCount().formatted()) of \(model.sourceCount.formatted()) samples in use. Narrow them further on the Filter tab.")
                         .accessibilityIdentifier("select-count")
+                }
+            } else {
+                Section {
+                    Text("\(model.filter.selectedCount().formatted()) of \(model.sourceCount.formatted()) samples in use. Narrow them on the Filter tab.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("select-count")
+                } header: {
+                    Text("Samples")
                 }
             }
             Section {

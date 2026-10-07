@@ -14,6 +14,37 @@ data type gets a build file.
 The repetitive database connection calls in 00-master are likely not
 needed, only intended to ensure that database connection doesn't drop.
 
+### Rebuilding the databases (as last done 2026-10-07)
+
+Run each builder from a frozen clone of the repository, so that edits to the working tree
+during a build cannot change it (the pipeline `source()`s each step when it reaches it):
+
+    git clone /scratch/nathan/R/T2 /scratch/nathan/R/T2-rebuild-<date>
+    cd T2-rebuild-<date>
+    rm -rf TCGA/Data && ln -s ../../T2/TCGA/Data TCGA/Data        # inputs are gitignored, 21 GB
+    ln -s ../../T2/TCGA/microbe.csv TCGA/microbe.csv
+    rm -rf TCGATARGETGTEX/Data && ln -s ../../T2/TCGATARGETGTEX/Data TCGATARGETGTEX/Data
+
+Then, in two containers at once (the builds are single-threaded and independent; image
+`rstudio:2026.03`, user 501:1000, no swap, `--oom-score-adj 1000` so a build dies before
+the machine does; the caps are far above the peaks seen, 51 GB for TCGA and 48 GB for Toil):
+
+    cd TCGA && Rscript 00-master.R > ../rebuild_tcga.log 2>&1        # ~1.5 h, 330 GB cap
+    ./run_ttg_demo.sh > rebuild_ttg.log 2>&1                          # ~30 min, 160 GB cap
+
+`00-master.R` logs `==> STEP <script> started/done` per step (`grep '==> STEP' rebuild_tcga.log`),
+builds `tcga.db.building`, runs `sql_tests.R` and renames to `tcga.db` only if the suite
+passes (`PROMOTED` in the log). Every input, including the GDC viral-read table, is read from
+`TCGA/Data`; nothing is downloaded unless `download = TRUE`. Step times on 2026-10-07: rna 10.7
+min, cnv 25.2, cnc 12.5, mut 5.3, final indexing 14.7, the rest under a minute each.
+
+A finished database is one file in rollback-journal mode (bytes 18-19 `0101`), with the
+tables `sparse` (how each type was loaded), `default_filters` (presets), `types`, `env_env`.
+Verify before serving: the SQL suite counts, `T2Mobile/service/test.sh equiv` against a private
+`t2api` on the new files, and a diff against the served files; `Util/index_bench.py` measures
+the indexes. Serve from a NEW directory and change the compose volumes; never overwrite a
+served file.
+
 ## The Shiny app: tabs and the Filter tab
 
 `app.R` is organised as five tabs: **Select** (data set, variables, cohort),

@@ -7,6 +7,8 @@ struct PlotView: View {
     @Environment(AppModel.self) private var model
     @State private var tableURL: URL?
     @State private var fullScreen = false
+    /// what the screen showed last: a changed plot is shown from its top again
+    @State private var lastShown = ""
 
     var body: some View {
         NavigationStack {
@@ -36,6 +38,7 @@ struct PlotView: View {
         // the plot is the point of the app: it takes the whole visible screen (full width, the
         // height left under the bars, in either orientation); the notes and settings follow
         GeometryReader { geo in
+        ScrollViewReader { proxy in
         List {
             Section {
                 // the count first: it stays on screen however tall the plot and its legend are
@@ -43,6 +46,7 @@ struct PlotView: View {
                     .font(.footnote).foregroundStyle(.secondary)
                     .listRowSeparator(.hidden)
                     .accessibilityIdentifier("plot-count")
+                    .id("plot-top")
                 SceneCanvas(scene: scene, style: model.style, legendRoom: true)
                     .frame(height: plotHeight(scene, visible: geo.size))
                     .listRowInsets(EdgeInsets())
@@ -128,6 +132,16 @@ struct PlotView: View {
         .listStyle(.plain)
         .overlay(alignment: .top) {
             if model.busy { ProgressView().padding(8).background(.regularMaterial, in: Capsule()).padding(.top, 4) }
+        }
+        .onAppear {
+            // coming back to a NEW plot (other variables, other samples): start at its top, not
+            // where the options of the previous one were left
+            let key = "\(scene.title)|\(scene.n)|\(scene.panels.count)"
+            if key != lastShown {
+                lastShown = key
+                proxy.scrollTo("plot-top", anchor: .top)
+            }
+        }
         }
         }
     }

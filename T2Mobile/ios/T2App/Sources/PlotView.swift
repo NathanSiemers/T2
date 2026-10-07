@@ -38,6 +38,11 @@ struct PlotView: View {
         GeometryReader { geo in
         List {
             Section {
+                // the count first: it stays on screen however tall the plot and its legend are
+                Text(countLine(scene))
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+                    .accessibilityIdentifier("plot-count")
                 SceneCanvas(scene: scene, style: model.style, legendRoom: true)
                     .frame(height: plotHeight(scene, visible: geo.size))
                     .listRowInsets(EdgeInsets())
@@ -45,9 +50,6 @@ struct PlotView: View {
                     .accessibilityElement()
                     .accessibilityLabel(scene.kind == .empty ? scene.message : scene.title)
                     .accessibilityIdentifier("plot")
-                Text(countLine(scene))
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("plot-count")
                 if scene.kind == .empty, model.filter.filters.contains(where: \.isActive) {
                     Button("Remove all filters") { model.resetFilters() }
                         .accessibilityIdentifier("reset-filters")
@@ -135,7 +137,7 @@ struct PlotView: View {
     /// panel (every entry is shown; the screen scrolls).
     private func plotHeight(_ scene: PlotScene, visible: CGSize) -> CGFloat {
         if scene.kind == .empty { return 220 }
-        let screen = max(240, visible.height - 36)
+        let screen = max(240, visible.height - 44)   // less the count line above
         let n = scene.panels.count
         var h = screen
         if n > 1 {

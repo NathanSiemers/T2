@@ -238,6 +238,9 @@ final class AppModel {
         if column(size) == nil { size = "" }
         if column(facet) == nil { facet = "" }
         for v in [x, y, color, size] { filter.add(v) }     // plotted variables are filterable from the start
+        // the dataset's opening cohorts (TCGA: nine of 33, a plot of all of them is too busy),
+        // unless the user's own cohort choice comes along from the previous dataset
+        if !(carried?.filters.contains { $0.column == "cohort" } ?? false) { applyDefaultCohorts() }
         if let c = carried {
             // the filter panels and their settings, where the names and the levels exist
             for f in c.filters where column(f.column) != nil {
@@ -515,6 +518,16 @@ final class AppModel {
         if case .levels(let s)? = filter.filter("cohort")?.value { return s }
         return nil
     }
+    /// the cohorts the dataset says to show first (`defaults.cohorts`), where they exist; a
+    /// dataset without that default (or whose named cohorts are not there) starts with all
+    func applyDefaultCohorts() {
+        guard let wanted = meta?.defaults["cohorts"], !wanted.isEmpty else { return }
+        let present = Set(wanted.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+            .intersection(availableCohorts)
+        guard !present.isEmpty else { return }
+        setCohorts(present)
+    }
+
     func setCohorts(_ chosen: Set<String>?) {
         let all = availableCohorts
         guard !all.isEmpty else { return }

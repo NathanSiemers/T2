@@ -179,7 +179,9 @@ func (d *Dataset) loadRoles() error {
 	if d.Name == "TCGA" {
 		d.Roles = tcgaRoles
 		d.Title, d.Label = "T2: TCGA 2018 Pan-Cancer Database", "TCGA Pan-Cancer 2018"
-		d.Defaults = map[string]string{"x": "cohort", "y": "CD8A", "color": "sample_type", "size": "", "condition": "StromalScore.estimate"}
+		// the cohorts shown first: 33 boxes make the opening plot too busy to read
+		d.Defaults = map[string]string{"x": "cohort", "y": "CD8A", "color": "sample_type", "size": "", "condition": "StromalScore.estimate",
+			"cohorts": "COAD,ESCA,HNSC,KIRC,LUAD,LUSC,PAAD,SKCM,STAD"}
 		return nil
 	}
 	rows, err := d.db.Query("SELECT key, value FROM dataset_meta")
@@ -206,7 +208,7 @@ func (d *Dataset) loadRoles() error {
 	if m["label"] != "" {
 		d.Label = m["label"]
 	}
-	for _, k := range []string{"x", "y", "color", "size", "condition"} {
+	for _, k := range []string{"x", "y", "color", "size", "condition", "cohorts"} {
 		if v := m["default_"+k]; v != "" {
 			d.Defaults[k] = v
 		}

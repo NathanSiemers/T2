@@ -273,17 +273,20 @@ final class T2UITests: XCTestCase {
         waitFor("dataset-summary", "the dataset's sample count")
         // the first of the dataset's presets: tap the switch itself (its right-hand side)
         let all = text(of: "dataset-summary")
+        // the samples in use at the start (the dataset's opening cohorts, nine of 33 for TCGA)
+        let start = scrollTo("select-count").label
+        XCTAssertFalse(start.hasPrefix("12,804 of"), "no opening cohorts: " + start)
         // the sample groups are alternatives: choosing one narrows the samples, "All samples" undoes it
         scrollTo("group-Primary tumors only").tap()
         scrollTo("select-count")
         shot("14-select-group-chosen")
-        XCTAssertFalse(text(of: "select-count").hasPrefix("12,804 of"), "the group did not change the samples in use: " + text(of: "select-count"))
+        XCTAssertNotEqual(text(of: "select-count"), start, "the group did not change the samples in use: " + text(of: "select-count"))
         XCTAssertEqual(element("group-Primary tumors only").value as? String, "chosen")
         // within the primary tumours "Tumor samples only" removes nothing, so it is not offered
         XCTAssertFalse(app.switches["preset-Tumor samples only"].exists, "a switch that changes nothing is offered")
         scrollTo("group-all").tap()
         scrollTo("select-count")
-        XCTAssertTrue(text(of: "select-count").hasPrefix("12,804 of"), "All samples did not restore the samples: " + text(of: "select-count"))
+        XCTAssertEqual(text(of: "select-count"), start, "All samples did not restore the samples: " + text(of: "select-count"))
         // an exclusion: tap the switch itself (its right-hand side)
         let preset = app.switches.matching(NSPredicate(format: "identifier BEGINSWITH 'preset-'")).firstMatch
         var swipes = 0
@@ -292,7 +295,7 @@ final class T2UITests: XCTestCase {
         preset.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
         scrollTo("select-count")
         shot("15-select-presets-first-one-on")
-        XCTAssertFalse(text(of: "select-count").hasPrefix("12,804 of"), "the preset did not change the samples in use: " + text(of: "select-count"))
+        XCTAssertNotEqual(text(of: "select-count"), start, "the preset did not change the samples in use: " + text(of: "select-count"))
         openTab("Filter")
         waitFor("filter-count", "the filter's sample count")
         let before = text(of: "filter-count")

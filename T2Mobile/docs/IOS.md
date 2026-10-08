@@ -186,9 +186,23 @@ page is scrolled; the 93 cohort labels of tcgatargetgtex are thinned out and sho
   phone, enable Developer Mode on it (Settings > Privacy & Security), Run; the first time,
   trust the developer on the phone (Settings > General > VPN & Device Management). The app
   stops opening after 7 days: Run again.
-- **With the Apple Developer Program** ($99/year): `mac_setup.sh --team YOURTEAMID`; create
-  the app in App Store Connect with the bundle id; Product > Archive > Distribute >
-  TestFlight. Raise `CURRENT_PROJECT_VERSION` in `Config/T2.xcconfig` for every upload.
+- **With the Apple Developer Program** ($99/year), once: `mac_setup.sh --team YOURTEAMID`
+  (developer.apple.com/account > Membership details; kept in `Config/Local.xcconfig`,
+  not in git); register the App ID `org.fiveprime.t2` (Identifiers > "+" > App IDs, explicit,
+  no capabilities — or let Xcode's first signed build do it); create the app in App Store
+  Connect (Apps > "+" > New App, iOS, that bundle id). No certificates by hand: signing is
+  automatic, Xcode makes them.
+  Every build: `ios/testflight.sh` archives (Release, generic iOS device) and uploads with
+  `xcodebuild -exportArchive` (method `app-store-connect`, destination `upload`,
+  `manageAppVersionAndBuildNumber` so the build number needs no editing). It uploads as
+  the Apple ID signed in to Xcode, or unattended with an App Store Connect API key
+  (`--key-id`/`--issuer-id`, the `.p8` in `~/.appstoreconnect/private_keys/` on the Mac
+  only). `--archive-only` leaves the upload to Xcode's Organizer. After processing
+  (5–15 min): App Store Connect > TestFlight > Internal Testing group > add the build;
+  testers install through the TestFlight app. Their feedback (screenshot + device details)
+  arrives in App Store Connect > TestFlight > Feedback — separate from the app's own contact
+  form, which stays the support channel once the app is public (the App Store listing needs
+  a support URL and a privacy policy URL; Apple hosts no contact form).
   For the App Store: screenshots, a privacy policy address, privacy answers ("Data Not
   Collected": the app only reads public data).
 

@@ -50,7 +50,11 @@ missing. `codes`: index into `levels` from 0, `-1` = missing. `type`: the data t
 
 `roles`: which clinical columns play cohort / subtype / sample type, the sample-type values
 that mean "not tumor" (`normal_label`), the cohort values of heme origin (`heme_values`).
-`defaults`: the variables to show first (`x`, `y`, `color`, `size`, `condition`).
+`defaults`: the variables to show first (`x`, `y`, `color`, `size`, `condition`) and, where
+the dataset has one, `cohorts`: the comma-separated cohort values the opening plot is limited
+to (TCGA: nine of its 33 cohorts; a plot of all 33 is too busy to read). The app applies it
+as the starting cohort filter; the user changes it like any other. For a dataset other than
+TCGA the values come from `dataset_meta` (`default_x`, …, `default_cohorts`).
 
 ### Presets (default filters)
 

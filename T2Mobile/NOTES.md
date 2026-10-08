@@ -75,10 +75,9 @@ conditioning, export of figures and of the data table; all of Nathan's notes thr
 8:27 pm 6 Oct entry of `app.notes.md` done. Tests: T2Kit 57, FigureTests 7, UI 6 (all green
 on the Mac, Xcode 27 / iPhone 18 Pro).
 
-App Store release in progress (2026-10-07 evening, see the log entry "App Store listing"):
-listing texts, screenshots, price, categories, age rating set through the API; privacy and
-support pages live at fiveprime.org/t2app/; 1.0 build; Nathan: App Privacy questionnaire +
-Submit for Review.
+**1.0 submitted to App Review 2026-10-07 evening** (WAITING_FOR_REVIEW; release automatic
+after approval; see the log entry "App Store listing"). Privacy and support pages live at
+fiveprime.org/t2app/; the service logs no successful request.
 
 Next, in order of Nathan's interest: (0) a backup server for the API and a way to switch DNS
 to it when the house loses power (Nathan, 2026-10-07); (1) the Model screen — see "Plan: group comparisons and
@@ -749,7 +748,12 @@ technical error in small type below (`AppModel.lastError`, `outageText`). Nathan
 "a polite message telling the user that the T2 API isn't running" is thereby in 1.0, not
 only the next update.
 
-Still to do for the release: Nathan answers App Privacy, uploads the 1.0 build (his unlock
-line), and presses Submit for Review (or says so and I do it with the API: select the build
-for the version, create the appStoreVersionSubmission). Nathalie's invitation waits for
-the App Store release (or internal testing if he says "A").
+**Submitted 2026-10-07 ~20:45 PDT**: Nathan answered App Privacy and the Medical category's
+"regulated medical device: No" in the browser (both have no API) and uploaded build 1.0
+(App Store Connect processed it in ~5 min); I attached the build, set release AFTER_APPROVAL,
+created the App Review contact (phone/email his), `contentRightsDeclaration =
+USES_THIRD_PARTY_CONTENT` (the public research data), then reviewSubmission →
+reviewSubmissionItem → `submitted: true`. State: **WAITING_FOR_REVIEW**. Apple's mails go
+to nosapple@fiveprime.org; a rejection comes with reasons — fix, new build, resubmit (the
+same API steps with a new reviewSubmission). Nathalie installs from the App Store once it
+is out (or: internal testing needs her to be a team user — Nathan's call).

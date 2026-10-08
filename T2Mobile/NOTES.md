@@ -757,3 +757,18 @@ reviewSubmissionItem → `submitted: true`. State: **WAITING_FOR_REVIEW**. Apple
 to nosapple@fiveprime.org; a rejection comes with reasons — fix, new build, resubmit (the
 same API steps with a new reviewSubmission). Nathalie installs from the App Store once it
 is out (or: internal testing needs her to be a team user — Nathan's call).
+
+### 2026-10-07 night — Failover: standby for the API (scouting, no decision yet)
+
+Nathan: when the house loses power everything behind 99.132.144.201 is down, the app
+included; wants a standby of `t2api` elsewhere, normally off, and a way to point the app at
+it. Facts: image 15 MB; data 67 GB read-only (≈60 after the typeidx removal); 75 MB RSS,
+idle CPU; fiveprime.org's DNS is at Cloudflare (TTL 300, not proxied). A Sonnet agent
+scouted vendors → `docs/FAILOVER.md` (prices tagged by verification; several from memory).
+Claude's recommendation: **warm standby at Hetzner (≈ €8.5/mo, CX33 or CX23+volume)**
+running t2api + nginx with its own Let's Encrypt cert (DNS-01 via Cloudflare API) and a
+watchdog that flips the Cloudflare A record when home fails health checks and back when it
+returns (3–7 min gap, no human). Cold + auto-start (Worker → vendor start API) saves ~$2/mo
+at AWS/GCP only — not worth the complexity. Oracle Always Free would be $0 but reclaims
+idle instances. R2 copy of the data ≈ $1/mo as a second copy. Open: gap acceptable vs
+Cloudflare LB ($5+/mo, needs www proxied, Shiny sites included); Hetzner OK; go.

@@ -80,7 +80,8 @@ after approval; see the log entry "App Store listing"). Privacy and support page
 fiveprime.org/t2app/; the service logs no successful request.
 
 Next, in order of Nathan's interest: (0) a backup server for the API and a way to switch DNS
-to it when the house loses power (Nathan, 2026-10-07); (1) the Model screen — see "Plan: group comparisons and
+to it when the house loses power (Nathan, 2026-10-07; plan and open decisions in
+`docs/FAILOVER-PLAN.md`); (1) the Model screen — see "Plan: group comparisons and
 linear models" in the log (not started); (2) whatever TestFlight on the real phone turns up
 (Nathan's feedback comes through TestFlight > Feedback in App Store Connect or the in-app
 form); (3) show the clinical descriptions on the Shiny site's About tab; (4) no test
@@ -764,7 +765,7 @@ Nathan: when the house loses power everything behind 99.132.144.201 is down, the
 included; wants a standby of `t2api` elsewhere, normally off, and a way to point the app at
 it. Facts: image 15 MB; data 67 GB read-only (≈60 after the typeidx removal); 75 MB RSS,
 idle CPU; fiveprime.org's DNS is at Cloudflare (TTL 300, not proxied). A Sonnet agent
-scouted vendors → `docs/FAILOVER.md` (prices tagged by verification; several from memory).
+scouted vendors → `docs/FAILOVER.md` (prices tagged by verification; several from memory); the recommendation, decisions and steps are in **`docs/FAILOVER-PLAN.md`**.
 Claude's recommendation: **warm standby at Hetzner (≈ €8.5/mo, CX33 or CX23+volume)**
 running t2api + nginx with its own Let's Encrypt cert (DNS-01 via Cloudflare API) and a
 watchdog that flips the Cloudflare A record when home fails health checks and back when it

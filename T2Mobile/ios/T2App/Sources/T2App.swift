@@ -39,9 +39,12 @@ struct NoDatasetView: View {
     var body: some View {
         if model.failed {
             ContentUnavailableView {
-                Label("Cannot reach T2", systemImage: "wifi.exclamationmark")
+                Label("T2 is not available right now", systemImage: "wifi.exclamationmark")
             } description: {
-                Text(model.status.isEmpty ? "The data service did not answer." : model.status)
+                VStack(spacing: 8) {
+                    Text(model.outageText)
+                    if !model.status.isEmpty { Text(model.status).font(.caption2).foregroundStyle(.tertiary) }
+                }
             } actions: {
                 Button("Try again") { Task { await model.reconnect() } }
                     .buttonStyle(.borderedProminent)

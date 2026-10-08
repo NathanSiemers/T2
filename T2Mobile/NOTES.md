@@ -75,7 +75,13 @@ conditioning, export of figures and of the data table; all of Nathan's notes thr
 8:27 pm 6 Oct entry of `app.notes.md` done. Tests: T2Kit 57, FigureTests 7, UI 6 (all green
 on the Mac, Xcode 27 / iPhone 18 Pro).
 
-Next, in order of Nathan's interest: (1) the Model screen — see "Plan: group comparisons and
+App Store release in progress (2026-10-07 evening, see the log entry "App Store listing"):
+listing texts, screenshots, price, categories, age rating set through the API; privacy and
+support pages live at fiveprime.org/t2app/; 1.0 build; Nathan: App Privacy questionnaire +
+Submit for Review.
+
+Next, in order of Nathan's interest: (0) a backup server for the API and a way to switch DNS
+to it when the house loses power (Nathan, 2026-10-07); (1) the Model screen — see "Plan: group comparisons and
 linear models" in the log (not started); (2) whatever TestFlight on the real phone turns up
 (Nathan's feedback comes through TestFlight > Feedback in App Store Connect or the in-app
 form); (3) show the clinical descriptions on the Shiny site's About tab; (4) no test
@@ -711,3 +717,39 @@ Next upload: bump `MARKETING_VERSION` in `Config/T2.xcconfig` when the version s
 change (the build number is assigned by App Store Connect), rsync `ios/` to the Mac, Nathan
 runs the unlock + `./ios/testflight.sh` line above; the Internal group sees the build as soon
 as Apple has processed it.
+
+### 2026-10-07 night — App Store listing, privacy, logging (Claude)
+
+Nathan: "why not just release the app?" — agreed. Done through the App Store Connect API
+(`~/.appstoreconnect/asc.py` on the Mac, Admin key): version 1.0 record (existed), subtitle,
+description (3.4k chars, with the data citations Nathan asked for: TCGA Research Network
+acknowledgement, Hoadley/Liu/Thorsson 2018, Vivian 2017 for Toil, TARGET phs000218, GTEx
+Consortium 2013 + NIH Common Fund, Goldman 2020 for Xena), keywords, promotional text,
+support/marketing/privacy URLs, copyright, categories **Medical** (primary; no "Science"
+category exists — Nathan chose it) + Reference, age rating 4+ (all "NONE"/false), price free
+(USD base), all 175 territories, seven 6.9" screenshots (1320×2868, from the UI tests on the
+iPhone 18 Pro Max simulator; set type `APP_IPHONE_67` — the API has no `_69`). Everything is
+in `docs/APPSTORE.md`; the App Privacy questionnaire has no API (instructions there).
+
+Privacy, made true before it was written down:
+- nginx: `access_log ... if=$t2api_failed` for `/api/t2/` — only 4xx/5xx (incl. rate-limit
+  503s) are logged, with the address, so attacks stay visible; successful requests leave no
+  record; nginx container logs rotate (json-file 5×20 MB). Deployed, verified (200 not
+  logged, 404 logged). Nginx repo commits 7a01917, 2d78b99, fe78f89.
+- t2api: the contact form no longer stores or logs the sender's address (`contactMessage.IP`
+  removed; the per-address limit stays in memory). Deployed (`t2api:2026.10`, rollback
+  `t2api:pre-noip-20261007`).
+- `fiveprime.org/t2app/privacy.html` and `support.html` (with the citations) are served from
+  the nginx image (`html/t2app/`, `location /t2app/`).
+
+App (1.0 build): About → Attribution carries the citations; the no-connection screen says
+"T2 is not available right now" with a polite explanation — phone offline vs. the service
+not answering ("maintenance or a power cut at its home, try again in a little while") — the
+technical error in small type below (`AppModel.lastError`, `outageText`). Nathan's request
+"a polite message telling the user that the T2 API isn't running" is thereby in 1.0, not
+only the next update.
+
+Still to do for the release: Nathan answers App Privacy, uploads the 1.0 build (his unlock
+line), and presses Submit for Review (or says so and I do it with the API: select the build
+for the version, create the appStoreVersionSubmission). Nathalie's invitation waits for
+the App Store release (or internal testing if he says "A").

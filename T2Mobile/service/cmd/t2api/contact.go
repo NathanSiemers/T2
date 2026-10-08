@@ -37,14 +37,14 @@ func contactConfigFromEnv() contactConfig {
 }
 
 const (
-	contactMaxBody    = 16 << 10        // bytes of request body
-	contactMaxField   = 200             // name, affiliation
-	contactMaxEmail   = 254             //
-	contactMaxMessage = 4000            // characters
-	contactMinSeconds = 3               // a form filled in faster than this is a bot
-	contactStoreCap   = 20 << 20        // bytes; beyond this the store refuses (someone is flooding)
-	contactPerIP      = 5               // messages per client address per day
-	contactPerDay     = 200             // messages per day in all
+	contactMaxBody    = 16 << 10 // bytes of request body
+	contactMaxField   = 200      // name, affiliation
+	contactMaxEmail   = 254      //
+	contactMaxMessage = 4000     // characters
+	contactMinSeconds = 3        // a form filled in faster than this is a bot
+	contactStoreCap   = 20 << 20 // bytes; beyond this the store refuses (someone is flooding)
+	contactPerIP      = 5        // messages per client address per day
+	contactPerDay     = 200      // messages per day in all
 )
 
 var emailPattern = regexp.MustCompile(`^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$`)
@@ -106,9 +106,11 @@ func paragraphs(s string, max int) string {
 	return s
 }
 
+// contactMessage is what is kept: what the sender typed, and when. The client address is
+// used for the rate limit only (in memory) and is neither stored nor logged (2026-10-07:
+// the app's privacy policy promises exactly that).
 type contactMessage struct {
 	Time        string `json:"time"`
-	IP          string `json:"ip"`
 	Name        string `json:"name"`
 	Affiliation string `json:"affiliation"`
 	Email       string `json:"email"`
@@ -164,12 +166,12 @@ func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true})
 	}
 	if in.Website != "" || in.Started < contactMinSeconds {
-		log.Printf("contact: dropped a bot-like submission from %s", ip)
+		log.Printf("contact: dropped a bot-like submission")
 		ok()
 		return
 	}
 	m := contactMessage{
-		Time: time.Now().UTC().Format(time.RFC3339), IP: ip,
+		Time: time.Now().UTC().Format(time.RFC3339),
 		Name: oneLine(in.Name, contactMaxField), Affiliation: oneLine(in.Affiliation, contactMaxField),
 		Email: oneLine(in.Email, contactMaxEmail), Message: paragraphs(in.Message, contactMaxMessage),
 		App: oneLine(in.App, 60),
@@ -187,7 +189,7 @@ func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusServiceUnavailable, "the message could not be kept; please try again later")
 		return
 	}
-	log.Printf("contact: message from %s (%s)", m.Name, ip)
+	log.Printf("contact: a message was stored")
 	ok()
 }
 

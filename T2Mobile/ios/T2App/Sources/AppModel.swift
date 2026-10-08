@@ -65,6 +65,16 @@ final class AppModel {
 
     /// what is going on, for the user: "Loading CD8A...", or the last problem
     var status = ""
+    /// the error of the last failed operation (for the explanation when nothing could be loaded)
+    var lastError: Error?
+    /// what to tell the user when the service could not be reached: their phone, or our server
+    var outageText: String {
+        if let e = lastError as? URLError,
+           [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff].contains(e.code) {
+            return "Your phone seems to be offline. T2 needs an internet connection to fetch its data."
+        }
+        return "The T2 data service is not answering at the moment \u{2014} it may be down for maintenance or a power cut at its home. Please try again in a little while; nothing is wrong with your phone or the app."
+    }
     var busy = false
     /// the service could not be reached or the dataset could not be opened
     var failed = false
@@ -145,6 +155,7 @@ final class AppModel {
 
     func start() async {
         failed = false
+        lastError = nil
         await run("Loading datasets") {
             self.datasets = try await self.api.datasets()
             let wanted = UserDefaults.standard.string(forKey: "t2Dataset")
@@ -543,7 +554,8 @@ final class AppModel {
             try await work()
             if status == what + "\u{2026}" { status = "" }
         } catch {
-            status = "\(what) failed: \(error)"
+            lastError = error
+            status = "\(what) failed: \(error.localizedDescription)"
         }
         busy = false
     }

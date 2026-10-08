@@ -64,19 +64,22 @@ indexed lookup that can be cached, and "hundreds of users" becomes easy.
 
 (details at the bottom of this file: "Log" — newest entry last)
 
-As of 2026-10-07 (commit 3d2fd4e): service live and current (image `t2api:2026.10`, rollback
-`t2api:pre-heme-20261006`); app at feature parity with the website for selection, presets,
+As of 2026-10-07 evening (commit 8e75fbc): **T2 0.2.0 is on Nathan's iPhone through
+TestFlight** (App Store Connect app "T2 Cancer Genomics", bundle id `org.fiveprime.t2`,
+internal group "Internal" with access to all builds; the next upload is one command, see the
+log entry "TestFlight"). Service live and current (image `t2api:2026.10`, rollback
+`t2api:pre-cohorts-20261007`): TCGA's `defaults` now carry `cohorts` (nine of 33) and the app
+opens with that cohort filter. App at feature parity with the website for selection, presets,
 cross-filter, box/scatter/survival/count plots, facets, combined and individual Y probes,
-conditioning, export of figures (PNG/TIFF/PDF, Files app, Photos) and of the data table; all
-of Nathan's notes through the 8:27 pm 6 Oct entry of `app.notes.md` done. Tests: T2Kit 57,
-FigureTests 7, UI 6 (all green on the Mac, Xcode 27 / iPhone 18 Pro).
+conditioning, export of figures and of the data table; all of Nathan's notes through the
+8:27 pm 6 Oct entry of `app.notes.md` done. Tests: T2Kit 57, FigureTests 7, UI 6 (all green
+on the Mac, Xcode 27 / iPhone 18 Pro).
 
 Next, in order of Nathan's interest: (1) the Model screen — see "Plan: group comparisons and
-linear models" in the log (not started); (2) Apple: when the Developer Program membership is
-active and a Team ID known, `mac_setup.sh --team ID`, then a device install step and a
-TestFlight archive/upload step; (3) show the clinical descriptions on the Shiny site's About
-tab; (4) the Kruskal-Wallis line was removed on 2026-10-07 at Nathan's request — no test
-statistics on box plots until real models exist.
+linear models" in the log (not started); (2) whatever TestFlight on the real phone turns up
+(Nathan's feedback comes through TestFlight > Feedback in App Store Connect or the in-app
+form); (3) show the clinical descriptions on the Shiny site's About tab; (4) no test
+statistics on box plots until real models exist (Kruskal-Wallis removed 2026-10-07).
 
 How Claude runs the Mac (2026-10-06/07): `rsync -az --delete` of `ios/` to
 `nathan@10.13.13.4:~/Claude/T2Mobile/ios/` excluding `.build/`, `Info.plist`, `build/`,
@@ -662,3 +665,49 @@ Proposed shape:
 6. **Order of work**: (a) `ModelSpec` + the Filter-screen "compare" mark + the Model screen
    skeleton; (b) the R function `t2_model(spec)` with equivalence tests (lm/emmeans/coxph
    outputs for fixed specs) and the plumber service; (c) results screen + CSV; (d) limma.
+
+### 2026-10-07 — opening cohorts; first TestFlight build (Claude, with Nathan at the Apple sites)
+
+**Opening cohorts.** Nathan: "in the default view (it is too busy right now), select cohorts
+of COAD ESCA HNSC KIRC LUAD LUSC PAAD SKCM STAD". Per-dataset defaults belong to the service:
+TCGA's `Defaults` gain `cohorts` (comma-separated; other databases: `dataset_meta.default_cohorts`),
+documented in `docs/API.md`. The app (`AppModel.applyDefaultCohorts`, called from `open()`)
+sets the cohort filter to those of them that exist, unless the user's own cohort choice is
+carried over from the previous dataset; Toil's cohort names are long names, so a carried TCGA
+choice does not narrow Toil. The opening plot shows 4,960 of 12,804 samples (4,094 plotted),
+nine readable boxes. UI test03 compares the counts with the launch value instead of the
+literal "12,804 of". Service redeployed with Nathan's "deploy" (the permission system asks for
+production deploys; rollback tag `t2api:pre-cohorts-20261007`). Full Mac run green.
+
+**TestFlight — what it took** (so nobody repeats the detours):
+- Apple Developer Program approved 2026-10-07. Team ID, App Store Connect API key ids and
+  the `.p8` live on the Mac in `~/.appstoreconnect/` (mode 600; `t2-testflight.env` is read
+  by `ios/testflight.sh`); a reference copy of the identifiers is in `~/.config/t2/apple.env`
+  on the Linux box. Nothing of it is in the repository — Nathan's rule.
+- No certificates by hand: automatic signing makes them. **But** every `xcodebuild` attempt
+  with a locked keychain creates an orphan Development certificate in the portal (key never
+  stored) and the next attempt fails with "already has an Apple Development signing
+  certificate for this machine, but its private key is not installed" → revoke the orphans
+  on developer.apple.com > Certificates, and only ever run with the keychain unlocked.
+- The login keychain is locked for an ssh session ("User interaction is not allowed").
+  Nathan unlocks it himself, in **his own terminal**, in the same shell as the script:
+  `security unlock-keychain ~/Library/Keychains/login.keychain-db && cd ~/Claude/T2Mobile && ./ios/testflight.sh`.
+  Typing the password at a `!`-prefixed command in Claude Code went wrong twice (the prompt
+  was interrupted and the keystrokes landed in the conversation) — don't do that.
+- An archive is signed with a Development profile, which needs **at least one registered
+  device**: the iPhone (UDID from `xcrun devicectl list devices` with the phone on the
+  cable) was registered through the API (`~/.appstoreconnect/asc.py register`, a 60-line
+  ES256-JWT client using only python3 + openssl).
+- The export/upload needs cloud-managed **distribution** certificates, which an App Manager
+  API key may not use ("Cloud signing permission error"): the key `t2-admin` has the Admin
+  role. `testflight.sh --upload-only` reuses the archive of the last run.
+- App record "T2 Cancer Genomics" (the name "T2" was taken; the name under the icon stays T2).
+  Internal group "Internal" (`hasAccessToAllBuilds`) and the tester nosapple@fiveprime.org
+  were created with the API; the build was "Ready to Test" on the phone ~15 min after upload.
+- `asc.py` subcommands: `apps`, `builds APP`, `groups APP`, `mkgroup APP NAME`, `users`,
+  `testers GROUP`, `addtester GROUP EMAIL`, `addbuild GROUP BUILD`, `devices`, `register NAME UDID`.
+
+Next upload: bump `MARKETING_VERSION` in `Config/T2.xcconfig` when the version should
+change (the build number is assigned by App Store Connect), rsync `ios/` to the Mac, Nathan
+runs the unlock + `./ios/testflight.sh` line above; the Internal group sees the build as soon
+as Apple has processed it.

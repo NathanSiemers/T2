@@ -281,7 +281,9 @@ final class T2UITests: XCTestCase {
         scrollTo("select-count")
         shot("14-select-group-chosen")
         XCTAssertNotEqual(text(of: "select-count"), start, "the group did not change the samples in use: " + text(of: "select-count"))
-        XCTAssertEqual(element("group-Primary tumors only").value as? String, "chosen")
+        // scroll back to the row: on a 4.7" screen it is off screen again (a List exposes only
+        // the rows on screen), and reading an off-screen row fails
+        XCTAssertEqual(scrollTo("group-Primary tumors only").value as? String, "chosen")
         // within the primary tumours "Tumor samples only" removes nothing, so it is not offered
         XCTAssertFalse(app.switches["preset-Tumor samples only"].exists, "a switch that changes nothing is offered")
         scrollTo("group-all").tap()
@@ -366,6 +368,7 @@ final class T2UITests: XCTestCase {
         // a second export is a new file (the share sheet and Photos must never see the old one)
         scrollTo("export-png").tap()
         waitFor("publish-share", "the share link", timeout: 60)
+        scrollTo("publish-file")             // off screen on a 4.7" phone after the scroll to the button
         XCTAssertTrue(waitUntil(timeout: 10) { text(of: "publish-file") != firstFile }, "the second export reused the first file's name")
         scrollTo("export-tiff").tap()
         waitFor("publish-share", "the share link", timeout: 60)

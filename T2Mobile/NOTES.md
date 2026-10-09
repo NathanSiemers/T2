@@ -79,6 +79,12 @@ on the Mac, Xcode 27 / iPhone 18 Pro).
 after approval; see the log entry "App Store listing"). Privacy and support pages live at
 fiveprime.org/t2app/; the service logs no successful request.
 
+**Branch `post-1.0`** (2026-10-09): Nathan's rule while 1.0 is in review — the code given to
+Apple (`main` at 425927d) is not touched; everything after goes on this branch and he merges.
+On it: two UI-test fixes for 4.7" screens. **Simulator matrix 2026-10-09** (`ios/tools/sim_matrix.sh`,
+log entry "Simulator matrix"): all six UI tests green on iPhone SE (3rd gen), 13 mini, 17e,
+17, Air, 18 Pro, 18 Pro Max, in dark mode on all and in light on SE/13 mini/17e/18 Pro/18 Pro Max.
+
 Next, in order of Nathan's interest: (0) a backup server for the API and a way to switch DNS
 to it when the house loses power (Nathan, 2026-10-07; plan and open decisions in
 `docs/FAILOVER-PLAN.md`); (1) the Model screen — see "Plan: group comparisons and
@@ -773,3 +779,50 @@ returns (3–7 min gap, no human). Cold + auto-start (Worker → vendor start AP
 at AWS/GCP only — not worth the complexity. Oracle Always Free would be $0 but reclaims
 idle instances. R2 copy of the data ≈ $1/mo as a second copy. Open: gap acceptable vs
 Cloudflare LB ($5+/mo, needs www proxied, Shiny sites included); Hetzner OK; go.
+
+### 2026-10-09 — Simulator matrix: seven iPhones, light and dark (Claude)
+
+Nathan: "run the testing suite on different iphone models in the simulator, also check on
+dark mode"; permission to create simulators; and the rule above — nothing changes on `main`
+while Apple reviews 1.0, work goes on branch `post-1.0`.
+
+Script `ios/tools/sim_matrix.sh` (on the Mac, in `~/Claude/T2Mobile`; `ios/tools/` is not
+rsynced, copy it by hand): one `build-for-testing`, then per device × appearance: boot, set
+the appearance, `test-without-building` of T2UITests with retry, screenshots in
+`screenshots/ui-<device>-<appearance>/`, verdicts in `logs/matrix/summary.txt`. Created the
+iPhone SE (3rd generation) and iPhone 13 mini simulators (they share the installed runtime).
+Lesson: xcodebuild does not see a simulator for the first seconds after `simctl create`
+("Unable to find a device matching the provided destination specifier") and `simctl ui
+appearance` fails on it too — the script now boots a new simulator once and waits.
+Another: a script scp'd to the Mac needs `chmod +x`; a `nohup … &` inside ssh must be the
+whole command, not the tail of an `&&` chain, or the ssh exit kills it.
+
+Results (6 tests each, build 1.0 as submitted, against the live service):
+
+| device | light | dark |
+|---|---|---|
+| iPhone SE (3rd generation), 4.7" | green (after the test fix) | green (after the test fix) |
+| iPhone 13 mini, 5.4" | green | green |
+| iPhone 17e, 6.1" | green | — |
+| iPhone 17 | (app screenshots only, 10-07) | green |
+| iPhone Air, 6.5" | — | green |
+| iPhone 18 Pro | green (10-07) | green |
+| iPhone 18 Pro Max, 6.9" | green (10-07) | green |
+
+The two SE failures were in the tests, not the app: on the 4.7" screen a List row read after
+a scroll ("Primary tumors only" after choosing it; the exported file name after the second
+export) had left the screen, and a SwiftUI List exposes only on-screen rows. Fixed by
+`scrollTo` before the read (`T2UITests.swift`, test03 and test04). Dark mode, looked at on
+the SE, Air and 18 Pro Max: Select, Filter, Plot, Publish, About and the outage screen all
+render correctly; the figures keep their white background in both modes (publication
+figures; intended). Observations, not bugs, for later: on the SE the plot's legend and the
+survival risk table start under the floating tab bar (the list scrolls; by design); one Select
+screenshot on the Air caught the glass tab bar refracting content mid-scroll (iOS 26 effect);
+the count plot's subtitle says "Color: sample_type" though a count plot draws every circle
+in one colour (small inconsistency, PlotScene subtitle).
+
+Also verified at Nathan's request ("another instance could have modified the .sh scripts"):
+the Mac's `ios/` is byte-identical to the repo (md5 over every .sh/.swift/.xcconfig/.yml/
+.plist), no uncommitted tracked changes in the repo, no other logins on the Mac, the test
+build linked today from sources newer than nothing (newest source 10-07), version 1.0 /
+org.fiveprime.t2.

@@ -83,7 +83,7 @@ fiveprime.org/t2app/; the service logs no successful request.
 Apple (`main` at 425927d) is not touched; everything after goes on this branch and he merges.
 On it: two UI-test fixes for 4.7" screens. **Simulator matrix 2026-10-09** (`ios/tools/sim_matrix.sh`,
 log entry "Simulator matrix"): all six UI tests green on iPhone SE (3rd gen), 13 mini, 17e,
-17, Air, 18 Pro, 18 Pro Max, in dark mode on all and in light on SE/13 mini/17e/18 Pro/18 Pro Max.
+17, Air, 18 Pro, 18 Pro Max, light and dark on every one (14 runs, 84 test passes).
 
 Next, in order of Nathan's interest: (0) a backup server for the API and a way to switch DNS
 to it when the house loses power (Nathan, 2026-10-07; plan and open decisions in
@@ -797,15 +797,16 @@ appearance` fails on it too — the script now boots a new simulator once and wa
 Another: a script scp'd to the Mac needs `chmod +x`; a `nohup … &` inside ssh must be the
 whole command, not the tail of an `&&` chain, or the ssh exit kills it.
 
-Results (6 tests each, build 1.0 as submitted, against the live service):
+Results (6 tests each, build 1.0 as submitted, against the live service; the three cells
+first left out were run on Nathan's "proceed" the next morning — all green):
 
 | device | light | dark |
 |---|---|---|
 | iPhone SE (3rd generation), 4.7" | green (after the test fix) | green (after the test fix) |
 | iPhone 13 mini, 5.4" | green | green |
-| iPhone 17e, 6.1" | green | — |
-| iPhone 17 | (app screenshots only, 10-07) | green |
-| iPhone Air, 6.5" | — | green |
+| iPhone 17e, 6.1" | green | green |
+| iPhone 17 | green | green |
+| iPhone Air, 6.5" | green | green |
 | iPhone 18 Pro | green (10-07) | green |
 | iPhone 18 Pro Max, 6.9" | green (10-07) | green |
 

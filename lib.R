@@ -69,6 +69,15 @@ load_dataset_bundle = function(name) {
     } else character(0)
   })
 
+  ## the clinical table with the virtual columns, the presets and the data
+  ## sources (t2_presets.R): what the Select tab offers to choose samples with
+  clin = t2_add_virtual_cols(as.data.frame(DBI::dbReadTable(con_ds, 'clinpheno', check.names = FALSE),
+                                           check.names = FALSE), roles)
+  presets = t2_read_presets(con_ds, roles, clin)
+  cohort_order = tryCatch(DBI::dbGetQuery(con_ds, "SELECT cohort FROM cohorts")$cohort,
+                          error = function(e) character(0))
+  sources = t2_sources(clin, roles, presets, cohort_order, info$label)
+
   ## Selectable variable list: virtual handles (subtype, cohort) + all probes +
   ## the sample-type role column when the dataset has one. Preserves the exact
   ## TCGA ordering: subtype, cohort, <genes>, sample_type.
@@ -82,8 +91,43 @@ load_dataset_bundle = function(name) {
     label = info$label, roles = roles, defaults = info$defaults,
     mygenes = mygenes, probes = probes, samples = samples,
     mutationsamples = mutationsamples, mycohorts = mycohorts,
-    mygenesplus = mygenesplus
+    mygenesplus = mygenesplus,
+    clin = clin, presets = presets, sources = sources
   )
+}
+
+## A SOURCE bundle: the dataset bundle plus the chosen part of it. `key` is
+## "<dataset>" (the whole collection) or "<dataset>|<source label>". The app's
+## active bundle is one of these: $source is the t2_sources() entry (rules,
+## cohorts present, groups and exclusions offered, single-level columns), and
+## $mycohorts holds only the cohorts present in the part.
+load_source_bundle = function(key) {
+  parts = strsplit(key, "|", fixed = TRUE)[[1]]
+  b = load_dataset_bundle(parts[1])
+  labels = vapply(b$sources, `[[`, "", "label")
+  i = if (length(parts) > 1) match(parts[2], labels) else 1L
+  if (is.na(i)) stop("dataset ", parts[1], " has no part called '", parts[2], "'")
+  src = b$sources[[i]]
+  b$key = if (i == 1) b$name else paste0(b$name, "|", src$label)
+  b$source = src
+  b$mycohorts = b$mycohorts[unname(b$mycohorts) %in% src$cohorts]
+  if (i > 1) b$label = paste0(b$label, ": ", src$label)
+  b
+}
+
+## every data source of every dataset, for the "Data set" menu: a named
+## vector, display name -> key (the whole collection first, then its parts)
+list_sources = function() {
+  out = character(0)
+  for (ds in list_datasets()) {
+    b = load_dataset_bundle(ds)
+    for (i in seq_along(b$sources)) {
+      s = b$sources[[i]]
+      key = if (i == 1) ds else paste0(ds, "|", s$label)
+      out[if (i == 1) b$label else paste0(b$label, ": ", s$label)] = key
+    }
+  }
+  out
 }
 
 ################################################################
@@ -198,7 +242,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     multi_y = FALSE, zscore_y = FALSE,
     dbfile = gitrdb, roles = gitr_default_roles,
     dataset_label = "TCGA Pan-Cancer 2018",
-    keep_samples = NULL, ...
+    keep_samples = NULL, rules = list(), ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
@@ -241,7 +285,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if (!is.null(too_many)) return(t2_message_plot(too_many, fig_width = fig_width, title_size = title_size))
     ## keep_samples: the Filter tab's surviving sample ids (NULL = no restriction)
     data = gitr_memo(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
-                     dbfile = dbfile, roles = roles, keep_samples = keep_samples)
+                     dbfile = dbfile, roles = roles, keep_samples = keep_samples, rules = rules)
 
     ## build data summary before any transformations
     summary_lines = c()
@@ -722,7 +766,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 ## Download table: the same samples the plot shows -- the Select tab's cohort /
 ## non-tumor / heme choices plus the Filter tab's survivors (keep_samples).
 fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles,
-                       keep_samples = NULL ) {
+                       keep_samples = NULL, rules = list() ) {
     ##    my.input = paste ('~', paste(input$x, input$y, input$color,
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
     my.input = c( input$x, input$y, input$color, input$size, input$facet )
@@ -730,14 +774,14 @@ fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles,
     gitr( my.input,
           cohort = if (length(input$cohort)) input$cohort else 'all',
           nonormal = isTRUE(input$nonormal), noheme = isTRUE(input$noheme),
-          dbfile = dbfile, roles = roles, keep_samples = keep_samples )
+          dbfile = dbfile, roles = roles, keep_samples = keep_samples, rules = rules )
 }
 
 
 fun_plot1 = function(input, reactive = TRUE,
                      dbfile = gitrdb, roles = gitr_default_roles,
                      dataset_label = "TCGA Pan-Cancer 2018",
-                     keep_samples = NULL, gg = list(),
+                     keep_samples = NULL, rules = list(), gg = list(),
                      base_size = 12, base_family = "sans", caption = NULL, fig_width = NULL) {
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
@@ -762,10 +806,16 @@ fun_plot1 = function(input, reactive = TRUE,
     input$dbfile = dbfile
     input$roles = roles
     input$dataset_label = dataset_label
+    ## the classic flags are not browser inputs any more: the sample choice
+    ## arrives as `rules` (the survival branch below still forces nonormal)
+    input$nonormal = FALSE
+    input$noheme = FALSE
     ## the Filter tab's surviving sample ids: server-side only (never a browser
     ## input, so not in T2_INPUT_ARGS). list() wrapper keeps a NULL out of the
     ## argument list and lets character(0) ("nothing survives") through.
     if (!is.null(keep_samples)) input['keep_samples'] = list(keep_samples)
+    ## the sample choice (data source, group, exclusions) as rules: server-side too
+    if (length(rules)) input['rules'] = list(rules)
     ## extra ggplot settings: validated against the tweak registry here, whatever
     ## the caller did, so nothing unlisted or out of range can reach ggplot
     gg = t2_validate_tweaks(gg)
@@ -798,7 +848,7 @@ fun_plot1 = function(input, reactive = TRUE,
                         ## value, so normals are excluded whatever the checkbox says
                         nonormal = TRUE,
                         noheme = if (!is.null(input$noheme)) as.logical(input$noheme)[1] else FALSE,
-                        keep_samples = keep_samples,
+                        keep_samples = keep_samples, rules = rules,
                         base_size = base_size, base_family = base_family,
                         dbfile = dbfile, roles = roles),
             style = km_style, gg = gg, caption = caption, fig_width = fig_width),

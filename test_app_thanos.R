@@ -15,7 +15,7 @@ same_set <- function(a, b) setequal(as.character(a), as.character(b))
 
 base_inputs <- list(
   size = "", cohort = "all",
-  pcortype = "none", nonormal = FALSE, noheme = FALSE, multi_y = FALSE,
+  pcortype = "none", preset_group = "", multi_y = FALSE,
   zscore_y = FALSE, coordflip = FALSE, waterfall = FALSE, waterfall_flip = FALSE,
   allComplete = TRUE, smooth = "TRUE", scales = "fixed",
   
@@ -86,12 +86,12 @@ testServer(shiny::shinyAppDir("."), {
   ok(same_set(r3$plot$data$sample, g$sample[plottable & in_rng & is_lev]),
      "unticking 'include NA' drops the samples with no gender")
 
-  ## ---- Select-tab pre-filters define the Thanos universe, live ----
+  ## ---- Select-tab sample choice (cohort, a ready-made exclusion) defines the Thanos universe, live ----
   co <- unname(b$mycohorts)[1:2]
-  session$setInputs(cohort = co, nonormal = TRUE)
+  session$setInputs(cohort = co, preset_excl = "Tumor samples only")
   pre <- g$cohort %in% co & !(as.character(g$sample_type) %in% b$roles$normal_label)
   ok(h$th$n_selected() == sum(pre & (in_rng | is.na(g$CD8A)) & is_lev),
-     sprintf("cohort + Exclude Non-tumor shrink the Thanos universe live (%d selected)", h$th$n_selected()))
+     sprintf("cohort + 'Tumor samples only' shrink the Thanos universe live (%d selected)", h$th$n_selected()))
   ok(grepl(format(sum(pre), big.mark = ","), output$filter_count, fixed = TRUE),
      "Filter tab count shows the universe size")
   ok(identical(isolate(h$th$filters())$CD8A, q), "the user's filter settings survive a cohort change")
@@ -111,7 +111,7 @@ testServer(shiny::shinyAppDir("."), {
   ok(all(r4$plot$data$sample %in% csv$sample), "every plotted sample is in the download")
 
   ## ---- a column whose name needs id-encoding (TP53.mut) ----
-  session$setInputs(cohort = "all", nonormal = FALSE)
+  session$setInputs(cohort = "all", preset_excl = character(0))
   set1(paste0(t2_thanos_id("TCGA"), "-vars"), "TP53.mut")
   ok(h$th$n_selected() == nrow(g), "removing filter columns removes their filters")
   set1(th_in("TCGA", "filter", "TP53.mut"), "1")
@@ -123,7 +123,7 @@ testServer(shiny::shinyAppDir("."), {
      sprintf("categorical filter on 'TP53.mut' (encoded id) applied (%d)", nrow(r5$plot$data)))
 
   ## ---- survival (Kaplan-Meier) path honours the filters too ----
-  session$setInputs(x = "OS", y = "MKI67", noheme = TRUE)
+  session$setInputs(x = "OS", y = "MKI67", preset_excl = "Exclude tumors of heme origin")
   press("plot_btn")
   r6 <- plot_result()
   ok(inherits(r6, "ggsurvplot"), "survival plot builds with a Thanos filter active")
@@ -131,7 +131,7 @@ testServer(shiny::shinyAppDir("."), {
   heme <- g$cohort %in% b$roles$heme_values
   ok(all(km$sample %in% g$sample[mut & !heme]) && nrow(km) > 100,
      sprintf("KM samples are all TP53-mutant and non-heme (%d)", nrow(km)))
-  session$setInputs(noheme = FALSE)
+  session$setInputs(preset_excl = character(0))
   set1(paste0(t2_thanos_id("TCGA"), "-vars"), character(0))
   press("plot_btn")
   km_all <- attr(plot_result(), "km_data")
@@ -191,16 +191,22 @@ testServer(shiny::shinyAppDir("."), {
   ok(same_set(r7$plot$data$sample, g$sample[plottable & in_rng]),
      "TCGA plot uses TCGA's own filters after the round trip")
 
-  ## ---- a dataset switch does not turn the previous dataset's picks into panels ----
-  ## right after the switch the inputs still hold the old picks (the browser has
-  ## not reported the repopulated selectors); CD8A and FOXP3 exist in both datasets
+  ## ---- a dataset switch: picks that exist in the new dataset are carried over
+  ## (sticky selections) and get panels; a pick the new dataset lacks is not
+  ## pushed, whatever the inputs still hold (the browser has not reported the
+  ## repopulated selectors yet). CD8A and FOXP3 exist in both; TP53.mut is TCGA-only.
+  session$setInputs(color = "TP53.mut")
   session$setInputs(dataset = "tcgatargetgtex")
   ht <- th_for(bundle())
   fetched <- function() environment(ht$backend$prefetch)$fetched   # probes the backend has fetched
-  before <- fetched()
   session$elapse(600)
-  ok(bundle()$name == "tcgatargetgtex" && !any(c("CD8A", "FOXP3") %in% setdiff(fetched(), before)),
-     "after a switch the old picks are not pushed to the new dataset's Filter tab")
+  ok(bundle()$name == "tcgatargetgtex" && !any(c("CD8A", "FOXP3", "TP53.mut") %in% fetched()),
+     "right after a switch the inputs still hold the old picks: nothing is pushed yet")
+  ## the browser reports the repopulated selectors (x, y carried; colour fell back to the default)
+  session$setInputs(color = "study")
+  session$elapse(600)
+  ok(all(c("CD8A", "FOXP3") %in% fetched()) && !("TP53.mut" %in% fetched()),
+     "then the carried picks get panels; a pick the new dataset lacks is not pushed")
   session$setInputs(x = "cohort", y = "MKI67", color = "study")
   session$elapse(600)
   ok("MKI67" %in% fetched(), "the first real change of the selectors is pushed as before")

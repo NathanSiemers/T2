@@ -14,7 +14,7 @@
 ## dataset_label are injected by the server afterwards).
 T2_INPUT_ARGS = c('x', 'y', 'color', 'size', 'cohort', 'facet', 'condition',
                   'pcortype', 'multi_y', 'zscore_y', 'coordflip', 'waterfall',
-                  'waterfall_flip', 'nonormal', 'noheme', 'allComplete',
+                  'waterfall_flip', 'allComplete',
                   'smooth', 'scales', 'show_legend', T2_STYLE_ARGS,
                   'km_groups', 'surv_max_days')
 
@@ -65,8 +65,6 @@ sanitize_t2_input = function(input, b) {
         coordflip      = .t2_flag(input$coordflip),
         waterfall      = .t2_flag(input$waterfall),
         waterfall_flip = .t2_flag(input$waterfall_flip),
-        nonormal       = .t2_flag(input$nonormal),
-        noheme         = .t2_flag(input$noheme),
         allComplete    = .t2_flag(input$allComplete, TRUE),
         smooth        = .t2_one(input$smooth, c("TRUE", "FALSE"), "TRUE"),
         scales        = .t2_one(input$scales, c("free", "fixed", "free_x", "free_y"), "fixed"),
@@ -77,6 +75,23 @@ sanitize_t2_input = function(input, b) {
     ## the Appearance menus (plot_style.R): each value snaps to its own menu.
     ## plot_height is returned for the page; it is not a plotter argument.
     sanitize_t2_style(input)[names(T2_STYLE)])
+}
+
+## The sample choice of the Select tab: the data source (part of the bundle),
+## the chosen group and the chosen exclusions, checked against what
+## t2_filter_choices() offers for this source and group (t2_presets.R). Returns
+## list(group, exclusions, rules, label): `rules` is what reaches gitr() --
+## built here, never taken from the browser.
+sanitize_t2_samples = function(input, b) {
+    src = b$source
+    group = .t2_one(input$preset_group, src$groups, "")
+    ch = t2_filter_choices(src, b$presets, b$clin, if (nzchar(group)) group else NULL)
+    excl = .t2_pick(input$preset_excl, ch$exclusions, 20)
+    by_label = stats::setNames(b$presets, vapply(b$presets, `[[`, "", "label"))
+    rules = src$rules
+    for (p in c(if (nzchar(group)) group, excl)) rules = c(rules, by_label[[p]]$rules)
+    list(group = if (nzchar(group)) group else NULL, exclusions = excl, rules = rules,
+         label = paste(c(src$label, if (nzchar(group)) group, excl), collapse = "; "))
 }
 
 ## The fixed style menus + the legend switch, read from the Appearance tab

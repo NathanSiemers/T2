@@ -47,9 +47,10 @@ local({
 })
 if (!HAVE_THANOS) message("T2: Filter tab disabled. ", T2_THANOS_NOTE)
 
-## module id for a dataset's Thanos instance (one instance per dataset, because
-## a Thanos instance is bound to one backend for life)
-t2_thanos_id = function(dataset) paste0("th_", gsub("[^A-Za-z0-9]", "_", dataset))
+## module id for a data source's Thanos instance (one instance per source key,
+## "<dataset>" or "<dataset>|<part>", because a Thanos instance is bound to one
+## backend for life and a part has its own universe and level lists)
+t2_thanos_id = function(key) paste0("th_", gsub("[^A-Za-z0-9]", "_", key))
 
 ## ---- 2. the backend --------------------------------------------------------
 ## Probe columns kept per backend before the oldest are dropped. Thanos keeps
@@ -62,11 +63,16 @@ T2_BACKEND_MAX_COLS = 300
 ## plus T2's own extras:
 ##   $samples                      sample id per row
 ##   $prefetch(cols)               fetch several probes in ONE query
-##   $base_mask(cohort, nonormal, noheme)
-##                                 logical per row: the Select tab's pre-filters
+##   $base_mask(cohort, rules)     logical per row: the Select tab's sample choice
+##                                 (cohort; group and exclusions as rules)
+## `bundle` is a SOURCE bundle (load_source_bundle): a part of a collection
+## ("GTEx") has its own backend -- the part's rules are in every base mask, a
+## clinical column with one value in the part is not offered, and a
+## categorical column lists only the levels present in the part.
 backend_t2 = function(bundle) {
     dbfile = bundle$path
     roles  = bundle$roles
+    source = bundle$source %||% list(rules = list(), single_level_columns = character(0))
 
     ## typed: clinical + virtual columns exactly as gitr() hands them to the
     ## plotter (no probes, no filters). One query; every clinical column the
@@ -88,10 +94,13 @@ backend_t2 = function(bundle) {
         t2_add_virtual_cols(clin, roles)
     })
     raw = raw[match(samples, as.character(raw$sample)), , drop = FALSE]
+    ## the rows of the part (all rows for a whole collection)
+    in_source = t2_rules_mask(raw, source$rules)
 
     clin_cols = setdiff(colnames(typed), 'sample')
     columns = unique(c(clin_cols, bundle$mygenes))
-    columns = columns[!is.na(columns) & nzchar(columns) & columns != 'sample']
+    ## (some builds list clinical columns in allprobes too, hence after the union)
+    columns = setdiff(columns[!is.na(columns) & nzchar(columns)], c('sample', source$single_level_columns))
 
     ## name -> list(col = <vector in row order>, info = <Thanos column info>)
     store = new.env(parent = emptyenv())
@@ -109,7 +118,13 @@ backend_t2 = function(bundle) {
             df[[v]] = rep(NA_character_, n)
             be = backend_memory(df)
         }
-        store[[v]] = list(col = be$get_column(v), info = be$get_column_info(v))
+        info = be$get_column_info(v)
+        ## a part of a collection: only the levels present in the part
+        if (length(source$rules) && !isTRUE(info$is_numeric) && length(info$levels)) {
+            present = unique(as.character(x[in_source & !is.na(x)]))
+            info$levels = info$levels[info$levels %in% present]
+        }
+        store[[v]] = list(col = be$get_column(v), info = info)
     }
 
     fetch = function(vs) {
@@ -161,9 +176,9 @@ backend_t2 = function(bundle) {
         get_column_info = function(name) entry(name)$info,
         samples         = samples,
         prefetch        = fetch,
-        base_mask       = function(cohort = 'all', nonormal = FALSE, noheme = FALSE) {
+        base_mask       = function(cohort = 'all', rules = list(), nonormal = FALSE, noheme = FALSE) {
             t2_sample_keep(raw, roles, cohort = cohort, nonormal = nonormal,
-                           noheme = noheme)
+                           noheme = noheme, rules = c(source$rules, rules))
         }
     )
 }
@@ -174,7 +189,7 @@ backend_t2 = function(bundle) {
 ## re-reading them.
 .t2_backends = new.env(parent = emptyenv())
 backend_t2_shared = function(bundle) {
-    key = normalizePath(bundle$path, mustWork = FALSE)
+    key = paste(normalizePath(bundle$path, mustWork = FALSE), bundle$key %||% "")
     if (is.null(.t2_backends[[key]])) .t2_backends[[key]] = backend_t2(bundle)
     .t2_backends[[key]]
 }

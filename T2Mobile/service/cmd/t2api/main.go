@@ -11,6 +11,8 @@ package main
 
 import (
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,33 +21,31 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
-	"crypto/sha256"
-	"encoding/hex"
-	"sync"
-	"slices"
 )
 
 const (
 	maxProbesPerRequest = 100
 	// a request whose first names are ALL unknown is refused outright instead of answered
 	// name by name: it is a mistake or a probe for weaknesses, not a use of the service
-	unknownPrefix = 10
-	maxProbeNameLen     = 200
-	maxSearchLimit      = 200
+	unknownPrefix   = 10
+	maxProbeNameLen = 200
+	maxSearchLimit  = 200
 )
 
 type server struct {
-	datasets map[string]*Dataset
-	order    []string // dataset names, TCGA first
-	started  time.Time
-	nReq     atomic.Int64
-	nErr     atomic.Int64
-	stopOnce sync.Once
+	datasets     map[string]*Dataset
+	order        []string // dataset names, TCGA first
+	started      time.Time
+	nReq         atomic.Int64
+	nErr         atomic.Int64
+	stopOnce     sync.Once
 	contact      contactConfig
 	contactLimit contactLimiter
 }
@@ -287,6 +287,15 @@ func (s *server) handleClinical(w http.ResponseWriter, r *http.Request, d *Datas
 // handleProbes searches the selectable variable names (allprobes): case-insensitive, names
 // that START with the query first, then names that contain it.
 func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset) {
+	// ?all=1: the whole list (about 1.5 MB for TCGA, 300 KB gzipped), cacheable by version
+	if r.URL.Query().Get("all") == "1" {
+		if s.cacheable(w, r, d, "probes-all") {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(d.probesJSON)
+		return
+	}
 	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	if len(q) > maxProbeNameLen {
 		s.fail(w, http.StatusBadRequest, "query too long")

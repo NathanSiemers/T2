@@ -77,6 +77,28 @@ for (ds in vapply(get("/v1/datasets")$datasets, `[[`, "", "name")) {
   ok(n_ok == length(pick), sprintf("%d of %d probes equal gitr() value for value (%d numeric, %d categorical; suffixes: %s)",
                                    n_ok, length(pick), sum(kinds == "num"), sum(kinds == "cat"), paste(sort(unique(suffix)), collapse = " ")))
   cat(sprintf("    time for these probes: API %.1f s (first request for each, uncached), gitr() %.1f s\n", t_api, t_r))
+  ## presets and data sources: the service (dataset.go loadPresets, sources.go) and the R
+  ## mirror (t2_presets.R, in the bundle) must say the same thing
+  meta <- get(sprintf("/v1/%s/meta", ds))
+  flat <- function(p) list(label = p$label, default = isTRUE(p$default), n = as.integer(p$n_samples),
+                           rules = lapply(p$rules, function(r) list(r$column, r$op, as.character(unlist(r$values)))))
+  api_p <- lapply(meta$presets, flat); r_p <- lapply(b$presets, flat)
+  ok(identical(api_p, r_p), sprintf("%d presets identical (labels, rules, defaults, sample counts)", length(r_p)))
+  if (!identical(api_p, r_p)) { cat("    API:\n"); str(api_p, max.level = 2); cat("    R:\n"); str(r_p, max.level = 2) }
+  flat_s <- function(s) list(label = s$label, description = s$description, n = as.integer(s$n_samples),
+                             rules = lapply(s$rules, function(r) list(r$column, r$op, as.character(unlist(r$values)))),
+                             cohorts = as.character(unlist(s$cohorts)), groups = as.character(unlist(s$groups)),
+                             exclusions = as.character(unlist(s$exclusions)), single = sort(as.character(unlist(s$single_level_columns))))
+  api_s <- lapply(meta$sources, flat_s); r_s <- lapply(b$sources, flat_s)
+  ok(identical(api_s, r_s), sprintf("%d data sources identical (rules, counts, cohorts, groups, exclusions, single-level columns)", length(r_s)))
+  if (!identical(api_s, r_s)) { cat("    API:\n"); str(api_s, max.level = 2); cat("    R:\n"); str(r_s, max.level = 2) }
+  ## the full probe list equals the R app's menu
+  pl <- get(sprintf("/v1/%s/probes?all=1", ds))
+  ## the R menu list (allprobes lists "sample" in some builds: dropped), then every clinical
+  ## column allprobes does not list (survival times, the other subtype calls), clinpheno order
+  r_menu <- setdiff(unique(b$mygenesplus), "sample"); a_menu <- as.character(unlist(pl$probes))
+  ok(identical(head(a_menu, length(r_menu)), r_menu) && all(setdiff(a_menu, r_menu) %in% colnames(g0)),
+     sprintf("probes?all=1 = the R menu list (%d names) + %d clinical columns it lacks", length(r_menu), length(setdiff(a_menu, r_menu))))
   res <- get(sprintf("/v1/%s/values?probes=%s", ds, "no_such_probe_zzz"))
   ok(length(res$columns) == 0 && identical(unlist(res$missing), "no_such_probe_zzz"), "an unknown name is reported as missing")
 }

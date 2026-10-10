@@ -1,6 +1,7 @@
 library(DBI)
 library(dplyr)
 gitrdb = 'tcga.db'
+if (!exists("t2_rules_mask")) source('t2_presets.R')   # presets / data sources (the rules below)
 
 ## ---------------------------------------------------------------------------
 ## T2_LIMITS: how much ONE request may ask for. All of T2's limits, in one place.
@@ -81,14 +82,18 @@ t2_add_virtual_cols = function(clin, roles = gitr_default_roles) {
   clin
 }
 
-## The sample pre-filters (Exclude Non-tumor / Exclude heme / Cohort) as ONE
-## predicate: logical(nrow(df)), TRUE = keep. `df` must carry the RAW role
-## columns (before the sample-type column is re-levelled into a factor) plus
-## the virtual `cohort` column. Each filter is a no-op when its role column is
-## absent for this dataset. gitr() and the Thanos base mask both call this, so
-## what the Filter tab shows and what gets plotted can never disagree.
+## The sample pre-filters as ONE predicate: logical(nrow(df)), TRUE = keep.
+##   rules     the data source, the chosen group and the chosen exclusions, as
+##             preset rules (t2_presets.R) -- how the app selects samples
+##   nonormal  / noheme: the classic flags, kept for scripts and tests
+##   cohort    'all' or cohort values
+## `df` must carry the RAW role columns (before the sample-type column is
+## re-levelled into a factor) plus the virtual `cohort` column. Each filter is
+## a no-op when its role column is absent for this dataset. gitr() and the
+## Thanos base mask both call this, so what the Filter tab shows and what gets
+## plotted can never disagree.
 t2_sample_keep = function(df, roles = gitr_default_roles, cohort = 'all',
-                          nonormal = FALSE, noheme = FALSE) {
+                          nonormal = FALSE, noheme = FALSE, rules = list()) {
   role_has = function(key) {
     v = roles[[key]]
     !is.null(v) && length(v) == 1 && !is.na(v) && nzchar(v)
@@ -109,6 +114,7 @@ t2_sample_keep = function(df, roles = gitr_default_roles, cohort = 'all',
     keep = keep & !(df[[ccol]] %in% roles$heme_values)
   if (!is.null(cohort) && any(cohort != "all") && 'cohort' %in% colnames(df))
     keep = keep & (df$cohort %in% cohort)
+  if (length(rules)) keep = keep & t2_rules_mask(df, rules)
   keep
 }
 
@@ -151,7 +157,8 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 roles = gitr_default_roles,
                 db = 'tcga',
                 dbcat = 'tcgacat',
-                keep_samples = NULL) {
+                keep_samples = NULL,
+                rules = list()) {
 
   if (is.null(roles)) roles = gitr_default_roles
   role_has = function(key) {
@@ -250,7 +257,7 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## filters — each is a no-op when its role column is absent for this dataset
   stc = roles$sampletype_col
   keep = t2_sample_keep(out, roles, cohort = cohort, nonormal = nonormal,
-                        noheme = noheme)
+                        noheme = noheme, rules = rules)
   if (!is.null(keep_samples)) keep = keep & (out$sample %in% keep_samples)
   if (!all(keep)) out = out[keep, , drop = FALSE]
 

@@ -29,9 +29,11 @@ services:
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
+    ## DEVELOPMENT copies of the databases, /scratch/nathan/R/T2-devdata (its README; the published service mounts
+    ## /scratch/shinyusb/T2-data-<date>/): a change to a dataset's metadata is tried here first
     volumes:
-      - /scratch/shinyusb/T2/tcga.db:/data/tcga.db:ro
-      - /scratch/shinyusb/T2/datasets:/data/datasets:ro
+      - /scratch/nathan/R/T2-devdata/tcga.db:/data/tcga.db:ro
+      - /scratch/nathan/R/T2-devdata/datasets:/data/datasets:ro
 
 networks:
   t2api-dev:

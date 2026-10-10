@@ -21,7 +21,8 @@
 `%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || (length(a) == 1 && is.na(a))) b else a
 
 ## Directory holding additional dataset files (one <name>.db per dataset).
-DATASETS_DIR <- "datasets"
+## T2_DATASETS_DIR points a test or a trial at other copies of the files.
+DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
 
 ## ---------------------------------------------------------------------------
 ## Canonical TCGA role map (the original hard-coded behaviour of gitr/lib/app).
@@ -39,7 +40,10 @@ DATASETS_DIR <- "datasets"
 )
 .TCGA_DEFAULTS <- list(
   x = "cohort", y = "CD8A", color = "sample_type", size = "",
-  condition = "StromalScore.estimate"
+  condition = "StromalScore.estimate",
+  ## the cohorts shown first: 33 boxes make the opening plot too busy to read
+  ## (the same nine as the t2api service and the iPhone app)
+  cohorts = c("COAD", "ESCA", "HNSC", "KIRC", "LUAD", "LUSC", "PAAD", "SKCM", "STAD")
 )
 .TCGA_TITLE <- "T2: TCGA 2018 Pan-Cancer Database"
 .TCGA_LABEL <- "TCGA Pan-Cancer 2018"   # short label used in plot captions
@@ -114,12 +118,18 @@ DATASETS_DIR <- "datasets"
     if (!nzchar(roles$sampletype_col %||% "")) roles$sampletype_col <- NA_character_
     if (length(roles$normal_label) == 0)       roles$normal_label   <- NA_character_
     if (length(roles$sampletype_levels) == 0)  roles$sampletype_levels <- NULL
+    ## the parts of the collection offered as data sources (see t2_presets.R)
+    roles$source_col          <- meta$source_col %||% NA_character_
+    roles$sources             <- .split_meta(meta$sources)
+    roles$source_labels       <- .split_meta(meta$source_labels)
+    roles$source_descriptions <- .split_meta(meta$source_descriptions)
     defaults <- list(
       x         = meta$default_x         %||% "cohort",
       y         = meta$default_y         %||% "",
       color     = meta$default_color     %||% "",
       size      = meta$default_size      %||% "",
-      condition = meta$default_condition %||% ""
+      condition = meta$default_condition %||% "",
+      cohorts   = .split_meta(meta$default_cohorts)
     )
     title <- meta$title %||% name
     label <- meta$label %||% title
@@ -137,7 +147,7 @@ DATASETS_DIR <- "datasets"
     heme_values       = character(0),
     sampletype_levels = NULL
   )
-  defaults <- list(x = "cohort", y = "", color = "", size = "", condition = "")
+  defaults <- list(x = "cohort", y = "", color = "", size = "", condition = "", cohorts = character(0))
   list(roles = roles, defaults = defaults, title = name, label = name)
 }
 

@@ -154,9 +154,9 @@ publish_tab_ui = function() {
     )
 }
 
-## datasets known at startup: the Filter tab holds one (hidden) Thanos panel
-## set per dataset, shown for whichever dataset is selected
-T2_DATASETS = list_datasets()
+## data sources known at startup (every dataset and its parts): the Filter tab
+## holds one (hidden) Thanos panel set per source, shown for whichever is selected
+T2_SOURCES = list_sources()
 
 ## the Filter tab: Thanos cross-filtering of the samples that get plotted
 filter_tab_ui = function() {
@@ -174,13 +174,13 @@ filter_tab_ui = function() {
                  tags$b("Select"), " tab appears here automatically; add any other variable with ",
                  tags$b("Filter columns"), ". Each histogram shows the samples passing all the ",
                  tags$i("other"), " filters, with this variable's own selection highlighted. ",
-                 "Cohort and the Exclude checkboxes on the Select tab decide which samples are shown here at all. ",
+                 "The data set, cohort and sample choices on the Select tab decide which samples are shown here at all. ",
                  "Filters take effect on the plot when you press ", tags$b("Plot"), "."),
-        lapply(T2_DATASETS, function(ds) {
+        lapply(unname(T2_SOURCES), function(key) {
             conditionalPanel(
                 condition = sprintf("input.dataset == %s",
-                                    jsonlite::toJSON(ds, auto_unbox = TRUE)),
-                div(class = "t2-thanos", thanosUI(t2_thanos_id(ds))))
+                                    jsonlite::toJSON(key, auto_unbox = TRUE)),
+                div(class = "t2-thanos", thanosUI(t2_thanos_id(key))))
         })
     )
 }
@@ -239,8 +239,10 @@ ui = fluidPage(
             inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
             inline(checkboxInput("waterfall", "Waterfall", value = FALSE)),
             inline(checkboxInput("waterfall_flip", "Flip waterfall", value = FALSE)),
-            inline(checkboxInput("nonormal", "Exclude Non-tumor", value = FALSE)),
-            inline(checkboxInput("noheme", "Exclude tumors of heme origin", value = FALSE)),
+            tags$br(),
+            ## the ready-made sample subsets of the chosen data source (t2_presets.R)
+            uiOutput('preset_group_ui', inline = TRUE),
+            uiOutput('preset_excl_ui', inline = TRUE),
             tags$br(),
             inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
             inline(HTML(nbsp(5))),
@@ -335,38 +337,74 @@ ui = fluidPage(
 ################################################################
 
 server = function(input, output, session) {
-    ## ---- active dataset bundle (the single object that "knows" the dataset) ----
-    init_bundle = load_dataset_bundle(default_dataset())
+    ## ---- active source bundle (the single object that "knows" the data source) ----
+    init_bundle = load_source_bundle(default_dataset())
     bundle = reactiveVal(init_bundle)
 
-    ## populate the dataset selector itself
-    updateSelectizeInput(session, 'dataset', choices = list_datasets(),
+    ## populate the data-source selector itself: every dataset and its parts
+    updateSelectizeInput(session, 'dataset', choices = T2_SOURCES,
                          selected = default_dataset(), server = TRUE)
+
+    ## ---- the sample choice: one group at most, any number of exclusions ----
+    ## What is offered comes from t2_filter_choices() (the same rule as the
+    ## iPhone app): the groups of the source, and the exclusions that still
+    ## change the samples of the source and the chosen group.
+    preset_n = function(b, label, base) sum(base & t2_rules_mask(b$clin, b$presets[[match(label, vapply(b$presets, `[[`, "", "label"))]]$rules))
+    output$preset_group_ui = renderUI({
+        b = bundle()
+        src = b$source
+        if (!length(src$groups)) return(NULL)
+        base = t2_rules_mask(b$clin, src$rules)
+        ch = c(stats::setNames("", sprintf("All samples (%s)", format(src$n_samples, big.mark = ","))),
+               stats::setNames(src$groups, vapply(src$groups, function(g)
+                   sprintf("%s (%s)", g, format(preset_n(b, g, base), big.mark = ",")), "")))
+        radioButtons('preset_group', 'Samples', choices = ch, inline = TRUE,
+                     selected = .t2_one(isolate(input$preset_group), src$groups, ""))
+    })
+    output$preset_excl_ui = renderUI({
+        b = bundle()
+        samp = sanitize_t2_samples(input, b)
+        ch = t2_filter_choices(b$source, b$presets, b$clin, samp$group)
+        if (!length(ch$exclusions)) return(NULL)
+        lab = vapply(ch$exclusions, function(e)
+            sprintf("%s (-%s)", e, format(sum(ch$base) - preset_n(b, e, ch$base), big.mark = ",")), "")
+        checkboxGroupInput('preset_excl', NULL, choices = stats::setNames(ch$exclusions, lab),
+                           selected = samp$exclusions, inline = TRUE)
+    })
 
     output$app_title = renderUI(h4(site_title(bundle()$title)))
 
-    ## (re)populate every dataset-dependent selectize from a bundle. Defaults
-    ## that aren't valid choices for the selected dataset fall back gracefully.
-    apply_bundle_choices = function(b) {
-        mgp = b$mygenesplus
+    ## (re)populate every dataset-dependent selectize from a bundle. The picks
+    ## in `keep` (the previous source's) stay where the new source has them
+    ## (sticky selections, as in the iPhone app); otherwise the dataset's
+    ## defaults; either falls back gracefully. A column with a single value in
+    ## the part is never picked (nothing to colour or split by).
+    apply_bundle_choices = function(b, keep = list()) {
+        single = b$source$single_level_columns
+        mgp = setdiff(b$mygenesplus, single)
         d   = b$defaults
-        pick = function(sel, choices, fallback = "") {
-            sel = sel[sel %in% choices]
-            if (length(sel)) sel else fallback
+        pick = function(id, choices, fallback = "", n = 1, default = d[[id]]) {
+            for (sel in list(keep[[id]], default)) {
+                sel = as.character(unlist(sel)); sel = sel[sel %in% choices]
+                if (length(sel)) return(utils::head(sel, n))
+            }
+            fallback
         }
-        sel = list(condition = pick(d$condition, mgp),
-                   x = pick(d$x, mgp, if (length(mgp)) mgp[1] else ""),
-                   y = pick(d$y, mgp, if (length(b$mygenes)) b$mygenes[1] else ""),
-                   color = pick(d$color, mgp), size = pick(d$size, mgp))
+        sel = list(condition = pick('condition', mgp, n = 10),
+                   x = pick('x', mgp, if (length(mgp)) mgp[1] else "", n = 20),
+                   y = pick('y', mgp, if (length(b$mygenes)) b$mygenes[1] else "", n = 20),
+                   color = pick('color', mgp), size = pick('size', mgp),
+                   facet = pick('facet', mgp, NULL, n = 3),
+                   cohort = pick('cohort', unname(b$mycohorts), NULL, n = 200, default = d$cohorts))
         updateSelectizeInput(session, 'condition', choices = mgp, selected = sel$condition, server = TRUE)
         updateSelectizeInput(session, 'x', choices = mgp, selected = sel$x, server = TRUE)
         updateSelectizeInput(session, 'y', choices = mgp, selected = sel$y, server = TRUE)
         updateSelectizeInput(session, 'color', choices = mgp, selected = sel$color, server = TRUE)
         updateSelectizeInput(session, 'size', choices = mgp, selected = sel$size, server = TRUE)
         updateSelectizeInput(session, 'cohort', choices = c('all', b$mycohorts),
-                             selected = NULL, server = TRUE)
+                             selected = sel$cohort, server = TRUE)
         updateSelectizeInput(session, 'facet', choices = mgp,
-                             selected = NULL, server = TRUE)
+                             selected = sel$facet, server = TRUE)
         invisible(sel)       # what the selectors are being set to
     }
     apply_bundle_choices(init_bundle)
@@ -379,13 +417,15 @@ server = function(input, output, session) {
     ## and repopulate all inputs from it.
     observeEvent(input$dataset, {
         req(input$dataset)
-        if (identical(input$dataset, bundle()$name)) return()
-        b = load_dataset_bundle(input$dataset)
+        if (identical(input$dataset, bundle()$key)) return()
+        if (!(input$dataset %in% T2_SOURCES)) return()
+        b = load_source_bundle(input$dataset)
         old = isolate(selected_vars()$vars)
+        prev = isolate(sanitize_t2_input(input, bundle()))   # the picks to carry over
         bundle(b)
-        sel = apply_bundle_choices(b)
+        sel = apply_bundle_choices(b, keep = prev[c('x', 'y', 'color', 'size', 'facet', 'condition', 'cohort')])
         ## the selections the new dataset starts with, as selected_vars will report them
-        new = unlist(c(sel$x, sel$y, sel$color, sel$size,
+        new = unlist(c(sel$x, sel$y, sel$color, sel$size, sel$facet,
                        if (!identical(isolate(input$pcortype), 'none')) sel$condition))
         new = unique(new[!is.na(new) & nzchar(new)])
         ## arm the guard, unless the old picks ARE the new selections (then pushing them is right)
@@ -413,17 +453,16 @@ server = function(input, output, session) {
     ## applied to another whose fields may not even exist.
     th_env = new.env(parent = emptyenv())
     th_for = function(b) {
-        if (!HAVE_THANOS || !(b$name %in% T2_DATASETS)) return(NULL)
-        if (!is.null(th_env[[b$name]])) return(th_env[[b$name]])
+        if (!HAVE_THANOS || !(b$key %in% T2_SOURCES)) return(NULL)
+        if (!is.null(th_env[[b$key]])) return(th_env[[b$key]])
         be = backend_t2_shared(b)
-        ds = b$name
-        ## the Select tab's pre-filters as this instance's universe; NULL (no
-        ## restriction, nothing to recompute) while another dataset is active
+        ds = b$key
+        ## the Select tab's sample choice as this instance's universe; NULL (no
+        ## restriction, nothing to recompute) while another source is active
         base = reactive({
-            if (!identical(bundle()$name, ds)) return(NULL)
-            be$base_mask(cohort   = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), 200),
-                         nonormal = .t2_flag(input$nonormal),
-                         noheme   = .t2_flag(input$noheme))
+            if (!identical(bundle()$key, ds)) return(NULL)
+            be$base_mask(cohort = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), 200),
+                         rules  = sanitize_t2_samples(input, b)$rules)
         })
         ## no extra debounce: server state then always equals what the browser
         ## has sent, so a Plot click right after a filter change sees it
@@ -446,13 +485,13 @@ server = function(input, output, session) {
         v = c(cap(input$x, T2_LIMITS$x_vars), cap(input$y, T2_LIMITS$y_vars),
               cap(input$color, 1), cap(input$size, 1), cap(input$facet, T2_LIMITS$facet_vars),
               if (!identical(input$pcortype, 'none')) cap(input$condition, T2_LIMITS$condition_vars))
-        list(dataset = bundle()$name, vars = unique(v[!is.na(v) & nzchar(v)]))
+        list(dataset = bundle()$key, vars = unique(v[!is.na(v) & nzchar(v)]))
     })
     selected_vars_d = debounce(selected_vars, 500)
     observeEvent(selected_vars_d(), {
         sv = selected_vars_d()
         b = bundle()
-        if (!identical(sv$dataset, b$name)) return()
+        if (!identical(sv$dataset, b$key)) return()
         ## just after a dataset switch the inputs still hold the previous dataset's
         ## picks (the browser has not reported the repopulated selectors yet):
         ## skip them, whatever the timing, and resume with the first real change
@@ -524,12 +563,14 @@ server = function(input, output, session) {
         inp = sanitize_t2_input(input, b)
         if( length(inp$x) == 0 | length(inp$y) == 0 ) { return( NULL ) }
         fs = filter_state(b)
+        samp = sanitize_t2_samples(input, b)
         gg = sanitize_t2_tweaks(input)
-        plot_snapshot <<- list(inp = inp, b = b, keep = fs$keep, note = fs$note, gg = gg)
+        note = paste0("Samples: ", samp$label, ".", if (!is.null(fs$note)) paste0(" ", fs$note) else "")
+        plot_snapshot <<- list(inp = inp, b = b, keep = fs$keep, rules = samp$rules, note = note, gg = gg)
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
             fun_plot1(inp, reactive = FALSE, dbfile = b$path, roles = b$roles, dataset_label = b$label,
-                      keep_samples = fs$keep, gg = gg)
+                      keep_samples = fs$keep, rules = samp$rules, gg = gg)
         })
     })
     ## pressing Plot anywhere shows the result
@@ -599,13 +640,13 @@ server = function(input, output, session) {
         inp[names(st)] = st
         ## the preset's own defaults for unlisted settings, then the user's picks
         gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input, "pub_"))
-        list(b = b, inp = inp, keep = filter_state(b)$keep, gg = gg,
+        list(b = b, inp = inp, keep = filter_state(b)$keep, rules = sanitize_t2_samples(input, b)$rules, gg = gg,
              base_size = fig$base_size, family = fig$family, fig_width = fig$width,
              caption = if (fig$source_line) T2_CITATION else "")
     })
     pub_draw = function(s) {
         fun_plot1(s$inp, reactive = FALSE, dbfile = s$b$path, roles = s$b$roles,
-                  dataset_label = s$b$label, keep_samples = s$keep, gg = s$gg,
+                  dataset_label = s$b$label, keep_samples = s$keep, rules = s$rules, gg = s$gg,
                   base_size = s$base_size, base_family = s$family, caption = s$caption,
                   fig_width = s$fig_width)
     }
@@ -738,10 +779,11 @@ server = function(input, output, session) {
             if (is.null(snap)) {
                 b = bundle()
                 snap = list(inp = sanitize_t2_input(input, b), b = b,
-                            keep = isolate(filter_state(b))$keep)
+                            keep = isolate(filter_state(b))$keep,
+                            rules = isolate(sanitize_t2_samples(input, b))$rules)
             }
             write.csv(fun_table1(snap$inp, dbfile = snap$b$path, roles = snap$b$roles,
-                                 keep_samples = snap$keep), file)
+                                 keep_samples = snap$keep, rules = snap$rules), file)
         })
     output$print1 = renderPrint({
         print( str( reactiveValuesToList(input) ) )

@@ -51,23 +51,30 @@ type Dataset struct {
 	db      *sql.DB
 	version string // changes when the database file does; part of every ETag
 
-	samples   []string         // sample ids, clinpheno order: THE row order of every column
-	keyToRow  map[int64]int32  // samples.key -> row
-	tested    map[string][]bool // data type -> row tested?
+	samples   []string              // sample ids, clinpheno order: THE row order of every column
+	keyToRow  map[int64]int32       // samples.key -> row
+	tested    map[string][]bool     // data type -> row tested?
 	sparse    map[string]sparseType // data type -> how it was loaded (table `sparse`); absent = sparse, default 0
-	dtype     map[string]string // data type -> "numeric" | "factor"
-	clin      map[string][]byte // encoded clinical + virtual columns
+	dtype     map[string]string     // data type -> "numeric" | "factor"
+	clin      map[string][]byte     // encoded clinical + virtual columns
 	clinOrder []string
 
-	probeNames []string // selectable names (allprobes), for search
+	probeNames []string            // selectable names (allprobes), for search
 	known      map[string]struct{} // every name that can have data: allprobes + probes + clinical
 	fileSize   int64               // identity of the file the maps below were loaded from
 	fileMtime  time.Time
 	fileIno    uint64
 	probeLower []string
 
-	levels  map[string][]string // categorical clinical/virtual column -> its levels
-	presets []Preset
+	levels   map[string][]string // categorical clinical/virtual column -> its levels
+	clinText map[string]textCol  // raw text per row of every clinical/virtual column (for preset rules)
+	presets  []Preset
+	sources  []Source
+	// the dataset's parts (dataset_meta source_col / sources / source_labels / source_descriptions)
+	sourceCol                               string
+	sourceLevels, sourceLabels, sourceDescs []string
+
+	probesJSON []byte
 
 	clinicalJSON []byte
 	metaJSON     []byte
@@ -106,7 +113,7 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 		fileSize: fi.Size(), fileMtime: fi.ModTime(), fileIno: inode(fi),
 		version: fmt.Sprintf("%x%x", fi.Size(), fi.ModTime().Unix()),
 		cache:   newColumnCache(cacheBytes)}
-	steps := []func() error{d.loadRoles, d.loadClinical, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.buildMeta}
+	steps := []func() error{d.loadRoles, d.loadClinical, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.loadSources, d.buildMeta}
 	for _, f := range steps {
 		if err := f(); err != nil {
 			db.Close()
@@ -213,6 +220,8 @@ func (d *Dataset) loadRoles() error {
 			d.Defaults[k] = v
 		}
 	}
+	d.sourceCol = m["source_col"]
+	d.sourceLevels, d.sourceLabels, d.sourceDescs = splitMeta(m["sources"]), splitMeta(m["source_labels"]), splitMeta(m["source_descriptions"])
 	return rows.Err()
 }
 
@@ -303,8 +312,10 @@ func (d *Dataset) loadClinical() error {
 	}
 	d.clin = map[string][]byte{}
 	d.levels = map[string][]string{}
+	d.clinText = map[string]textCol{}
 	d.clinOrder = order
 	for _, n := range order {
+		d.clinText[n] = textOf(byName[n])
 		typ := "clinical"
 		if n == "cohort" || n == "subtype" || n == "lcohort" {
 			typ = "virtual"
@@ -502,6 +513,29 @@ func (d *Dataset) isKnown(name string) bool {
 	return ok
 }
 
+// a column's raw values as text, with which rows have one (the preset rules and the data
+// sources are evaluated on these, as default_filters.R and gitr() evaluate them in R)
+type textCol struct {
+	val []string
+	ok  []bool
+}
+
+func textOf(vals []any) textCol {
+	c := textCol{val: make([]string, len(vals)), ok: make([]bool, len(vals))}
+	for i, v := range vals {
+		switch x := v.(type) {
+		case nil:
+		case string:
+			c.val[i], c.ok[i] = x, true
+		case float64:
+			c.val[i], c.ok[i] = rNumber(x), true
+		default:
+			c.val[i], c.ok[i] = fmt.Sprint(x), true
+		}
+	}
+	return c
+}
+
 // the distinct text values of a raw column (nil for a numeric column)
 func levelsOf(vals []any, fixed []string) []string {
 	if fixed != nil {
@@ -532,6 +566,7 @@ type Preset struct {
 	Default     bool         `json:"default"` // switched on when the dataset is first opened
 	Source      string       `json:"source"`  // "database" (table default_filters) | "derived" (from the role map)
 	Rules       []PresetRule `json:"rules"`
+	NSamples    int          `json:"n_samples"` // samples of the whole dataset in the preset
 }
 
 // loadPresets reads the dataset's own `default_filters` table:
@@ -674,16 +709,23 @@ func (d *Dataset) buildMeta() error {
 		"dataset": d.Name, "title": d.Title, "label": d.Label, "version": d.version,
 		"n_samples": len(d.samples), "n_probes": len(d.probeNames),
 		"roles": d.Roles, "defaults": d.Defaults,
-		"presets": d.presets,
-		"clinical_columns": d.clinOrder,
+		"presets":               d.presets,
+		"sources":               d.sources,
+		"clinical_columns":      d.clinOrder,
 		"clinical_descriptions": clinicalDescriptions(d.Name, d.clinOrder),
-		"survival_endpoints": []string{"OS", "PFI", "DSS", "DFI"},
-		"cohorts":            table("SELECT * FROM cohorts"),
-		"types":              types,
-		"datatypes":          d.dtype,
+		"survival_endpoints":    []string{"OS", "PFI", "DSS", "DFI"},
+		"cohorts":               table("SELECT * FROM cohorts"),
+		"types":                 types,
+		"datatypes":             d.dtype,
 	}
 	var err error
 	d.metaJSON, err = json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	// every selectable name, for a client that fills its own menus (the R app's selectize)
+	d.probesJSON, err = json.Marshal(map[string]any{"dataset": d.Name, "version": d.version,
+		"n": len(d.probeNames), "probes": d.probeNames})
 	return err
 }
 

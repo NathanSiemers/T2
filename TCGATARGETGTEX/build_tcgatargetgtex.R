@@ -216,7 +216,14 @@ dataset_meta <- data.frame(
           "cohort_col", "subtype_col", "sampletype_col",
           "normal_label", "heme_values", "sampletype_levels",
           "default_x", "default_y", "default_color", "default_size",
-          "default_condition"),
+          "default_condition",
+          ## the parts of the collection offered as data sources of their own (see
+          ## T2Mobile/service/cmd/t2api/sources.go and dataset_registry.R): the levels
+          ## of `source_col` listed in `sources`, with a display name and one line each.
+          ## Not TCGA: its data belong to the TCGA dataset (tcga.db), which has the full
+          ## annotation; the Toil re-processing is here for comparisons with GTEx and
+          ## TARGET within one pipeline.
+          "source_col", "sources", "source_labels", "source_descriptions"),
   value = c(
     "T2: TCGA-TARGET-GTEx (UCSC Toil RNA-seq)",
     "TCGA-TARGET-GTEx (Toil)",
@@ -238,7 +245,10 @@ dataset_meta <- data.frame(
           "Post treatment Blood Cancer - Bone Marrow",
           "Post treatment Blood Cancer - Blood", "Control Analyte",
           "Cell Line", "Normal Tissue", "Solid Tissue Normal", sep = "|"),
-    "cohort", "CD8A", "study", "", ""),
+    "cohort", "CD8A", "study", "", "",
+    "study", "GTEX|TARGET", "GTEx|TARGET",
+    paste("The GTEx study: normal tissues, and its EBV-transformed lymphocyte and fibroblast cell lines",
+          "The TARGET pediatric cancers", sep = "|")),
   stringsAsFactors = FALSE)
 dbWriteTable(con, "dataset_meta", dataset_meta, overwrite = TRUE)
 

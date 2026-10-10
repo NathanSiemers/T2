@@ -42,9 +42,10 @@ missing. `codes`: index into `levels` from 0, `-1` = missing. `type`: the data t
 |---|---|
 | `GET /healthz` | `ok` |
 | `GET /v1/datasets` | every dataset: `name`, `title`, `label`, `n_samples`, `n_probes`, `version`, `roles`, `defaults` |
-| `GET /v1/{ds}/meta` | one dataset in full: the above plus `presets`, `clinical_columns`, `clinical_descriptions` (what each clinical column means and where it comes from: `column`, `description`, `source`; from `cmd/t2api/clinical_descriptions.tsv`), `survival_endpoints`, `cohorts` (display names), `types` (data-type descriptions), `datatypes` |
+| `GET /v1/{ds}/meta` | one dataset in full: the above plus `presets`, `sources`, `clinical_columns`, `clinical_descriptions` (what each clinical column means and where it comes from: `column`, `description`, `source`; from `cmd/t2api/clinical_descriptions.tsv`), `survival_endpoints`, `cohorts` (display names), `types` (data-type descriptions), `datatypes` |
 | `GET /v1/{ds}/clinical` | `samples` (ids, in order) and `columns`: every clinical and virtual column. About 2.7 MB for TCGA (0.5 MB gzipped); fetch once per dataset version and keep it. |
-| `GET /v1/{ds}/probes?q=cd8&limit=50` | names of selectable variables containing `q` (case-insensitive; names starting with `q` first); `total_matches` |
+| `GET /v1/{ds}/probes?q=cd8&limit=50` | names of selectable variables containing `q` (case-insensitive; the exact name first, then names starting with `q`, then the rest; shorter first); `total_matches` |
+| `GET /v1/{ds}/probes?all=1` | every selectable name, in menu order (`subtype`, `cohort`, the probes, the sample-type column): `n`, `probes`. 1.7 MB for TCGA (0.6 MB gzipped); cacheable by version (`&v=`). For a client that fills its own menus (the R app's selectize). |
 | `GET /v1/{ds}/values?probes=CD8A,TP53.mut,gender` | `columns` for those names (probes, clinical columns or `cohort` / `subtype`), `missing`: names the dataset does not have. At most 100 names per request. The body also carries the dataset `version`. |
 | `GET /statz` | request and cache counters |
 
@@ -75,9 +76,40 @@ drops no cohort also gets the derived "Exclude tumors of heme origin" (the role 
 values that are levels of `cohort`), so every collection with blood or lymphoid cohorts
 offers it.
 
+Each preset also carries `n_samples`: how many samples of the whole dataset it holds.
+
 How the app shows them: a preset with an `in` rule is a **group** (alternatives: one at
 most is in use), one whose rules are all `not in` is an **exclusion** (any number); each is
-offered only where it changes the samples of the chosen data source.
+offered only where it changes the samples of the chosen data source. Which ones those are
+is decided by the service, per data source (next section), so no client needs to.
+
+### Data sources (parts of a collection)
+
+`meta.sources` lists what the client offers in its "data source" menu for this dataset: the
+whole collection first, then each **part** the dataset declares (`dataset_meta`: `source_col`
+names a categorical clinical column, `sources` the levels offered, in order, `source_labels`
+and `source_descriptions` one entry each; tcgatargetgtex declares `study` with `GTEX` and
+`TARGET`). Each source says what makes sense inside it:
+
+    {"label":"GTEx","description":"The GTEx study: ...",
+     "rules":[{"column":"study","op":"in","values":["GTEX"]}],
+     "n_samples":7862,
+     "cohorts":["Adipose - Subcutaneous", ...],          // cohort values present, in `cohorts` table order
+     "groups":[],                                        // presets to offer as alternatives here
+     "exclusions":["Exclude cell lines","Exclude tumors of heme origin"],   // presets to offer as exclusions
+     "single_level_columns":["study","subtype"]}         // categorical clinical columns with one value here
+
+The rules behind `groups` / `exclusions` (sources.go, mirrored by `t2_presets.R` in the R
+app): a preset is offered only where it keeps some, but not all, of the source's samples; a
+group that comes to the same samples as an offered exclusion is left to the exclusion. Once
+the user has chosen a group, an exclusion that no longer changes the samples of the source
+and the group is not offered either (this last step depends on the choice, so the client
+does it: `AppModel.exclusionChoices`, `t2_filter_choices()`). A `single_level_columns`
+entry is not worth a filter panel or a colour inside the part; a categorical filter panel
+should list only the levels present in the part.
+
+The whole-collection entry has no rules and the dataset's label. A dataset without
+`source_col` has that one entry.
 
 ## Caching
 

@@ -59,7 +59,7 @@ func main() {
 	cacheMB := flag.Int("cache-mb", 512, "memory for cached probe columns, per dataset, in MB")
 	conns := flag.Int("db-conns", 48, "database connections per dataset (concurrent uncached lookups)")
 	memMB := flag.Int("mem-limit-mb", 3072, "soft memory limit for the Go runtime, in MB (keep below the container limit)")
-	inflight := flag.Int("max-inflight", 64, "requests answered at once; beyond it a request is refused at once with 503 (a flood then costs no memory and no disk time)")
+	inflight := flag.Int("max-inflight", 256, "requests answered at once; beyond it a request is refused at once with 503 (a flood then costs no memory and no disk time). 256 x a 100-probe answer is under 2 GB; a small standby takes 32")
 	flag.Parse()
 	dbConns = *conns
 	debug.SetMemoryLimit(int64(*memMB) << 20)

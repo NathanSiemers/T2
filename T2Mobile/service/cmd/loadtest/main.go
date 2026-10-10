@@ -9,6 +9,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -34,12 +35,16 @@ func main() {
 	seed := flag.Int64("seed", 1, "which probes make up the pool (same seed = same probes)")
 	think := flag.Duration("think", 0, "pause between a client's requests (0 = none: flat out). 10s models a scientist at the app")
 	open := flag.Bool("open", false, "each client first fetches /meta and /clinical, as a phone opening the app does")
+	insecure := flag.Bool("insecure", false, "accept any TLS certificate (a standby under test with a self-signed one)")
 	flag.Parse()
 
+	tr := &http.Transport{MaxIdleConns: *conc * 2, MaxIdleConnsPerHost: *conc * 2, DisableCompression: !*gz,
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: *insecure}}
+	client := &http.Client{Transport: tr, Timeout: 60 * time.Second}
 	// a pool of real probe names from the service's own search
 	var probes []string
 	for _, q := range []string{"A", "B", "C", "D", "E", "F", "G", "H", "K", "L", "M", "N", "P", "R", "S", "T", "Z"} {
-		resp, err := http.Get(fmt.Sprintf("%s/v1/%s/probes?q=%s&limit=200", *base, *ds, q))
+		resp, err := client.Get(fmt.Sprintf("%s/v1/%s/probes?q=%s&limit=200", *base, *ds, q))
 		if err != nil {
 			panic(err)
 		}
@@ -58,8 +63,6 @@ func main() {
 	fmt.Printf("target %s dataset %s: %d clients for %s; %d distinct probes, %.0f%% of requests for %d popular ones; think %s, open %v\n",
 		*base, *ds, *conc, *dur, len(probes), *hot*100, nHot, *think, *open)
 
-	tr := &http.Transport{MaxIdleConns: *conc * 2, MaxIdleConnsPerHost: *conc * 2, DisableCompression: !*gz}
-	client := &http.Client{Transport: tr, Timeout: 60 * time.Second}
 	var nOK, nErr, bytes atomic.Int64
 	lat := make([][]time.Duration, *conc)
 	stop := time.Now().Add(*dur)

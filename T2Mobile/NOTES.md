@@ -85,6 +85,18 @@ On it: two UI-test fixes for 4.7" screens. **Simulator matrix 2026-10-09** (`ios
 log entry "Simulator matrix"): all six UI tests green on iPhone SE (3rd gen), 13 mini, 17e,
 17, Air, 18 Pro, 18 Pro Max, light and dark on every one (14 runs, 84 test passes).
 
+**Night of 2026-10-09/10 — the back-port (branch `post-1.0`, commits 8e1dd54, 8501019 and the
+one after; log entry "Back-port")**: the Shiny app gained the app's data sources and
+ready-made subsets (from the database, via one rule shared with the app), can run over the
+service (`T2_API_URL`), ranked search, clinical descriptions, the contact form, a count
+display for two categoricals; the service decides every dataset fact once (`/meta
+sources`, preset counts, `/probes?all=1`) and refuses floods (`-max-inflight`); a
+portable standby unit (`standby/`) was built and measured; the production switch of the
+Shiny sites to the new code base is planned in `docs/PRODUCTION-SWITCH.md` and waits for
+Nathan's "deploy". The 1.0 app's six UI tests were run on the simulator against the changed
+service (tunnelled to the Mac). Nothing was deployed: production service, sites, Nginx and
+the served databases are as they were.
+
 Next, in order of Nathan's interest: (0) a backup server for the API and a way to switch DNS
 to it when the house loses power (Nathan, 2026-10-07; plan and open decisions in
 `docs/FAILOVER-PLAN.md`); (1) the Model screen — see "Plan: group comparisons and
@@ -827,3 +839,125 @@ the Mac's `ios/` is byte-identical to the repo (md5 over every .sh/.swift/.xccon
 .plist), no uncommitted tracked changes in the repo, no other logins on the Mac, the test
 build linked today from sources newer than nothing (newest source 10-07), version 1.0 /
 org.fiveprime.t2.
+
+### 2026-10-09/10 night — Back-port: the app's features into the Shiny app, the service as the one source of dataset facts (Claude)
+
+Nathan's request (evening): "back-port some of the features of the app back into the T2
+shiny app": (1) make the Shiny app use the API, (2) the GTEx / TARGET subsets as data
+sources, (3) other features of value; then, while I worked: reduce the duplication
+between the two clients where a common API can; capture the app's "which filters make
+sense for which data set" logic as one function, not spaghetti; stress-test the API
+overnight for 100 (realistically) to 300 (aspirationally) users at a request every 10 s;
+make sure the safeguards hold under a DDoS; build and tune a portable backup unit for a
+small (4 GB) hosted machine, with notes on its configuration; the old `/T2` code base is
+to be archived and the new one becomes production; run the API changes through an iOS
+simulation; and (for later) an assessment of how monolithic the R files are. Everything on
+`post-1.0`; nothing deployed.
+
+**The service decides, the clients render.** `sources.go`: for each dataset `/meta.sources`
+lists the whole collection and the parts it declares in `dataset_meta` (`source_col`,
+`sources`, `source_labels`, `source_descriptions`; tcgatargetgtex: `study` → GTEx, TARGET),
+each with its rules, sample count, the cohorts present (in `cohorts` table order), the
+presets to offer as **groups** and as **exclusions** (a preset is offered only where it
+keeps some but not all of the source's samples; a group identical to an offered exclusion
+yields to it — the iPhone app's rule, now computed once on the server), and the
+categorical clinical columns with a single value there. Presets carry `n_samples`.
+`/probes?all=1` serves the whole menu list (1.7 MB TCGA, 0.6 MB gzipped, cacheable by
+version). Go tests for the rules; `docs/API.md` has the new section. The `dataset_meta`
+keys are written by the Toil builder from now on and by `dataset_meta.R set` for an
+existing file; the served file lacks them until a database deploy (new directory;
+`docs/PRODUCTION-SWITCH.md`). The auto-mode permission classifier refused my write to the
+repository's development copy of the Toil database (a shared resource), so I made my own
+copies: `/scratch/nathan/R/T2-devdata/` (README there; `tcga.db` a symlink, the two
+datasets copied, the keys applied), which the development service
+(`service/docker-compose.yml`) mounts and `T2_DATASETS_DIR` points the R tests at.
+
+**The Shiny app** (`t2_presets.R` is the R mirror of the above for the SQLite path —
+`t2_read_presets()`, `t2_sources()`, and `t2_filter_choices()`, the one place that decides
+what the Select tab offers for a source and a chosen group; `test_equivalence.R` holds the
+mirror equal to the service on every dataset): the Data set menu lists every collection and
+its parts ("TCGA-TARGET-GTEx (Toil): GTEx"); the two hard-coded checkboxes are gone,
+replaced by the database's presets (radio: one group at most; checkboxes: exclusions, each
+only where it changes the samples of the source and the group); the sample choice reaches
+`gitr()` as `rules` through `t2_sample_keep()` (plot, survival, Filter-tab universe, download
+and Publish all agree, and the plot summary names it: "Samples: GTEx; Exclude cell lines");
+a part restricts the Cohort menu, is never coloured or split by a single-level column,
+gets its own Filter-tab instance whose categorical panels list only the levels present;
+picks survive a data-source switch where the names exist (sticky selections); TCGA opens
+on its nine default cohorts (`.TCGA_DEFAULTS$cohorts`, the service's value). `T2_DATASETS_DIR`
+for tests. `test_app_sources.R` (26 checks); `test_app_thanos.R` updated (the switch test
+now expects carried picks to get panels once the browser reports the repopulated
+selectors); every other app test unchanged and green.
+
+**Over the service** (`t2_api_client.R`, `T2_API_URL`): discovery, roles, the bundle
+(`/meta`, `/probes?all=1`, `/clinical` once per version) and `gitr()` (`/values` in chunks
+of 100, a per-process cache of 400 columns) have a second implementation; with the
+variable set the app needs no database files (`con = NULL`, lib.R skips its legacy table
+handles). `test_gitr_api.R`: frames identical to the files for clinical, probes of every
+type, every filter, `keep_samples`, `rules`, `phenos = FALSE`, `makefactors = FALSE`, and the
+bundle's lists; two by-design differences are documented in the test (column order of
+factor-typed numeric probes — nothing reads by position; the service's menu adds the ten
+clinical columns `allprobes` does not list). `service/test.sh shiny` runs it and the app
+tests in the T2T image on the service's network: all pass (the app tests: 90 checks).
+Latency, first request of 122 Toil probes: service 4.9 s, files 10.0 s; cached 0.13 s.
+From the rstudio container the service is reachable only through the public URL (107 ms
+per round trip vs 1.5 ms on the host): that is the remote-standby latency model Nathan
+asked about — a plot of three probes costs three such round trips once, then the cache.
+In production the Shiny containers share the service's Docker network
+(`T2_API_URL=http://t2api:8080`, no TLS, no rate limits; `docs/PRODUCTION-SWITCH.md` step 3).
+
+**Smaller features**: `t2_search.R` — the variable menus rank matches as the service does
+(exact, prefix, contains; shorter first; `update_selectize_ranked()` replaces
+`updateSelectizeInput(server = TRUE)` with a custom data handler); `t2_descriptions.R` —
+what the clinical columns mean, read from the service's one TSV (or `/meta`), under the
+Select tab for the chosen variables and as a table on About; `t2_contact.R` — "Contact the
+author" on About, the app's POST path with the visitor's address forwarded (needs
+`T2_CONTACT_URL`, or `T2_API_URL`); two categorical variables draw as counts (circles sized
+by n with the number on each) instead of a box plot of a category.
+
+**Stress tests** (`loadtest` gained `-think`, `-open`, `-insecure`; runs in
+`/scratch/nathan/R/T2-devdata/stress_home.log`, against the development service with
+production's limits, 8 CPUs / 4 GB, same files; production untouched):
+
+| clients, a request every 10 s, half uncached probes | answered | median / p90 / p99 | memory |
+|---|---|---|---|
+| 100 (TCGA), each opening the app first | 10/s | 34 / 67 / 99 ms | 300 MB |
+| 300 (TCGA) | 30/s | 10 / 50 / 71 ms | 465 MB |
+| 300 (TCGA-TARGET-GTEx) | 30/s | 52 / 103 / 146 ms | 1.25 GB |
+| **flood: 1,000 clients flat out, 80 % uncached** | 2,699/s; **844,263 refused (503) of 1,012,258 in 60 s** | 66 / 351 / 907 ms | 2.5 GB peak |
+| 100 users right after the flood | 10/s, no errors | 6 / 8 / 9 ms | |
+
+The refusals are the new `-max-inflight` cap (`limited` middleware: a request beyond the
+cap is answered 503 with `Retry-After: 3` at once, `/healthz` exempt, `busy_refusals` in
+`/statz`): a flood costs no memory and no disk time, and the users behind it are served.
+The first runs had the cap at 64 and 16–243 of the "opening the app" bursts (100–300
+phones fetching `/clinical` in the same second) were refused: the default is now 256
+(256 × a 100-probe answer stays under 2 GB), the standby's 32. **DDoS review**: Nginx
+already limits 50 requests/s and 60 connections per address (and the contact form 1/min);
+what was missing was a bound on the service's own concurrency (now the cap) and, for the
+standby, a *total* cap. A volumetric attack on the home uplink cannot be mitigated on the
+host: only Cloudflare proxying would (FAILOVER-PLAN "Upgrade if the gap matters").
+
+**The standby unit** `standby/` (README with the configuration notes Nathan asked for):
+`docker-compose.yml` = t2api tuned down (`-cache-mb 128 -db-conns 8 -mem-limit-mb 640
+-max-inflight 32`, 1.5 CPUs, 1 GB) + nginx (TLS; per-address 20/s burst 60 and 10
+connections; a total cap of 200/s burst 400; short timeouts; small buffers; the down page
+for every path that is not the API). Tried at home on other ports with my data copies and a
+self-signed certificate: a dozen users 45 ms median; 100 users 35 ms (TCGA) / 68 ms
+(Toil); a 500-client flood from one address: 1,629,972 refused by Nginx in a minute, the
+users behind it at 7 ms median afterwards; service memory peaks ≈ 740 MB. Setup steps
+(data copy, certificate by DNS-01, watchdog) in the README; the provider decision is still
+Nathan's (`docs/FAILOVER-PLAN.md`).
+
+**iOS**: the 1.0 app, unchanged, against the changed service — the UI suite accepts
+`TEST_RUNNER_T2_SERVICE` (launch argument `-t2Service`, except for the test that names its
+own unreachable address), the development service is tunnelled to the Mac
+(`ssh -f -N -R 3861:127.0.0.1:3861 nathan@10.13.13.4`), `sim_matrix.sh "iPhone 18 Pro":light`.
+Result: see the end of this entry. Still to do on the app: read `meta.sources` instead of
+`AppModel.subsetSources` (retiring the app-side definition; needs a Mac build and the UI
+suite) — the service is backward compatible, so 1.0 needs nothing.
+
+**Ideas noted, not done**: an R-datatype table in the databases (per column: R class,
+level order) so any client can return the exact R structure — Nathan: "too big for now";
+the `datatypes` table's `r_datatype` per type is the seed. `CODE-LAYOUT.md` (repository
+root): the file index and the assessment of the monolithic files Nathan asked for.

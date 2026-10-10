@@ -1,0 +1,49 @@
+## T2 API standby: one portable unit for a SMALL hosted machine (2 vCPU, 4 GB RAM is
+## enough: the service itself uses under 100 MB plus its probe cache). Serves
+##   https://<host>/api/t2/...   the query service (the iPhone app, the R app over the API)
+##   everything else             a short "temporarily down" page
+## What it must not do: fall over under a flood. Three layers, each cheap:
+##   Nginx   per-address rate and connection limits, a TOTAL rate cap, small buffers, short
+##           timeouts (nginx/t2api.conf)
+##   t2api   -max-inflight 32: beyond 32 requests at once a request is refused at once (503),
+##           so a flood costs neither memory nor disk reads; -cache-mb 128; memory ceiling
+##   Docker  read-only filesystem, no capabilities, pids and memory limits, restart: always
+## See README.md for the steps (data copy, certificate, watchdog) and the measurements.
+services:
+  t2api:
+    image: t2api:2026.10
+    restart: always
+    command: ["-addr", ":8080", "-tcga", "/data/tcga.db", "-datasets", "/data/datasets",
+              "-cache-mb", "128", "-db-conns", "8", "-mem-limit-mb", "640", "-max-inflight", "32"]
+    user: "999:999"
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 128
+    cpus: 1.5
+    networks: [standby]
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+    volumes:
+      - ${T2_DATA:-/srv/t2-data}/tcga.db:/data/tcga.db:ro
+      - ${T2_DATA:-/srv/t2-data}/datasets:/data/datasets:ro
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: always
+    depends_on: [t2api]
+    ports: ["80:80", "443:443"]
+    networks: [standby]
+    mem_limit: 256m
+    pids_limit: 64
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+    volumes:
+      - ./nginx/t2api.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/down.html:/usr/share/nginx/html/down.html:ro
+      - ${T2_CERTS:-/etc/letsencrypt}:/etc/letsencrypt:ro
+    tmpfs: [/var/cache/nginx, /var/run]
+
+networks:
+  standby:
+    name: t2-standby

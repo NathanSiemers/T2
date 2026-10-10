@@ -21,8 +21,15 @@ final class T2UITests: XCTestCase {
 
     // MARK: helpers
 
+    /// T2_SERVICE (TEST_RUNNER_T2_SERVICE to xcodebuild): run the suite against another
+    /// service address, e.g. a development copy tunnelled to the Mac, instead of the live one
     private func launch(tab: String = "select", _ extra: [String] = []) {
-        app.launchArguments = ["-t2Reset", "YES", "-t2Tab", tab] + extra
+        var args = ["-t2Reset", "YES", "-t2Tab", tab] + extra
+        if let service = ProcessInfo.processInfo.environment["T2_SERVICE"], !service.isEmpty,
+           !extra.contains("-t2Service") {   // a test that names its own (unreachable) address keeps it
+            args += ["-t2Service", service]
+        }
+        app.launchArguments = args
         app.launch()
     }
 

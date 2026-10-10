@@ -45,6 +45,45 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(m.presets[0].rules[1].values, ["Normal Tissue"])
     }
 
+    /// the data sources the service computes (2026-10-10): the whole collection and its parts,
+    /// in /v1/datasets and in /meta; a service without them is still decoded
+    func testDataSourcesDecodeAndBecomePresets() throws {
+        let sources = #"""
+        [{"label":"TCGA-TARGET-GTEx (Toil)","description":"","rules":[],"n_samples":19131,"cohorts":["A","B"],
+          "groups":["GTEx normal tissues"],"exclusions":["Exclude cell lines"],"single_level_columns":[]},
+         {"label":"GTEx","description":"The GTEx study","rules":[{"column":"study","op":"in","values":["GTEX"]}],
+          "n_samples":7862,"cohorts":["A"],"groups":[],"exclusions":["Exclude cell lines"],"single_level_columns":["study","subtype"]}]
+        """#
+        let summary = #"""
+        {"datasets":[{"name":"tcgatargetgtex","title":"T","label":"L","n_samples":19131,"n_probes":9,"version":"v",
+          "roles":{"cohort_col":"disease","subtype_col":"study","sampletype_col":"sample_type","normal_label":[],"heme_values":[],"sampletype_levels":[]},
+          "defaults":{"x":"cohort"},"sources":\#(sources)},
+         {"name":"TCGA","title":"T","label":"L","n_samples":1,"n_probes":1,"version":"v",
+          "roles":{"cohort_col":"tumtype","subtype_col":"s","sampletype_col":"sample_type","normal_label":[],"heme_values":[],"sampletype_levels":[]},
+          "defaults":{"x":"cohort"}}]}
+        """#
+        struct List: Decodable { let datasets: [DatasetSummary] }
+        let list = try APIClient.decoder.decode(List.self, from: Data(summary.utf8))
+        XCTAssertEqual(list.datasets[0].sources?.count, 2)
+        XCTAssertEqual(list.datasets[0].parts.map(\.label), ["GTEx"])            // the whole collection is not a part
+        XCTAssertEqual(list.datasets[0].parts[0].nSamples, 7862)
+        XCTAssertEqual(list.datasets[0].parts[0].singleLevelColumns, ["study", "subtype"])
+        XCTAssertNil(list.datasets[1].sources)                                      // an older service
+        XCTAssertEqual(list.datasets[1].parts, [])
+        let meta = #"""
+        {"dataset":"tcgatargetgtex","title":"T","label":"L","version":"v","n_samples":19131,"n_probes":9,
+         "roles":{"cohort_col":"disease","subtype_col":"study","sampletype_col":"sample_type","normal_label":[],"heme_values":[],"sampletype_levels":[]},
+         "defaults":{"x":"cohort"},"presets":[],"sources":\#(sources),"clinical_columns":["study"],"survival_endpoints":[]}
+        """#
+        let m = try APIClient.decoder.decode(DatasetMeta.self, from: Data(meta.utf8))
+        let part = try XCTUnwrap(m.sources?.first { !$0.isWhole })
+        let p = part.asPreset
+        XCTAssertEqual(p.label, "GTEx")
+        XCTAssertEqual(p.source, "service")
+        XCTAssertEqual(p.rules, [Preset.Rule(column: "study", op: "in", values: ["GTEX"])])
+        XCTAssertFalse(p.isDefault)
+    }
+
     /// meta as the live service sends it (2026-10-05): cohort names, and the same four
     /// survival endpoints for every dataset whether or not it has the columns
     func testMetaCohortNamesAndUsableSurvivalEndpoints() throws {

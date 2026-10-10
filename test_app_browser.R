@@ -68,13 +68,13 @@ ok(n1 > 0 && n1 < 12804, "slider filter reduces the selected count")
 flt <- app$get_value(input = "th_TCGA-filter_CD8A")
 
 ## ---- Cohort on the Select tab narrows the Filter tab's universe, filter kept ----
-app$run_js("Shiny.setInputValue('nonormal', true)"); settle()
+app$run_js("Shiny.setInputValue('preset_excl', ['Tumor samples only'])"); settle()
 cnt2 <- app$get_value(output = "filter_count")
 cat("    ", cnt2, "\n")
-ok(grepl("of 11,329", cnt2), "Exclude Non-tumor shrinks the universe shown on the Filter tab")
+ok(grepl("of 11,329", cnt2), "'Tumor samples only' shrinks the universe shown on the Filter tab")
 ok(isTRUE(all.equal(app$get_value(input = "th_TCGA-filter_CD8A"), flt)),
    "the slider setting is untouched by the universe change")
-app$run_js("Shiny.setInputValue('nonormal', false)"); settle()
+app$run_js("Shiny.setInputValue('preset_excl', [])"); settle()
 
 ## ---- a NEW Select-tab variable is added without wiping existing filters ----
 app$run_js("Shiny.setInputValue('size', 'FOXP3')"); settle(2500)

@@ -121,7 +121,7 @@ load_source_bundle = function(key) {
   b$key = if (i == 1) b$name else paste0(b$name, "|", src$label)
   b$source = src
   b$mycohorts = b$mycohorts[unname(b$mycohorts) %in% src$cohorts]
-  if (i > 1) b$label = paste0(b$label, ": ", src$label)
+  if (i > 1) { b$label = paste0(b$label, ": ", src$label); b$title = paste0(b$title, " \u2014 ", src$label) }
   b
 }
 

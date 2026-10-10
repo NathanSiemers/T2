@@ -99,6 +99,32 @@ public struct Preset: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// A data source: the whole collection, or one of the parts a dataset declares ("GTEx",
+/// "TARGET" within TCGA-TARGET-GTEx), with what the service worked out for it: the cohorts
+/// present, the presets that change its samples (as groups and as exclusions), the
+/// categorical clinical columns with a single value there. Computed by the service
+/// (sources.go), so the app never has to know anything about a dataset.
+public struct DataSource: Decodable, Sendable, Equatable, Identifiable {
+    public let label: String
+    public let description: String
+    /// empty for the whole collection
+    public let rules: [Preset.Rule]
+    public let nSamples: Int
+    public let cohorts: [String]
+    public let groups: [String]
+    public let exclusions: [String]
+    public let singleLevelColumns: [String]
+    public var id: String { label }
+    public var isWhole: Bool { rules.isEmpty }
+    /// the part as a preset of the app's model (the data source is a preset that is always on)
+    public var asPreset: Preset { Preset(label: label, description: description, source: "service", rules: rules) }
+    public init(label: String, description: String = "", rules: [Preset.Rule], nSamples: Int = 0, cohorts: [String] = [],
+                groups: [String] = [], exclusions: [String] = [], singleLevelColumns: [String] = []) {
+        self.label = label; self.description = description; self.rules = rules; self.nSamples = nSamples
+        self.cohorts = cohorts; self.groups = groups; self.exclusions = exclusions; self.singleLevelColumns = singleLevelColumns
+    }
+}
+
 public struct DatasetSummary: Decodable, Sendable, Equatable, Identifiable {
     public let name: String
     public let title: String
@@ -110,7 +136,11 @@ public struct DatasetSummary: Decodable, Sendable, Equatable, Identifiable {
     public let roles: Roles
     /// the variables to show first: keys x, y, color, size, condition
     public let defaults: [String: String]
+    /// the whole collection first, then its parts (absent from services before 2026-10-10)
+    public let sources: [DataSource]?
     public var id: String { name }
+    /// the parts offered as data sources of their own
+    public var parts: [DataSource] { (sources ?? []).filter { !$0.isWhole } }
     /// the synthetic test dataset (not real data): built for tests, not offered to users
     public var isDemo: Bool { name == "DEMO" || title.localizedCaseInsensitiveContains("not real data") }
 }
@@ -142,6 +172,8 @@ public struct DatasetMeta: Decodable, Sendable {
     public let roles: Roles
     public let defaults: [String: String]
     public let presets: [Preset]
+    /// the whole collection first, then its parts (absent from services before 2026-10-10)
+    public let sources: [DataSource]?
     public let clinicalColumns: [String]
     public let survivalEndpoints: [String]
     /// display names of the cohorts (absent from older services)

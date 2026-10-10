@@ -94,33 +94,26 @@ final class AppModel {
         let label: String
         var id: String { preset.map { "\(dataset)|\($0)" } ?? dataset }
     }
-    /// The parts of a dataset offered as data sources of their own, by dataset: presets
-    /// defined here (source "app"), by study, so that a part is the whole of a study — GTEx
-    /// includes its EBV-transformed lymphocyte and cultured fibroblast "cell lines" (the only
-    /// cell lines in any of the databases), and the "Exclude cell lines" switch applies to it.
-    /// Not "TCGA tumors" of TCGA-TARGET-GTEx: the TCGA data belong to the TCGA dataset
-    /// (tcga.db), which has the full annotation; the Toil re-processing is there for
-    /// comparisons with GTEx and TARGET within one pipeline.
-    static let subsetSources: [String: [Preset]] = [
-        "tcgatargetgtex": [
-            Preset(label: "GTEx", description: "The GTEx study: normal tissues, and its EBV-transformed lymphocyte and fibroblast cell lines",
-                   source: "app", rules: [Preset.Rule(column: "study", op: "in", values: ["GTEX"])]),
-            Preset(label: "TARGET", description: "The TARGET pediatric cancers",
-                   source: "app", rules: [Preset.Rule(column: "study", op: "in", values: ["TARGET"])]),
-        ],
-    ]
+    /// The parts of a dataset offered as data sources of their own come from the service
+    /// (`sources` of /v1/datasets and /meta: a part is the whole of a study, declared in the
+    /// dataset's own metadata — GTEx includes its EBV-transformed lymphocyte and cultured
+    /// fibroblast "cell lines", the only cell lines in any of the databases, so "Exclude cell
+    /// lines" applies to it; TCGA's Toil re-processing is not a part, its data belong to the
+    /// TCGA dataset). Until 2026-10-10 the app defined these itself; now nothing about a
+    /// dataset is written here.
     var sources: [DataSource] {
         datasets.filter { !$0.isDemo }.flatMap { d -> [DataSource] in
             [DataSource(dataset: d.name, preset: nil, label: d.label)] +
-            (Self.subsetSources[d.name] ?? []).map { DataSource(dataset: d.name, preset: $0.label, label: "\(d.label): \($0.label)") }
+            d.parts.map { DataSource(dataset: d.name, preset: $0.label, label: "\(d.label): \($0.label)") }
         }
     }
-    /// the open dataset's presets: its own (default_filters) and the app's parts of it
+    /// the open dataset's presets: the service's parts of it (each a preset that is always
+    /// on while it is the data source) and its own (default_filters)
     var allPresets: [Preset] {
         guard let m = meta else { return [] }
-        let app = Self.subsetSources[m.dataset] ?? []
-        let appLabels = Set(app.map(\.label))
-        return app + m.presets.filter { !appLabels.contains($0.label) }
+        let parts = (m.sources ?? []).filter { !$0.isWhole }.map(\.asPreset)
+        let partLabels = Set(parts.map(\.label))
+        return parts + m.presets.filter { !partLabels.contains($0.label) }
     }
     var sourceID: String { meta.map { m in fixedPreset.map { "\(m.dataset)|\($0)" } ?? m.dataset } ?? "" }
     var sourceLabel: String { sources.first { $0.id == sourceID }?.label ?? (meta?.label ?? "") }

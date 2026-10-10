@@ -12,6 +12,7 @@
 ## ============================================================================
 T2_CONTACT_URL = Sys.getenv("T2_CONTACT_URL", if (nzchar(Sys.getenv("T2_API_URL", ""))) paste0(sub("/+$", "", Sys.getenv("T2_API_URL")), "/v1/contact") else "")
 
+.t2_inline = function(x) shiny::div(style = "display: inline-block; vertical-align: top; margin-right: 12px;", x)
 contact_ui = function() {
   if (!nzchar(T2_CONTACT_URL)) return(NULL)
   shiny::tagList(
@@ -19,9 +20,9 @@ contact_ui = function() {
     shiny::helpText("A question, a problem, a request: it goes to the author of T2 only. ",
                     "Your name, address, affiliation and message are kept; nothing else."),
     shiny::div(
-      inline(shiny::textInput("contact_name", "Name", width = "220px")),
-      inline(shiny::textInput("contact_email", "Email", width = "260px")),
-      inline(shiny::textInput("contact_affiliation", "Affiliation (optional)", width = "300px"))),
+      .t2_inline(shiny::textInput("contact_name", "Name", width = "220px")),
+      .t2_inline(shiny::textInput("contact_email", "Email", width = "260px")),
+      .t2_inline(shiny::textInput("contact_affiliation", "Affiliation (optional)", width = "300px"))),
     shiny::textAreaInput("contact_message", "Message", width = "100%", rows = 5),
     shiny::actionButton("contact_send", "Send"),
     shiny::span(style = "margin-left: 12px;", shiny::textOutput("contact_status", inline = TRUE)))

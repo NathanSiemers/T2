@@ -287,11 +287,12 @@ func (s *server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 		Version  string            `json:"version"`
 		Roles    Roles             `json:"roles"`
 		Defaults map[string]string `json:"defaults"`
+		Sources  []Source          `json:"sources"` // the whole collection and its parts (see /meta), for the data-source menu
 	}
 	out := []entry{}
 	for _, name := range s.order {
 		d := s.datasets[name]
-		out = append(out, entry{d.Name, d.Title, d.Label, len(d.samples), len(d.probeNames), d.version, d.Roles, d.Defaults})
+		out = append(out, entry{d.Name, d.Title, d.Label, len(d.samples), len(d.probeNames), d.version, d.Roles, d.Defaults, d.sources})
 	}
 	w.Header().Set("Cache-Control", "no-cache") // the list of current versions: never reused unchecked
 	writeJSON(w, map[string]any{"datasets": out})

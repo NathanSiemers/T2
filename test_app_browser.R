@@ -32,6 +32,8 @@ visible <- function(sel) js(sprintf(
 
 ## ---- start-up: Select tab, defaults populated ----
 settle(3000)
+## TCGA opens on nine default cohorts (2026-10-10); this test's counts are for the whole collection
+app$run_js("Shiny.setInputValue('cohort', 'all')"); settle(1500)
 ok(identical(app$get_value(input = "tabs"), "select"), "app opens on the Select tab")
 ok(identical(app$get_value(input = "dataset"), "TCGA"), "TCGA is the default dataset")
 x0 <- app$get_value(input = "x"); y0 <- app$get_value(input = "y"); c0 <- app$get_value(input = "color")

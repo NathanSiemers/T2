@@ -394,14 +394,16 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 			}
 			seen[n] = true
 			names = append(names, n)
+			// stop as soon as the cap is passed, so a request listing thousands of names
+			// (within the header limit) never builds a large list before being refused
+			if len(names) > maxProbesPerRequest {
+				s.fail(w, http.StatusBadRequest, fmt.Sprintf("too many probes (max %d per request)", maxProbesPerRequest))
+				return
+			}
 		}
 	}
 	if len(names) == 0 {
 		s.fail(w, http.StatusBadRequest, "no probes given (use ?probes=A,B,C)")
-		return
-	}
-	if len(names) > maxProbesPerRequest {
-		s.fail(w, http.StatusBadRequest, fmt.Sprintf("too many probes (max %d per request)", maxProbesPerRequest))
 		return
 	}
 	// names are checked against the dataset's variable list first, in memory

@@ -965,3 +965,84 @@ suite) — the service is backward compatible, so 1.0 needs nothing.
 level order) so any client can return the exact R structure — Nathan: "too big for now";
 the `datatypes` table's `r_datatype` per type is the seed. `CODE-LAYOUT.md` (repository
 root): the file index and the assessment of the monolithic files Nathan asked for.
+
+### 2026-10-10 early hours — Chrome suite for the Shiny app, the app's parts from the service, the security pass (Claude)
+
+Nathan's requests after the night's report: run the Shiny app through Chrome the way the
+iPhone suite runs through the simulator and make that a test suite; proceed with the
+teed-up steps except the code layout; then "harden Shiny and the API against advanced
+exploit tools that seek to identify hidden functions and weaknesses by brute force"; the
+contact form "must not be a vulnerability"; test execution goes to Sonnet subagents as a
+standing principle (now in `~/.claude/CLAUDE.md`); a final code review by Fable at the end.
+
+**Chrome suite** `test_browser_suite.R` (shinytest2 + the Chrome headless shell fetched into
+`/scratch/nathan/R/T2-devdata/chrome/`): Select with the ready-made subsets, box / scatter /
+survival / count plots, the GTEx part as data source (cohorts, Filter-tab universe, no
+`study` panel, sticky picks), Publish, About with descriptions and the contact form; a
+screenshot per step in `T2-devdata/screenshots/shiny-*/`. 27 checks on the files, 28 over
+the service (`T2_API_URL`), both ALL PASS; the older `test_app_browser.R` (Filter tab, 53
+checks) updated to the preset inputs and the nine default cohorts, passes. The page title
+now names a part ("… — GTEx"). Run via a Sonnet agent from now on (the deploy script's
+`check` step too: `T2_SITE_URL=https://www.fiveprime.org/T2/`).
+
+**The app reads its parts from the service**: `/v1/datasets` entries carry `sources` as
+`/meta` does; T2Kit `DataSource` (`DatasetSummary.parts`, `DatasetMeta.sources`, a decode
+test; 58 tests); `AppModel.sources` / `allPresets` come from them and the app-side
+`subsetSources` is gone — nothing about a dataset is written in the app any more. UI suite
+on the iPhone 18 Pro simulator against the dev service: 6/6 (second run of the night after
+the 1.0 app's own 6/6).
+
+**Production steps** were refused by the auto-mode classifier ("Production Deploy": the
+service redeploy and even writing the metadata keys into the NEW, unserved copy). They are
+written up as commands in `docs/deploy-20261010.sh` (`service`, `data`, `code`, `api-mode`,
+`nginx`, `archive`, `check`) for Nathan to run or allow. Done beforehand:
+`/scratch/shinyusb/T2-data-20261010/` = a hard link to the unchanged `tcga.db` + copies of
+the two datasets (the keys still to apply there, step `data`).
+
+**Security pass** (dev instances only, never production). Two auditable harnesses instead
+of a third-party scanner binary (the classifier refused the download, and these are
+reviewable): `service/fuzz.sh` — hidden-endpoint discovery against two wordlists, every
+HTTP method on every path, a battery of traversal / SQL / template / format-string / CRLF /
+overflow payloads into every query parameter and the dataset path position, oversized
+and repeated inputs, the contact endpoint, liveness and memory afterwards; invariants: no
+undocumented path answers 2xx, only GET (POST on /contact) is accepted, no body leaks a
+path, a Go stack or a SQL/driver string, caps hold, `/healthz` 200. `test_shiny_fuzz.R`
+— the websocket input channel (a client can `Shiny.setInputValue` any name with any
+value): server-only arguments (`keep_samples`, `rules`, `dbfile`, `roles`) set from the
+client are ignored (12,804 samples, unchanged); unknown input names are inert; hostile
+x / y / color / cohort values (SQL, R code, traversal, 5,000 chars, 500-name vectors) never
+kill the session — `gitr()` binds every name as a SQL parameter, so a name is only a lookup
+key; invented preset labels select nothing; out-of-range numbers, bad enums and invented
+tweak ids are sanitised; invented Thanos columns are inert; no uncaught R error; a normal
+plot draws afterwards. A Sonnet agent ran both to completion (API fuzzer 3 runs 6/6 each,
+0 busy refusals, 163 MiB after ~2,400 hostile requests; Shiny fuzzer ALL PASS, 13 checks)
+plus `test.sh abuse` (25 PASS; the 5 contact checks need a contact dir — they pass with
+one, see below) and a code-reading pass (no `eval`/`system`/`get` on input, no SQL built
+from input, no path from the dataset name, no `exec`; the offline build scripts
+`tableget.R`/`sqlite_vacuum.R` use `paste`/`system` without user input). **Verdict: no
+real findings; invariants hold.** One defence-in-depth change to the service: the probe
+count cap is applied inside the parse loop (`handleValues`), so a request listing
+thousands of names is refused before any list is built (bounded by the 16 KB header anyway).
+
+**The contact form** (Nathan: "we don't want the contact functionality to be a
+vulnerability"; "one good thing … those mail messages go to Unix mail"). Reviewed end to
+end and verified empirically on the dev service with a scratch contact dir: a name of
+`Bad\r\nBcc: victim@evil.com` is stored as `BadBcc: …` (CRLF stripped by `oneLine`); a
+message with `\r\n` keeps only `\n` (`paragraphs`) and only ever lands in the mail body.
+The host script re-validates the address, builds an ASCII-only subject, and delivers by
+`sendmail -t` to loopback-only Postfix (`default_transport = local`): even a prevented
+header injection could never make the form relay mail elsewhere. The one residual was the
+readable `inbox.md`: stored markdown/HTML could render or forge the `## time` / `---`
+structure in a viewer. Fixed in **version-controlled copies of the host scripts**,
+`ops/contact/` (they lived only in `~/bin` before): the untrusted fields go inside a code
+fence longer than any backtick run in them; every field re-sanitised; a failing MTA no
+longer drops a message; `contact_fuzz.py` (offline, CommonMark-correct fence scanner)
+proves no hostile message forges a heading or separator or escapes the fence. **Deploy to
+`~/bin` is Nathan's** (`install -m 755 …`, README there). The dead "Client address" line
+(the service never stores an address) is gone.
+
+**Browser suite results in brief**: files 27/27, service 28/28, filter 53/53; API fuzzer
+6/6 ×4; Shiny fuzzer 13/13; contact fuzz 6/6; abuse 30/30 with contact enabled; iOS 6/6 ×2;
+T2Kit 58/58. Tools left running: `t2api-dev` (with `/scratch/nathan/R/T2-devdata/contact`
+as a scratch contact dir, override file `t2api-dev-contact.yml` there). The Mac tunnel is
+closed.

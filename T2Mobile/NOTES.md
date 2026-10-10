@@ -953,7 +953,11 @@ Nathan's (`docs/FAILOVER-PLAN.md`).
 `TEST_RUNNER_T2_SERVICE` (launch argument `-t2Service`, except for the test that names its
 own unreachable address), the development service is tunnelled to the Mac
 (`ssh -f -N -R 3861:127.0.0.1:3861 nathan@10.13.13.4`), `sim_matrix.sh "iPhone 18 Pro":light`.
-Result: see the end of this entry. Still to do on the app: read `meta.sources` instead of
+Result: **all six tests passed** on the iPhone 18 Pro simulator, light (762 s, 66 screenshots;
+`logs/matrix-api.out` on the Mac) — the 1.0 app works unchanged against the service with
+`sources`, preset counts, `/probes?all=1` and the in-flight cap. (The first pass failed
+test05 because my harness override replaced the test's own unreachable address; fixed in
+the test, not the app.) Still to do on the app: read `meta.sources` instead of
 `AppModel.subsetSources` (retiring the app-side definition; needs a Mac build and the UI
 suite) — the service is backward compatible, so 1.0 needs nothing.
 

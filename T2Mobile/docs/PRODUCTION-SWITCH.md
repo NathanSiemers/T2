@@ -68,7 +68,7 @@ Nginx configuration and the running containers, so they wait for Nathan's "deplo
 
 5. **Stop and archive the old app.** `docker compose stop shiny-t2 && docker compose rm
    shiny-t2` (and comment its service out of the compose file, plus `scripts/deploy.sh`'s T2
-   entry and port 3851). Move the code: `mv /scratch/shinyusb/T2 /scratch/shinyusb/T2.archive-20261009`
+   entry and port 3851). Move the code: `mv /scratch/shinyusb/T2 /scratch/shinyusb/T2.archive-20261010`
    (the directory also holds the July database files, 60 GB: delete them once the new
    files have been in production for a while; `/scratch/shinyusb/T2.legacy` and
    `T2.22may2023` are older archives of the same kind). `/scratch/shinyusb/T2T/tcga.db` and
@@ -84,9 +84,9 @@ The served Toil file needs the four `dataset_meta` keys. Deploy by the standing 
 directory, never a write to a served file:
 
     cp -a /scratch/shinyusb/T2-data-20261005 /scratch/shinyusb/T2-data-20261010   # or hard links for tcga.db
-    docker exec -w /home/rstudio/R/T2 r101101-rstudio-1 Rscript dataset_meta.R set /scratch/shinyusb/T2-data-20261010/datasets/tcgatargetgtex.db \
-        source_col=study 'sources=GTEX|TARGET' 'source_labels=GTEx|TARGET' \
-        'source_descriptions=The GTEx study: normal tissues, and its EBV-transformed lymphocyte and fibroblast cell lines|The TARGET pediatric cancers'
+    # write the keys AS THE OWNER of the copy (SQLite needs write on the file and its directory
+    # for the journal): the `data` step of deploy-20261010.sh does exactly this, then chmod 644
+    # and `dataset_meta.R show` to check
 
 then change the volume lines (t2api, shiny-t2t, shiny-t2tc) to the new directory and
 `docker compose up -d`. (The keys are also what the Toil builder writes from now on.)

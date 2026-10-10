@@ -118,12 +118,19 @@ type contactMessage struct {
 	App         string `json:"app,omitempty"`
 }
 
-// clientIP: the address Nginx saw (X-Forwarded-For is set by our own proxy; the direct
-// connection is the proxy itself)
+// clientIP: the visitor's address as our own proxy states it. The service is reachable
+// only through Nginx (or, on the Docker network, the Shiny app), so these headers are ours:
+// X-Real-IP is set by replacement (a visitor cannot forge it); X-Forwarded-For is appended
+// to, so only its LAST entry is the proxy's word — the first entries are whatever the
+// client sent, and taking the first would let a visitor pick the address the per-address
+// limit counts.
 func clientIP(r *http.Request) string {
+	if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
+		return real
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.Index(xff, ","); i >= 0 {
-			xff = xff[:i]
+		if i := strings.LastIndex(xff, ","); i >= 0 {
+			xff = xff[i+1:]
 		}
 		return strings.TrimSpace(xff)
 	}

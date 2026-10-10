@@ -45,7 +45,8 @@ upstream proxy (Cloudflare in front of the record) does that; see `FAILOVER-PLAN
 1. Docker + compose on an Ubuntu LTS VM (2 vCPU, 4 GB, 80 GB disk); firewall 22/80/443.
 2. Data: copy the served directory (`/scratch/shinyusb/T2-data-<date>/`: `tcga.db` and
    `datasets/`, ≈ 67 GB, read-only) to `/srv/t2-data` (`rsync -a --partial`; hours at home
-   upload speed — or from the R2 copy). The two files must carry the same `dataset_meta`
+   upload speed — or from the R2 copy), then `chmod -R a+rX /srv/t2-data` (the service runs
+   as uid 999 and only needs to read). The two files must carry the same `dataset_meta`
    keys as at home (the GTEx / TARGET parts), i.e. copy the directory that is live.
 3. Image: `docker save t2api:2026.10 | ssh vm docker load` (15 MB), or build from this
    repository (`../service/Dockerfile`).

@@ -356,6 +356,19 @@ server = function(input, output, session) {
     ## iPhone app): the groups of the source, and the exclusions that still
     ## change the samples of the source and the chosen group.
     preset_n = function(b, label, base) sum(base & t2_rules_mask(b$clin, b$presets[[match(label, vapply(b$presets, `[[`, "", "label"))]]$rules))
+    ## the presets switched on when a dataset is first opened (default_filters
+    ## on_by_default), as the iPhone app applies them: used until the user chooses
+    preset_defaults = function(b) {
+        on = vapply(b$presets, function(p) isTRUE(p$default), NA)
+        labels = vapply(b$presets, `[[`, "", "label")[on]
+        list(group = utils::head(intersect(labels, b$source$groups), 1),
+             exclusions = intersect(labels, b$source$exclusions))
+    }
+    ## the user's choice so far, or the defaults: NULL input = not reported yet
+    chosen_group = function(b) {
+        g = isolate(input$preset_group)
+        if (is.null(g)) preset_defaults(b)$group else .t2_one(g, b$source$groups, "")
+    }
     output$preset_group_ui = renderUI({
         b = bundle()
         src = b$source
@@ -365,17 +378,22 @@ server = function(input, output, session) {
                stats::setNames(src$groups, vapply(src$groups, function(g)
                    sprintf("%s (%s)", g, format(preset_n(b, g, base), big.mark = ",")), "")))
         radioButtons('preset_group', 'Samples', choices = ch, inline = TRUE,
-                     selected = .t2_one(isolate(input$preset_group), src$groups, ""))
+                     selected = chosen_group(b) %||% "")
     })
+    ## rebuilt when the source or the GROUP changes (its choices and counts depend on
+    ## those only); the exclusions already ticked are read without a dependency, so a
+    ## tick never rebuilds the widget it was made in
     output$preset_excl_ui = renderUI({
         b = bundle()
-        samp = sanitize_t2_samples(input, b)
-        ch = t2_filter_choices(b$source, b$presets, b$clin, samp$group)
+        group = .t2_one(input$preset_group, b$source$groups, "")
+        ch = t2_filter_choices(b$source, b$presets, b$clin, if (nzchar(group)) group else NULL)
         if (!length(ch$exclusions)) return(NULL)
         lab = vapply(ch$exclusions, function(e)
             sprintf("%s (-%s)", e, format(sum(ch$base) - preset_n(b, e, ch$base), big.mark = ",")), "")
+        ticked = isolate(input$preset_excl)
+        selected = if (is.null(ticked)) preset_defaults(b)$exclusions else .t2_pick(ticked, ch$exclusions, 20)
         checkboxGroupInput('preset_excl', NULL, choices = stats::setNames(ch$exclusions, lab),
-                           selected = samp$exclusions, inline = TRUE)
+                           selected = selected, inline = TRUE)
     })
 
     output$app_title = renderUI(h4(site_title(bundle()$title)))

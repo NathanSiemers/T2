@@ -80,7 +80,7 @@ for (ds in vapply(get("/v1/datasets")$datasets, `[[`, "", "name")) {
   ## presets and data sources: the service (dataset.go loadPresets, sources.go) and the R
   ## mirror (t2_presets.R, in the bundle) must say the same thing
   meta <- get(sprintf("/v1/%s/meta", ds))
-  flat <- function(p) list(label = p$label, default = isTRUE(p$default), n = as.integer(p$n_samples),
+  flat <- function(p) list(label = p$label, description = p$description %||% "", default = isTRUE(p$default), n = as.integer(p$n_samples),
                            rules = lapply(p$rules, function(r) list(r$column, r$op, as.character(unlist(r$values)))))
   api_p <- lapply(meta$presets, flat); r_p <- lapply(b$presets, flat)
   ok(identical(api_p, r_p), sprintf("%d presets identical (labels, rules, defaults, sample counts)", length(r_p)))

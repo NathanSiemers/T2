@@ -16,18 +16,23 @@ service)   ## 1. the service: sources, preset counts, /probes?all=1, the in-flig
     curl -s https://www.fiveprime.org/api/t2/v1/tcgatargetgtex/meta | grep -o '"sources":\[{"label":"[^"]*"' ;;
 data)      ## 2. the databases: the data-source keys into the NEW copy (not served yet), then point
            ##    t2api, shiny-t2t and shiny-t2tc at the new directory
-    docker run --rm -u 999:999 -v /scratch/nathan/R/T2:/srv/T2T:ro -v /scratch/shinyusb/T2-data-20261010/datasets:/data/datasets \
+    ## as the owner of the copy (SQLite writes a journal beside the file), then read-only again
+    docker run --rm -u "$(id -u):$(id -g)" -v /scratch/nathan/R/T2:/srv/T2T:ro -v /scratch/shinyusb/T2-data-20261010/datasets:/data/datasets \
       -w /srv/T2T --entrypoint Rscript shinyt2t:2026.10 dataset_meta.R set /data/datasets/tcgatargetgtex.db \
       source_col=study 'sources=GTEX|TARGET' 'source_labels=GTEx|TARGET' \
       'source_descriptions=The GTEx study: normal tissues, and its EBV-transformed lymphocyte and fibroblast cell lines|The TARGET pediatric cancers'
+    chmod 644 /scratch/shinyusb/T2-data-20261010/datasets/*.db
+    docker run --rm -v /scratch/nathan/R/T2:/srv/T2T:ro -v /scratch/shinyusb/T2-data-20261010/datasets:/data/datasets:ro \
+      -w /srv/T2T --entrypoint Rscript shinyt2t:2026.10 dataset_meta.R show /data/datasets/tcgatargetgtex.db | grep source_
     cd /scratch/Docker/ShinyPublic
     sed -i 's|/scratch/shinyusb/T2-data-20261005/|/scratch/shinyusb/T2-data-20261010/|g' docker-compose.yml
     grep -n "T2-data-2026" docker-compose.yml
     docker compose up -d t2api shiny-t2t shiny-t2tc ;;
-code)      ## 3. the Shiny code: the post-1.0 branch into the served checkout (+ Thanos), restart
-    cd /scratch/shinyusb/T2T && git fetch -q origin && git checkout -q post-1.0 && git pull -q --ff-only
+code)      ## 3. the Shiny code: AFTER post-1.0 is merged into main -- the served checkout stays on
+           ##    main (scripts/deploy.sh T2T pulls main and restarts T2T and the pool)
+    cd /scratch/shinyusb/T2T && git fetch -q origin && git checkout -q main && git pull -q --ff-only
     git log --oneline -1
-    cd /scratch/Docker/ShinyPublic && docker compose restart shiny-t2t && scripts/pool.sh restart ;;
+    /scratch/Docker/ShinyPublic/scripts/deploy.sh T2T ;;
 api-mode)  ## 3b. (optional) the sites read data through the service, no database mounts needed
     echo "add to shiny-t2t and shiny-t2tc in docker-compose.yml:"
     echo "    environment: {T2_API_URL: http://t2api:8080, T2_CONTACT_URL: http://t2api:8080/v1/contact}"
@@ -52,7 +57,7 @@ PY
     curl -s -o /dev/null -w 'https://www.fiveprime.org/T2/ -> %{http_code}\n' https://www.fiveprime.org/T2/ ;;
 archive)   ## 5. stop the old app and archive its directory (code + the July databases, 60 GB)
     cd /scratch/Docker/ShinyPublic && docker compose stop shiny-t2 && docker compose rm -f shiny-t2
-    mv /scratch/shinyusb/T2 /scratch/shinyusb/T2.archive-20261010
+    mv /scratch/shinyusb/T2 /scratch/shinyusb/T2.archive-20261010   # (PRODUCTION-SWITCH.md says the same)
     rm -f /scratch/shinyusb/T2T/tcga.db /scratch/shinyusb/T2T/datasets   # stale symlinks into the old directory
     echo "now comment the shiny-t2 service out of docker-compose.yml and the T2 entry out of scripts/deploy.sh" ;;
 check)     ## 6. the browser suite against the live site

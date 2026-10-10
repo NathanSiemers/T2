@@ -31,7 +31,11 @@ T2_API_VALUES_CACHE = 400                       # probe columns kept per process
 
 ## GET a path of the service, parsed JSON (lists, not simplified). `retry`:
 ## the service answers 503 for a few seconds while a database file is
-## replaced, and a transient network error is retried once.
+## replaced, and a transient network error is retried once. A 409 means the
+## dataset version in the URL is no longer the one served (a database was
+## deployed; the service restarts with a new version): the datasets list is
+## forgotten so the next t2_api_version() re-reads it, and the condition
+## `t2_api_version_changed` is signalled for t2_api_versioned() to retry.
 t2_api_get = function(path, retry = 2) {
   url = paste0(T2_API_URL, path)
   h = curl::new_handle(accept_encoding = "gzip", followlocation = TRUE, connecttimeout = 10, timeout = 120)
@@ -40,6 +44,11 @@ t2_api_get = function(path, retry = 2) {
     r = tryCatch(curl::curl_fetch_memory(url, handle = h), error = function(e) e)
     if (inherits(r, "error")) { if (i > retry) stop("t2api: ", conditionMessage(r), " (", url, ")"); Sys.sleep(1); next }
     if (r$status_code == 503 && i <= retry) { Sys.sleep(3); next }
+    if (r$status_code == 409) {
+      .t2_api$datasets = NULL
+      stop(structure(class = c("t2_api_version_changed", "error", "condition"),
+                     list(message = paste("t2api: dataset version changed for", path), call = NULL)))
+    }
     if (r$status_code != 200)
       stop("t2api: HTTP ", r$status_code, " for ", path, ": ", substr(rawToChar(r$content), 1, 200))
     return(jsonlite::fromJSON(rawToChar(r$content), simplifyVector = FALSE))
@@ -55,6 +64,17 @@ t2_api_datasets = function(refresh = FALSE) {
 t2_api_version = function(ds) {
   for (d in t2_api_datasets()) if (identical(d$name, ds)) return(d$version)
   stop("t2api: unknown dataset ", ds)
+}
+## a request whose URL names the dataset version: built by make_path(version);
+## asked again with the fresh version when the served version has changed
+## (a database deploy), so a long-running app never sticks on 409
+t2_api_versioned = function(ds, make_path) {
+  for (attempt in 1:2) {
+    v = t2_api_version(ds)
+    r = tryCatch(t2_api_get(make_path(v)), t2_api_version_changed = function(e) NULL)
+    if (!is.null(r)) return(list(result = r, version = v))
+  }
+  stop("t2api: the dataset version of ", ds, " keeps changing")
 }
 t2_api_meta = function(ds) {
   key = paste(ds, t2_api_version(ds))
@@ -81,15 +101,18 @@ t2_api_clinical = function(ds) {
   key = paste0("clin|", ds, "|", t2_api_version(ds))
   hit = .t2_api[[key]]
   if (!is.null(hit)) return(hit)
-  cl = t2_api_get(sprintf("/v1/%s/clinical?v=%s", ds, t2_api_version(ds)))
+  got = t2_api_versioned(ds, function(v) sprintf("/v1/%s/clinical?v=%s", ds, v))
+  cl = got$result
   out = data.frame(sample = as.character(unlist(cl$samples)), stringsAsFactors = FALSE, check.names = FALSE)
   for (col in cl$columns) out[[col$name]] = t2_api_vector(col)
-  .t2_api[[key]] = out
+  .t2_api[[paste0("clin|", ds, "|", got$version)]] = out
   out
 }
 
 ## the values of probes (not clinical columns): a named list of vectors in
-## sample order; a name the dataset lacks is absent from the result
+## sample order, each carrying its data type in attr "t2type"; a name the
+## dataset lacks is absent from the result (and remembered as missing, so it is
+## not asked for again on every plot)
 t2_api_values = function(ds, probes) {
   v = t2_api_version(ds)
   key = function(p) paste0(ds, "|", v, "|", p)
@@ -97,16 +120,23 @@ t2_api_values = function(ds, probes) {
   todo = character(0)
   for (p in unique(probes)) {
     hit = .t2_api$values[[key(p)]]
-    if (!is.null(hit)) out[[p]] = hit else todo = c(todo, p)
+    if (is.null(hit)) todo = c(todo, p)
+    else if (!identical(hit, "missing")) out[[p]] = hit
+  }
+  remember = function(p, value) {
+    .t2_api$values[[key(p)]] = value
+    .t2_api$values_keys = c(.t2_api$values_keys, key(p))
   }
   for (chunk in split(todo, ceiling(seq_along(todo) / 100))) {
-    res = t2_api_get(sprintf("/v1/%s/values?v=%s&probes=%s", ds, v,
-                             utils::URLencode(paste(chunk, collapse = ","), reserved = TRUE)))
+    got = t2_api_versioned(ds, function(vv) sprintf("/v1/%s/values?v=%s&probes=%s", ds, vv,
+                                                    utils::URLencode(paste(chunk, collapse = ","), reserved = TRUE)))
+    res = got$result
+    if (!identical(got$version, v)) { v = got$version; key = function(p) paste0(ds, "|", v, "|", p) }
     for (col in res$columns) {
-      out[[col$name]] = t2_api_vector(col)
-      .t2_api$values[[key(col$name)]] = out[[col$name]]
-      .t2_api$values_keys = c(.t2_api$values_keys, key(col$name))
+      out[[col$name]] = structure(t2_api_vector(col), t2type = col$type)
+      remember(col$name, out[[col$name]])
     }
+    for (p in as.character(unlist(res$missing))) remember(p, "missing")
   }
   if (length(.t2_api$values_keys) > T2_API_VALUES_CACHE) {
     drop = head(.t2_api$values_keys, length(.t2_api$values_keys) - T2_API_VALUES_CACHE)
@@ -139,7 +169,7 @@ gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## then the categorical ones sorted, then the unknown names (all NA)
   numeric = vapply(vals, is.numeric, NA)
   for (p in c(sort(names(vals)[numeric]), sort(names(vals)[!numeric]), setdiff(db_probes, names(vals))))
-    out[[p]] = if (!is.null(vals[[p]])) vals[[p]] else rep(NA, nrow(out))
+    out[[p]] = if (!is.null(vals[[p]])) as.vector(vals[[p]]) else rep(NA, nrow(out))   # plain vector: the t2type attribute stays on the cached copy
   ## a name the service does not know is an all-NA column; gitr() still makes it
   ## a factor when its suffix names a factor data type (.mut, .cnc ...)
   if (makefactors) {
@@ -161,15 +191,24 @@ gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   numlike = function(x) { v = x[!is.na(x)]; length(v) > 0 && !anyNA(suppressWarnings(as.numeric(v))) }
   for (p in db_probes) if (is.character(out[[p]]) && numlike(out[[p]])) out[[p]] = as.numeric(out[[p]])
   if (makefactors) {
-    ## numeric probes declared factor, then every text column (clinical, or a
-    ## categorical probe), as gitr()'s mutate(across(where(is.character), as.factor))
-    for (p in db_probes) if (is.numeric(out[[p]]) && !is.null(vals[[p]]) && is.character(vals[[p]])) out[[p]] = as.factor(out[[p]])
-    for (n in colnames(out)) if (is.character(out[[n]])) out[[n]] = as.factor(out[[n]])
+    ## a probe column becomes a factor only when its data type is declared
+    ## "factor" in the datatypes table (gitr()'s rule; every text type is, today);
+    ## every clinical text column becomes a factor
+    dt = t2_api_meta(ds)$datatypes
+    is_factor_type = function(p) identical(dt[[attr(vals[[p]], "t2type") %||% ""]], "factor")
+    for (p in intersect(db_probes, names(vals))) {
+      if (is.character(vals[[p]]) && is_factor_type(p)) out[[p]] = as.factor(out[[p]])
+    }
+    for (n in setdiff(colnames(out), db_probes)) if (is.character(out[[n]])) out[[n]] = as.factor(out[[n]])
   }
   out = droplevels(out)
   rownames(out) = NULL
   data.frame(out, check.names = FALSE, stringsAsFactors = FALSE)
 }
+
+## attributes travel with a vector only until it is modified; keep the type
+## lookup robust to that
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || (length(a) == 1 && is.na(a))) b else a
 
 ## the dataset descriptor (dataset_registry.R's .resolve_roles) from /meta
 t2_api_resolve = function(ds) {
@@ -194,7 +233,7 @@ t2_api_bundle = function(info) {
   ds = info$name; roles = info$roles
   m = t2_api_meta(ds)
   chr = function(x) as.character(unlist(x))
-  menu = chr(t2_api_get(sprintf("/v1/%s/probes?all=1&v=%s", ds, t2_api_version(ds)))$probes)
+  menu = chr(t2_api_versioned(ds, function(v) sprintf("/v1/%s/probes?all=1&v=%s", ds, v))$result$probes)
   clin = t2_api_clinical(ds)
   handles = c('subtype', 'cohort', if (!is.na(roles$sampletype_col %||% NA)) roles$sampletype_col)
   mygenes = setdiff(menu, handles)

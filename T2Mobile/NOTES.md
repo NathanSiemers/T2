@@ -860,7 +860,8 @@ lists the whole collection and the parts it declares in `dataset_meta` (`source_
 each with its rules, sample count, the cohorts present (in `cohorts` table order), the
 presets to offer as **groups** and as **exclusions** (a preset is offered only where it
 keeps some but not all of the source's samples; a group identical to an offered exclusion
-yields to it — the iPhone app's rule, now computed once on the server), and the
+yields to it — the iPhone app's rule, now also computed on the server and consumed by the
+R app; the app itself still applies the same rule on the phone, see the review below), and the
 categorical clinical columns with a single value there. Presets carry `n_samples`.
 `/probes?all=1` serves the whole menu list (1.7 MB TCGA, 0.6 MB gzipped, cacheable by
 version). Go tests for the rules; `docs/API.md` has the new section. The `dataset_meta`
@@ -1046,3 +1047,69 @@ proves no hostile message forges a heading or separator or escapes the fence. **
 T2Kit 58/58. Tools left running: `t2api-dev` (with `/scratch/nathan/R/T2-devdata/contact`
 as a scratch contact dir, override file `t2api-dev-contact.yml` there). The Mac tunnel is
 closed.
+
+### 2026-10-10 — Final review by Fable, and the fixes (Claude)
+
+Nathan asked for a final code review "with fable" (the session had dropped to Opus during
+the security audit, which he noticed by the English). A fresh Fable agent reviewed the
+whole branch (425927d..025e871, 49 files). Verdict: nothing changes served data (the
+service, the SQLite mirror and the API client agree on every dataset, proven by the
+equivalence tests); merge after seven should-fixes, all done the same hour:
+
+1. **The R API client stuck on 409 after a database deploy** (the service restarts with a
+   new version; the client read `/v1/datasets` once per process and kept the old version
+   in every URL). Now a 409 forgets the datasets list and `t2_api_versioned()` asks again
+   with the fresh version; caches are keyed by the version that answered. Also: a name the
+   dataset lacks is remembered as missing (not re-requested on every plot), and a probe
+   column becomes a factor only when its data type is declared "factor" in `datatypes`
+   (gitr()'s rule; the type travels with each cached column as attr `t2type`).
+2. **`deploy-20261010.sh` step `data` would have failed**: it wrote the metadata keys as uid
+   999 into a copy owned by nathan (SQLite needs write on file and directory). Now it runs
+   as the invoking user, chmods 644 and shows the keys back.
+3. **Step `code` checked `post-1.0` out in the served tree**; the plan says merge to main
+   first. Now it checks out `main` and calls `scripts/deploy.sh T2T`. Archive name unified
+   (`T2.archive-20261010`).
+4. **The forwarded address was spoofable**: both the R app and the service took the FIRST
+   `X-Forwarded-For` entry, which the visitor controls (the live Nginx appends with
+   `$proxy_add_x_forwarded_for` and also sets `X-Real-IP $remote_addr`; HAProxy adds
+   nothing). Now both take `X-Real-IP` first, else the LAST forwarded entry; the R app
+   forwards the visitor as `X-Real-IP`; and the Shiny contact form allows one message a
+   minute per session (the container-to-container POST bypasses Nginx's per-address
+   limit).
+5. **Standby Nginx `proxy_buffering off`** let a slow-reading client hold a service
+   in-flight token for a whole transfer (ten per address × four addresses = all 32
+   tokens). Now buffered (32 × 32 KB, 16 MB temp): the service frees its token in
+   milliseconds, the slow client costs Nginx a buffer. Config re-validated; a 2.6 MB
+   `/clinical` through it in 26 ms.
+6. **The exclusion checkboxes rebuilt themselves on every tick** (the renderer read
+   `input$preset_excl` reactively), so a quick second tick could be lost. The widget now
+   depends on the source and the group only; the ticks are read without a dependency.
+   And the presets marked `on_by_default` are applied until the user chooses, as the app
+   does (none is marked today).
+7. The Shiny-fuzz log on disk was the first, halted run; the agent's passing log (13
+   checks) is now `T2-devdata/shiny_fuzz.log`.
+
+Nits taken: an all-NA text column is not categorical in the R mirror either (as
+`sources.go`); the search handler caps a page at 500; `test_equivalence.R` compares preset
+descriptions; the standby README says to `chmod -R a+rX` the data; `API.md` and this file no
+longer claim the iPhone app consumes the service's group/exclusion lists (it still derives
+them from the same rules on the phone — the three implementations agree; switching the
+app to the lists is a follow-up). Noted, not changed: a part label containing `|` would
+break the bundle key (metadata-controlled); the Thanos backends are keyed by path, not
+version (a new session after a deploy); `t2_descriptions.R` reads the TSV relative to the
+app directory; the app's `bundle()` keeps a dataset's presets until the next switch.
+Behaviour changes the review lists as intentional, for Nathan to confirm on `/T2/`: TCGA
+opens on nine cohorts; the two checkboxes are now the presets; the cohort menu lists only
+cohorts present; two categoricals draw as counts; in API mode the menu gains ten clinical
+columns and the CSV column order differs.
+
+All suites were rerun by a Sonnet agent after the fixes — results appended below.
+
+**Reruns after the fixes** (Sonnet agent; logs `*_after_review.log` in `T2-devdata/`):
+service equivalence ALL PASS (25); gitr over the service ALL PASS (after one more fix: the
+cached column's `t2type` attribute had leaked into the returned frame and made a text
+column non-identical under `makefactors = FALSE` — the client now returns plain vectors);
+app tests over the service no FAIL; file-mode test_app_sources 26, test_app_thanos 40,
+test_app_server 6, all PASS; Chrome suite 28/28 on the files and 28/28 over the service;
+Shiny fuzzer 13/13; API fuzzer 6/6 (541 requests, 0 busy refusals); abuse block 29/29
+(contact enabled); contact_fuzz 7/7. `t2api-dev` healthy at 251 MiB afterwards.

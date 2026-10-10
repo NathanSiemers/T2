@@ -80,8 +80,10 @@ Each preset also carries `n_samples`: how many samples of the whole dataset it h
 
 How the app shows them: a preset with an `in` rule is a **group** (alternatives: one at
 most is in use), one whose rules are all `not in` is an **exclusion** (any number); each is
-offered only where it changes the samples of the chosen data source. Which ones those are
-is decided by the service, per data source (next section), so no client needs to.
+offered only where it changes the samples of the chosen data source. The service lists
+which ones those are, per data source (next section); the R app takes its lists from
+there, the iPhone app (as of 1.0) still derives them from the same rules on the phone —
+the three agree, and the app can switch to the lists whenever convenient.
 
 ### Data sources (parts of a collection)
 

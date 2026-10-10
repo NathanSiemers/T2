@@ -52,7 +52,7 @@ t2_clin_levels = function(clin, roles) {
     if (!is.character(x) && !is.factor(x)) next
     lv = if (identical(n, roles$sampletype_col) && length(roles$sampletype_levels) > 0)
            roles$sampletype_levels else unique(as.character(x[!is.na(x)]))
-    out[[n]] = lv
+    if (length(lv)) out[[n]] = lv          # a column with no values is not categorical (sources.go: no levels)
   }
   out
 }

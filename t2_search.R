@@ -31,6 +31,7 @@ t2_rank_matches = function(q, names, limit = 50) {
   query = shiny::parseQueryString(req$QUERY_STRING)
   q = if (is.null(query$query)) "" else query$query
   mop = suppressWarnings(as.integer(query$maxop)); if (is.na(mop) || mop < 1) mop = 50
+  mop = min(mop, 500)                                   # a client cannot ask for the whole list
   sel = attr(data, "selected_value", exact = TRUE)
   vals = as.character(data$value)
   picked = t2_rank_matches(q, vals, mop)

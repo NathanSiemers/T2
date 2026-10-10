@@ -1,5 +1,7 @@
 mysql = FALSE
 mysqldb = 'prod'
+## T2_API_URL set: the data layer is the t2api service, no database files (t2_api_client.R)
+source('t2_api_client.R')
 
 library(DBI)
 
@@ -13,7 +15,11 @@ open_dataset_con = function(dbfile = 'tcga.db') {
                        flags = RSQLite::SQLITE_RO)
 }
 
-if( ! mysql ) {
+if (t2_api_on()) {
+    ## the service is the data layer: no file to open (lib.R skips its legacy
+    ## table handles too)
+    con = NULL
+} else if( ! mysql ) {
     ## Default connection points at the canonical TCGA db so that sourcing
     ## lib.R at startup (which builds the default choice-lists) still works
     ## unchanged. The app re-points to the selected dataset via the bundle.

@@ -160,6 +160,10 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 keep_samples = NULL,
                 rules = list()) {
 
+  if (t2_api_on())   # the service is the data layer (t2_api_client.R); dbfile = dataset name
+    return(gitr_api(probes, phenos = phenos, nonormal = nonormal, noheme = noheme, cohort = cohort,
+                    makefactors = makefactors, dbfile = dbfile, roles = roles,
+                    keep_samples = keep_samples, rules = rules))
   if (is.null(roles)) roles = gitr_default_roles
   role_has = function(key) {
     v = roles[[key]]
@@ -343,7 +347,7 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 .gitr_memo = new.env(parent = emptyenv())
 .gitr_memo$keys = character(0)
 gitr_memo = function(probes, ..., dbfile = gitrdb, max_entries = 6) {
-  fi = file.info(dbfile)
+  fi = if (t2_api_on()) list(size = t2_api_version(dbfile), mtime = 0) else file.info(dbfile)
   key = rlang::hash(list(probes, list(...), normalizePath(dbfile, mustWork = FALSE),
                          fi$size, fi$mtime))
   hit = .gitr_memo[[key]]

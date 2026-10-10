@@ -48,6 +48,8 @@ type server struct {
 	stopOnce     sync.Once
 	contact      contactConfig
 	contactLimit contactLimiter
+	inflight     chan struct{} // one token per request being answered (-max-inflight)
+	nBusy        atomic.Int64  // requests refused because every token was taken
 }
 
 func main() {
@@ -57,11 +59,12 @@ func main() {
 	cacheMB := flag.Int("cache-mb", 512, "memory for cached probe columns, per dataset, in MB")
 	conns := flag.Int("db-conns", 48, "database connections per dataset (concurrent uncached lookups)")
 	memMB := flag.Int("mem-limit-mb", 3072, "soft memory limit for the Go runtime, in MB (keep below the container limit)")
+	inflight := flag.Int("max-inflight", 64, "requests answered at once; beyond it a request is refused at once with 503 (a flood then costs no memory and no disk time)")
 	flag.Parse()
 	dbConns = *conns
 	debug.SetMemoryLimit(int64(*memMB) << 20)
 
-	s := &server{datasets: map[string]*Dataset{}, started: time.Now()}
+	s := &server{datasets: map[string]*Dataset{}, started: time.Now(), inflight: make(chan struct{}, max(1, *inflight))}
 	s.contact = contactConfigFromEnv()
 	if s.contact.dir != "" {
 		log.Printf("contact form: messages are kept in %s", s.contact.dir)
@@ -110,7 +113,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           s.count(s.recovered(gzipped(mux))),
+		Handler:           s.count(s.limited(s.recovered(gzipped(mux)))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -213,6 +216,30 @@ func (s *server) cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, e
 	return false
 }
 
+// limited bounds the requests answered at once. A request beyond the bound is refused at
+// once with 503 and Retry-After (the app retries after a few seconds; Nginx counts it as a
+// failure): a flood is turned away before it costs a database read or a response buffer.
+// /healthz is exempt, so a watchdog still sees the process alive while it is busy.
+func (s *server) limited(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		select {
+		case s.inflight <- struct{}{}:
+			defer func() { <-s.inflight }()
+			next.ServeHTTP(w, r)
+		default:
+			s.nBusy.Add(1)
+			s.nErr.Add(1)
+			w.Header().Set("Retry-After", "3")
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, `{"error":"busy: try again in a few seconds"}`, http.StatusServiceUnavailable)
+		}
+	})
+}
+
 // recovered answers a panic in a handler with a plain 500 and keeps the process serving.
 func (s *server) recovered(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -236,9 +263,11 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
-		"uptime_s": int(time.Since(s.started).Seconds()),
-		"requests": s.nReq.Load(),
-		"errors":   s.nErr.Load(),
+		"uptime_s":      int(time.Since(s.started).Seconds()),
+		"requests":      s.nReq.Load(),
+		"errors":        s.nErr.Load(),
+		"busy_refusals": s.nBusy.Load(),
+		"max_inflight":  cap(s.inflight),
 	}
 	ds := map[string]any{}
 	for name, d := range s.datasets {

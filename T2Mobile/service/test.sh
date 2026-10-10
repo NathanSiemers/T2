@@ -22,6 +22,18 @@ if [ "$what" = all ] || [ "$what" = equiv ]; then
         --entrypoint Rscript shinyt2t:2026.10 /test_equivalence.R http://$HOST:8080 ${N_PROBES:-60} 2>&1 |
         grep -v -E "rows returned|^Loading|tidyverse|^✔|^✖|^ℹ|Tk is not|Filter tab disabled|^──|^$"
 fi
+if [ "$what" = shiny ]; then
+    ## the R app over the service (T2_API_URL): gitr/bundle equivalence, then the app tests
+    for t in ${SHINY_TESTS:-test_gitr_api.R test_app_sources.R test_app_server.R test_app_survival.R}; do
+        echo; echo "== $t over http://$HOST:8080 =="
+        docker run --rm --network $NET -u 999:999 --read-only --tmpfs /tmp \
+            -v ${T2_CODE:-$T2/T2T}:/srv/T2T:ro -v $T2/Thanos:/srv/Thanos:ro \
+            -v ${T2_DB:-$T2/T2}/tcga.db:/srv/T2/tcga.db:ro -v ${T2_DB:-$T2/T2}/datasets:/srv/T2/datasets:ro \
+            -w /srv/T2T -e T2_API_URL=http://$HOST:8080 -e T2_DATASETS_DIR=/srv/T2/datasets \
+            --entrypoint Rscript shinyt2t:2026.10 $t 2>&1 |
+            grep -v -E "rows returned|probes from|^Loading|tidyverse|^✔|^✖|^ℹ|Tk is not|^──|^$|Attaching|masks|conflicts|deprecated|lifecycle|generated"
+    done
+fi
 if [ "$what" = all ] || [ "$what" = abuse ]; then
     echo; echo "== malformed and hostile requests =="
     u=http://127.0.0.1:$PORT

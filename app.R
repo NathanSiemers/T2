@@ -196,6 +196,7 @@ ui = fluidPage(
         .t2-thanos .thanos-panel { border: 1px solid #dce4ec; border-radius: 4px;
             padding: 10px 12px 4px 12px; background: #fff; }
         .t2-filter-status { font-size: 90%; color: #555; margin: 8px 0; }
+        .t2-var-help { font-size: 85%; color: #555; margin: 4px 0 8px 0; max-width: 1100px; }
         /* every tab drawn as a tab, the selected one raised and accented */
         #tabs.nav-tabs { border-bottom: 1px solid #b4bcc2; margin-top: 6px; }
         #tabs.nav-tabs > li > a { border: 1px solid #dce4ec; border-bottom-color: #b4bcc2;
@@ -244,6 +245,8 @@ ui = fluidPage(
             uiOutput('preset_group_ui', inline = TRUE),
             uiOutput('preset_excl_ui', inline = TRUE),
             tags$br(),
+            ## what the chosen clinical variables mean (t2_descriptions.R)
+            uiOutput('var_help'),
             inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
             inline(HTML(nbsp(5))),
             inline(
@@ -325,6 +328,9 @@ ui = fluidPage(
             h5( Sys.Date() ),
             h4("Types of Data Available"),
             htmlOutput('datatypes'),
+            h4("Clinical variables"),
+            htmlOutput('clinical_help'),
+            contact_ui(),
             tags$br(),tags$br(),
             h5('Below is an area for my notes, you can ignore...'),
             verbatimTextOutput('print1')
@@ -396,15 +402,14 @@ server = function(input, output, session) {
                    color = pick('color', mgp), size = pick('size', mgp),
                    facet = pick('facet', mgp, NULL, n = 3),
                    cohort = pick('cohort', unname(b$mycohorts), NULL, n = 200, default = d$cohorts))
-        updateSelectizeInput(session, 'condition', choices = mgp, selected = sel$condition, server = TRUE)
-        updateSelectizeInput(session, 'x', choices = mgp, selected = sel$x, server = TRUE)
-        updateSelectizeInput(session, 'y', choices = mgp, selected = sel$y, server = TRUE)
-        updateSelectizeInput(session, 'color', choices = mgp, selected = sel$color, server = TRUE)
-        updateSelectizeInput(session, 'size', choices = mgp, selected = sel$size, server = TRUE)
-        updateSelectizeInput(session, 'cohort', choices = c('all', b$mycohorts),
-                             selected = sel$cohort, server = TRUE)
-        updateSelectizeInput(session, 'facet', choices = mgp,
-                             selected = sel$facet, server = TRUE)
+        ## ranked search (t2_search.R): the exact name first, then names starting with the text
+        update_selectize_ranked(session, 'condition', mgp, sel$condition)
+        update_selectize_ranked(session, 'x', mgp, sel$x)
+        update_selectize_ranked(session, 'y', mgp, sel$y)
+        update_selectize_ranked(session, 'color', mgp, sel$color)
+        update_selectize_ranked(session, 'size', mgp, sel$size)
+        update_selectize_ranked(session, 'cohort', c('all', b$mycohorts), sel$cohort)
+        update_selectize_ranked(session, 'facet', mgp, sel$facet)
         invisible(sel)       # what the selectors are being set to
     }
     apply_bundle_choices(init_bundle)
@@ -437,12 +442,9 @@ server = function(input, output, session) {
         mgp = bundle()$mygenesplus
         stc = bundle()$roles$sampletype_col
         if (input$multi_y) {
-            updateSelectizeInput(session, 'color', choices = c('probe', mgp),
-                                 selected = 'probe', server = TRUE)
+            update_selectize_ranked(session, 'color', c('probe', mgp), 'probe')
         } else {
-            updateSelectizeInput(session, 'color', choices = mgp,
-                                 selected = if (!is.null(stc) && !is.na(stc)) stc else "",
-                                 server = TRUE)
+            update_selectize_ranked(session, 'color', mgp, if (!is.null(stc) && !is.na(stc)) stc else "")
         }
     }, ignoreInit = TRUE)
 
@@ -537,6 +539,21 @@ server = function(input, output, session) {
         sprintf("%s of %s samples selected", format(h$th$n_selected(), big.mark = ","),
                 format(n_base, big.mark = ","))
     })
+
+    ## ---- what the chosen clinical variables mean; the whole list on About ----
+    output$var_help = renderUI({
+        b = bundle()
+        inp = sanitize_t2_input(input, b)
+        t2_describe_vars(c(inp$x, inp$y, inp$color, inp$size, inp$facet), b$descriptions)
+    })
+    output$clinical_help = renderUI({
+        d = bundle()$descriptions
+        if (!length(d)) return(helpText("No descriptions are available for this data set."))
+        tags$table(class = "table table-striped table-condensed", style = "font-size: 85%;",
+                   tags$thead(tags$tr(tags$th("Column"), tags$th("Meaning"))),
+                   tags$tbody(lapply(names(d), function(n) tags$tr(tags$td(tags$code(n)), tags$td(d[[n]])))))
+    })
+    contact_server(input, output, session)
 
     ## ---- Appearance: one widget per extra ggplot setting picked in the search box ----
     ## Rebuilt when the pick list changes; a widget that already exists keeps
@@ -694,17 +711,7 @@ server = function(input, output, session) {
 
     output$datatypes = renderUI({
         b = bundle()
-        type_con = RSQLite::dbConnect(RSQLite::SQLite(), b$path, flags = RSQLite::SQLITE_RO)
-        on.exit(DBI::dbDisconnect(type_con), add = TRUE)
-        ## description columns are optional; fall back to a bare type list
-        type_df = tryCatch(
-            DBI::dbGetQuery(type_con, "SELECT type, description, example, reference, source_file, source_url FROM types ORDER BY type"),
-            error = function(e) {
-                tdf = DBI::dbGetQuery(type_con, "SELECT type FROM types ORDER BY type")
-                tdf$description = ""; tdf$example = ""; tdf$reference = ""
-                tdf$source_file = ""; tdf$source_url = ""
-                tdf
-            })
+        type_df = b$types      # read with the bundle (files or service)
         ## convert PMID references to clickable PubMed links
         type_df$reference = sapply(type_df$reference, function(ref) {
             pmid = regmatches(ref, regexpr("PMID:\\d+", ref))

@@ -32,6 +32,8 @@ func main() {
 	hot := flag.Float64("hot", 0.8, "fraction of requests for the 50 most popular probes")
 	gz := flag.Bool("gzip", true, "ask for gzip, as real clients do")
 	seed := flag.Int64("seed", 1, "which probes make up the pool (same seed = same probes)")
+	think := flag.Duration("think", 0, "pause between a client's requests (0 = none: flat out). 10s models a scientist at the app")
+	open := flag.Bool("open", false, "each client first fetches /meta and /clinical, as a phone opening the app does")
 	flag.Parse()
 
 	// a pool of real probe names from the service's own search
@@ -53,8 +55,8 @@ func main() {
 		probes = probes[:*pool]
 	}
 	nHot := min(50, len(probes))
-	fmt.Printf("target %s dataset %s: %d clients for %s; %d distinct probes, %.0f%% of requests for %d popular ones\n",
-		*base, *ds, *conc, *dur, len(probes), *hot*100, nHot)
+	fmt.Printf("target %s dataset %s: %d clients for %s; %d distinct probes, %.0f%% of requests for %d popular ones; think %s, open %v\n",
+		*base, *ds, *conc, *dur, len(probes), *hot*100, nHot, *think, *open)
 
 	tr := &http.Transport{MaxIdleConns: *conc * 2, MaxIdleConnsPerHost: *conc * 2, DisableCompression: !*gz}
 	client := &http.Client{Transport: tr, Timeout: 60 * time.Second}
@@ -67,7 +69,22 @@ func main() {
 		go func(w int) {
 			defer wg.Done()
 			rng := rand.New(rand.NewSource(int64(w) + time.Now().UnixNano()))
+			if *open {
+				for _, p := range []string{"/v1/datasets", "/v1/" + *ds + "/meta", "/v1/" + *ds + "/clinical"} {
+					if resp, err := client.Get(*base + p); err == nil {
+						n, _ := io.Copy(io.Discard, resp.Body)
+						resp.Body.Close()
+						bytes.Add(n)
+					}
+				}
+			}
+			if *think > 0 { // spread the clients over the think interval, not all at once
+				time.Sleep(time.Duration(rng.Float64() * float64(*think)))
+			}
 			for time.Now().Before(stop) {
+				if *think > 0 {
+					time.Sleep(*think)
+				}
 				k := 1 + rng.Intn(3)
 				names := make([]string, k)
 				for i := range names {

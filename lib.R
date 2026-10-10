@@ -11,6 +11,9 @@ source('marker_ops.R')           # shared: combine_markers_median_z, residualize
 source('survival_prototype.R')   # Kaplan-Meier survival mode (T2_ENDPOINTS, survival_km)
 source('plot_style.R')           # Appearance settings, themes, the ggplot tweak registry
 source('figure_export.R')        # Publish tab: figure presets, validation, rendering
+source('t2_search.R')            # ranked search in the variable menus
+source('t2_descriptions.R')      # what the clinical columns mean
+source('t2_contact.R')           # the contact form (About tab)
 ################################################################
 ## Multi-dataset bundle
 ##
@@ -30,11 +33,13 @@ source('figure_export.R')        # Publish tab: figure presets, validation, rend
 .bundle_cache = new.env(parent = emptyenv())
 load_dataset_bundle = function(name) {
   info = dataset_info(name)
-  fi = file.info(info$path)
-  key = paste(info$name, normalizePath(info$path, mustWork = FALSE), fi$size, as.numeric(fi$mtime))
+  key = if (t2_api_on()) paste(info$name, "api", t2_api_version(name)) else {
+    fi = file.info(info$path)
+    paste(info$name, normalizePath(info$path, mustWork = FALSE), fi$size, as.numeric(fi$mtime))
+  }
   hit = .bundle_cache[[key]]
   if (!is.null(hit)) return(hit)
-  out = .read_dataset_bundle(info)
+  out = if (t2_api_on()) t2_api_bundle(info) else .read_dataset_bundle(info)
   if (length(ls(.bundle_cache)) >= 8) rm(list = ls(.bundle_cache), envir = .bundle_cache)
   .bundle_cache[[key]] = out
   out
@@ -77,6 +82,10 @@ load_dataset_bundle = function(name) {
   cohort_order = tryCatch(DBI::dbGetQuery(con_ds, "SELECT cohort FROM cohorts")$cohort,
                           error = function(e) character(0))
   sources = t2_sources(clin, roles, presets, cohort_order, info$label)
+  ## the data types (About tab); the description columns are optional
+  types = tryCatch(DBI::dbGetQuery(con_ds, "SELECT type, description, example, reference, source_file, source_url FROM types ORDER BY type"),
+                   error = function(e) { t = DBI::dbGetQuery(con_ds, "SELECT type FROM types ORDER BY type")
+                                         for (k in c("description", "example", "reference", "source_file", "source_url")) t[[k]] = ""; t })
 
   ## Selectable variable list: virtual handles (subtype, cohort) + all probes +
   ## the sample-type role column when the dataset has one. Preserves the exact
@@ -92,7 +101,8 @@ load_dataset_bundle = function(name) {
     mygenes = mygenes, probes = probes, samples = samples,
     mutationsamples = mutationsamples, mycohorts = mycohorts,
     mygenesplus = mygenesplus,
-    clin = clin, presets = presets, sources = sources
+    clin = clin, presets = presets, sources = sources, types = types,
+    descriptions = t2_descriptions(info$name, setdiff(colnames(clin), 'sample'))
   )
 }
 
@@ -136,21 +146,23 @@ list_sources = function() {
 
 .default_bundle = load_dataset_bundle(default_dataset())
 
-tcga = tbl(con, 'tcga')
-tcgacat = tbl(con, 'tcgacat')
 samples = .default_bundle$samples
 mutationsamples = .default_bundle$mutationsamples
 mygenes = .default_bundle$mygenes
 probes = .default_bundle$probes
+mycohorts = .default_bundle$mycohorts
+mygenesplus = .default_bundle$mygenesplus
+if (!t2_api_on()) {     # table handles on the default file, for scripts (none in the app's path)
+tcga = tbl(con, 'tcga')
+tcgacat = tbl(con, 'tcgacat')
 types = tbl(con, 'types')
 cohorts = tbl(con, 'cohorts')
-mycohorts = .default_bundle$mycohorts
 tcgas = tbl(con, 'tcgas')
 tcgai = tbl(con, 'tcgai')
 tcgacati = tbl(con, 'tcgacati')
 tcgacats = tbl(con, 'tcgacats')
 clin = tbl(con, 'clinpheno')
-mygenesplus = .default_bundle$mygenesplus
+}
 
 ################################################################
 ## requests T2 does not draw (see T2_LIMITS in gitr.R)
@@ -637,7 +649,14 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                         notch = identical(G('boxplot.notch', 'FALSE'), 'TRUE'),
                         varwidth = identical(G('boxplot.varwidth', 'FALSE'), 'TRUE'))
         if (!is.null(gg[['boxplot.width']])) box_args$width = gg[['boxplot.width']]
-        if (multi_y_fill) {
+        if (!is.null(y) && is.factor(data[, y])) {
+            ## two categorical variables: a count table drawn as circles sized by
+            ## the number of samples, the number written on each (a box plot of
+            ## a category means nothing)
+            p = p + geom_count(alpha = alpha, colour = if (is.null(color)) "#3B7DB4" else NULL) +
+                geom_text(stat = "sum", aes(label = after_stat(n), size = NULL), vjust = -1.1, size = 3) +
+                scale_size_area(max_size = 14, name = "samples")
+        } else if (multi_y_fill) {
             ## multi_y with user color: fill boxplots by probe, color points by user's variable
             p = p + do.call(geom_boxplot, c(list(mapping = aes(fill = probe), alpha = 0.3), box_args)) +
                 pts(position_jitterdodge(jitter.width = jw))

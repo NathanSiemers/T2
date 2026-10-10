@@ -85,14 +85,7 @@ backend_t2 = function(bundle) {
     ## conversion, for the pre-filter predicate (gitr applies its filters at
     ## that same point -- re-levelling the sample-type column turns unlisted
     ## values into NA, which would hide them from "Exclude Non-tumor").
-    raw = local({
-        con_be = RSQLite::dbConnect(RSQLite::SQLite(), dbname = dbfile,
-                                    flags = RSQLite::SQLITE_RO)
-        on.exit(DBI::dbDisconnect(con_be), add = TRUE)
-        clin = as.data.frame(DBI::dbReadTable(con_be, 'clinpheno', check.names = FALSE),
-                             check.names = FALSE)
-        t2_add_virtual_cols(clin, roles)
-    })
+    raw = bundle$clin      # the bundle read it once (files or service)
     raw = raw[match(samples, as.character(raw$sample)), , drop = FALSE]
     ## the rows of the part (all rows for a whole collection)
     in_source = t2_rules_mask(raw, source$rules)

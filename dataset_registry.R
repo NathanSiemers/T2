@@ -98,6 +98,7 @@ DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
 ##   3. generic introspection of clinpheno column names
 ## ---------------------------------------------------------------------------
 .resolve_roles <- function(name, path) {
+  if (t2_api_on()) return(t2_api_resolve(name))
   if (identical(name, "TCGA")) {
     return(list(roles = .TCGA_ROLES, defaults = .TCGA_DEFAULTS,
                 title = .TCGA_TITLE, label = .TCGA_LABEL))
@@ -159,6 +160,10 @@ DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
 ## each element is list(name, path). TCGA (root tcga.db) is always first.
 discover_datasets <- function() {
   out <- list()
+  if (t2_api_on()) {
+    for (d in t2_api_datasets()) out[[d$name]] <- list(name = d$name, path = d$name)
+    return(out)
+  }
   if (file.exists("tcga.db")) out[["TCGA"]] <- list(name = "TCGA", path = "tcga.db")
   if (dir.exists(DATASETS_DIR)) {
     dbs <- list.files(DATASETS_DIR, pattern = "\\.db$", full.names = TRUE)

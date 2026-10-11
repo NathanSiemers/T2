@@ -37,9 +37,12 @@ api-mode)  ## 3b. (optional) the sites read data through the service, no databas
     echo "add to shiny-t2t and shiny-t2tc in docker-compose.yml:"
     echo "    environment: {T2_API_URL: http://t2api:8080, T2_CONTACT_URL: http://t2api:8080/v1/contact}"
     echo "then: docker compose up -d shiny-t2t shiny-t2tc" ;;
-nginx)     ## 4. /T2/ -> the pool; keep /T2T/ and /T2Tc/ for links in circulation
+nginx)     ## 4. /T2/ -> the pool; keep /T2T/ and /T2Tc/ for links in circulation. Idempotent:
+           ##    the backup is the config the running image was built with (never overwritten),
+           ##    the edit is skipped when already made.
     cd /scratch/Docker/Nginx
-    cp nginx.conf nginx.conf.pre-switch-20261010
+    [ -s nginx.conf.pre-switch-20261010 ] && grep -q "set \$app haproxy-t2tc" nginx.conf.pre-switch-20261010 && rm nginx.conf.pre-switch-20261010  # a backup taken after the edit is no backup
+    [ -s nginx.conf.pre-switch-20261010 ] || docker run --rm --entrypoint cat nginx-nginx /etc/nginx/conf.d/nginx.conf > nginx.conf.pre-switch-20261010
     python3 - <<'PY'
 s = open('nginx.conf').read()
 old = "    location /T2/      { set $app shiny-t2;      proxy_pass http://$app:3838; }\n"
@@ -51,7 +54,9 @@ new = """    ## /T2/ is the new app (T2T code) served by the pool since 2026-10-
         proxy_cookie_flags T2TC secure samesite=lax;
     }
 """
-assert old in s; open('nginx.conf', 'w').write(s.replace(old, new, 1))
+if new.strip() in s: print("nginx.conf: /T2/ already points at the pool")
+elif old in s: open('nginx.conf', 'w').write(s.replace(old, new, 1)); print("nginx.conf: /T2/ now points at the pool")
+else: raise SystemExit("nginx.conf: neither the old nor the new /T2/ block found; edit by hand")
 PY
     ## the site config lives at /etc/nginx/conf.d/nginx.conf in the container (Dockerfile); the
     ## top-level /etc/nginx/nginx.conf is the image's stock file and must not be replaced.

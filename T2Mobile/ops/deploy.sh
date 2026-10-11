@@ -71,11 +71,12 @@ status)
     for u in https://fiveprime.org/T2/ https://www.fiveprime.org/T2T/ https://www.fiveprime.org/T2Tc/ https://www.fiveprime.org/api/t2/healthz; do
         printf '%-40s ' "$u"; curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$u"; done ;;
 check)
-    d=/scratch/nathan/R/T2-devdata/screenshots/shiny-live; mkdir -m 777 -p "$d"; rm -f "$d"/*
+    ## screenshots: the host directory below is /home/rstudio/R/T2-devdata/... inside the container
+    d=/scratch/nathan/R/T2-devdata/screenshots/shiny-live; mkdir -m 777 -p "$d"; rm -f "${d:?}"/*
     docker run --rm --network shinypublic -u rstudio -v /scratch/nathan/R:/home/rstudio/R -w /home/rstudio/R/T2 \
       -e NOT_CRAN=true -e CHROMOTE_CHROME=/home/rstudio/R/T2-devdata/chrome/chrome-headless-shell-linux64/chrome-headless-shell \
-      -e T2_SITE_URL=https://www.fiveprime.org/T2/ --entrypoint Rscript rstudio:2026.03 test_browser_suite.R "$d" 2>&1 |
-      grep -E "PASS|FAIL|Error|done" ;;
+      -e T2_SITE_URL=https://www.fiveprime.org/T2/ --entrypoint Rscript rstudio:2026.03 test_browser_suite.R \
+      /home/rstudio/R/T2-devdata/screenshots/shiny-live 2>&1 | grep -E "PASS|FAIL|Error|done" ;;
 rollback-service)
     last=$(docker image ls --format '{{.Repository}}:{{.Tag}} {{.CreatedAt}}' | grep '^t2api:pre-' | sort -k2 -r | head -1 | cut -d' ' -f1)
     [ -n "$last" ] || { echo "no t2api:pre-* image"; exit 1; }

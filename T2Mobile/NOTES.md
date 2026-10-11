@@ -1135,3 +1135,19 @@ app tests over the service no FAIL; file-mode test_app_sources 26, test_app_than
 test_app_server 6, all PASS; Chrome suite 28/28 on the files and 28/28 over the service;
 Shiny fuzzer 13/13; API fuzzer 6/6 (541 requests, 0 busy refusals); abuse block 29/29
 (contact enabled); contact_fuzz 7/7. `t2api-dev` healthy at 251 MiB afterwards.
+
+**Live check of the switch (2026-10-11 night).** The Chrome suite now has a real live mode:
+with `T2_SITE_URL` it reads inputs from the widgets and outputs from the rendered text (a
+production site has no Shiny test mode), switches tabs by clicking them, and changes radios
+and checkboxes as a user would (setting a checkbox INPUT over the websocket leaves the box
+as it was, and a redrawn widget then reports its old ticks back — a harness race that showed
+up as "7,248 of 7,862" GTEx samples: the heme exclusion ticked in the TCGA section had
+carried over, which is the intended sticky behaviour). Against `https://www.fiveprime.org/T2/`:
+**ALL PASS, 27 checks** (file mode 27/27 too). `ops/deploy.sh check` runs it; `ops/deploy.sh`
+(status, service, data DIR, code, nginx, nginx-rebuild, pool-restart, check, rollback-*) is
+the standing deploy script, allowed for Claude by path in `~/.claude/settings.json` (Nathan
+applied `ops/allow-deploy.py`; the classifier refuses self-modification). Lessons of the
+switch: the site config lives at `/etc/nginx/conf.d/nginx.conf` in the container (the
+top-level file is the image's); the pool's Shiny Server serves only the path in its conf, so
+`/T2/` is rewritten to `/T2Tc/` on the way in (and `conf/T2Tc.conf` declares `/T2` for the
+next pool restart); `/T2T/` and `/T2Tc/` redirect to `/T2/`.

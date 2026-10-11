@@ -110,9 +110,17 @@ api-mode)    ## the sites read through the service instead of the database files
     cd "$PUB"; what=${2:?usage: deploy.sh api-mode canary|pool|off}
     case $what in
     off)  last=$(ls -t docker-compose.yml.pre-apimode-* 2>/dev/null | head -1); [ -n "$last" ] || { echo "no backup"; exit 1; }
+          ## (the OLDEST backup is the file-mode one; after canary+pool there are two)
+          last=$(ls -tr docker-compose.yml.pre-apimode-* | head -1)
           cp "$last" docker-compose.yml && docker compose up -d shiny-t2t shiny-t2tc && echo "restored $last" ;;
     canary|pool)
           svc=shiny-t2t; [ "$what" = pool ] && svc=shiny-t2tc
+          ## Shiny Server starts its R workers with its own environment: a compose `environment:`
+          ## never reaches the app. R reads Renviron.site at start-up, so the image's own file plus
+          ## the two variables is mounted over it (a file mount over an existing file works on the
+          ## read-only root; a new file in the read-only checkout or home does not)
+          { docker run --rm --entrypoint cat shinyt2t:2026.10 /usr/local/lib/R/etc/Renviron.site
+            printf '## api-mode (ops/deploy.sh): the data layer is the t2api service\nT2_API_URL=http://t2api:8080\nT2_CONTACT_URL=http://t2api:8080/v1/contact\n'; } > conf/t2-api-mode.Renviron.site
           cp docker-compose.yml "docker-compose.yml.pre-apimode-$stamp"
           python3 - "$svc" <<'PY'
 import re, sys
@@ -126,9 +134,11 @@ new = block
 new = re.sub(r'(?m)^      - /scratch/shinyusb/T2-data-[0-9]+/tcga\.db:[^\n]*\n', '', new)
 new = re.sub(r'(?m)^      - /scratch/shinyusb/T2-data-[0-9]+/datasets:[^\n]*\n', '', new)
 env = ('    ## api-mode (2026-10-11): the data layer is the t2api service on this network; no\n'
-       '    ## database files are mounted (t2_api_client.R); the contact form posts to the service too\n'
-       '    environment:\n      T2_API_URL: http://t2api:8080\n      T2_CONTACT_URL: http://t2api:8080/v1/contact\n')
-new = new.replace('    volumes:\n', env + '    volumes:\n', 1)
+       '    ## database files are mounted (t2_api_client.R); the contact form posts to the service too.\n'
+       '    ## Shiny Server does not pass the container environment to R: the variables are in the\n'
+       '    ## Renviron.site mounted below (conf/t2-api-mode.Renviron.site = the image file + them)\n')
+renv = '      - ./conf/t2-api-mode.Renviron.site:/usr/local/lib/R/etc/Renviron.site:ro\n'
+new = new.replace('    volumes:\n', env + '    volumes:\n' + renv, 1)
 open('docker-compose.yml', 'w').write(c.replace(block, new, 1)); print(svc + ': api-mode set, data volumes removed')
 PY
           docker compose config --quiet && docker compose up -d "$svc"

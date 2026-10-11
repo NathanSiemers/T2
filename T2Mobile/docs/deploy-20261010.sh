@@ -46,17 +46,27 @@ nginx)     ## 4. /T2/ -> the pool; keep /T2T/ and /T2Tc/ for links in circulatio
     python3 - <<'PY'
 s = open('nginx.conf').read()
 old = "    location /T2/      { set $app shiny-t2;      proxy_pass http://$app:3838; }\n"
+norewrite = """    location /T2/ {
+        set $app haproxy-t2tc;
+        proxy_pass http://$app:8080;
+"""
 new = """    ## /T2/ is the new app (T2T code) served by the pool since 2026-10-10; the old app is archived
     location /T2/ {
         set $app haproxy-t2tc;
+        ## the pool's Shiny Server serves the app under /T2Tc (conf/T2Tc.conf): forward /T2/... as
+        ## /T2Tc/...; the browser stays on /T2/ (the app uses relative URLs, the websocket too)
+        rewrite ^/T2/(.*)$ /T2Tc/$1 break;
         proxy_pass http://$app:8080;
         proxy_cookie_path / /T2/;
         proxy_cookie_flags T2TC secure samesite=lax;
     }
 """
-if new.strip() in s: print("nginx.conf: /T2/ already points at the pool")
+if "rewrite ^/T2/(.*)$ /T2Tc/$1 break;" in s: print("nginx.conf: /T2/ already points at the pool with the rewrite")
 elif old in s: open('nginx.conf', 'w').write(s.replace(old, new, 1)); print("nginx.conf: /T2/ now points at the pool")
-else: raise SystemExit("nginx.conf: neither the old nor the new /T2/ block found; edit by hand")
+elif norewrite in s:   # the 2026-10-11 first version: the pool only knows /T2Tc, so without the rewrite /T2/ was a 404
+    i = s.index(norewrite); j = s.index("    }\n", i) + len("    }\n")
+    open('nginx.conf', 'w').write(s[:i] + new + s[j:]); print("nginx.conf: rewrite added to the /T2/ block")
+else: raise SystemExit("nginx.conf: no /T2/ block found; edit by hand")
 PY
     ## the site config lives at /etc/nginx/conf.d/nginx.conf in the container (Dockerfile); the
     ## top-level /etc/nginx/nginx.conf is the image's stock file and must not be replaced.

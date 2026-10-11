@@ -77,6 +77,27 @@ check)
       -e NOT_CRAN=true -e CHROMOTE_CHROME=/home/rstudio/R/T2-devdata/chrome/chrome-headless-shell-linux64/chrome-headless-shell \
       -e T2_SITE_URL=https://www.fiveprime.org/T2/ --entrypoint Rscript rstudio:2026.03 test_browser_suite.R \
       /home/rstudio/R/T2-devdata/screenshots/shiny-live 2>&1 | grep -E "PASS|FAIL|Error|done" ;;
+retire-t2)   ## after the archive step: take the old shiny-t2 out of the compose file and of scripts/deploy.sh
+    cd "$PUB"
+    python3 - <<'PY'
+import re, shutil, datetime
+stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M')
+c = open('docker-compose.yml').read()
+if re.search(r'(?m)^  shiny-t2:\n', c):
+    shutil.copy('docker-compose.yml', 'docker-compose.yml.pre-retire-' + stamp)
+    m = re.search(r'(?ms)^  shiny-t2:\n.*?(?=^  ## |^  [a-z][a-z0-9-]*:\n)', c)
+    block = m.group(0)
+    c = c.replace(block, ''.join('  ## ' + l if l.strip() else l for l in block.splitlines(True)), 1)
+    open('docker-compose.yml', 'w').write(c); print('docker-compose.yml: shiny-t2 commented out (backup docker-compose.yml.pre-retire-%s)' % stamp)
+else: print('docker-compose.yml: shiny-t2 already gone')
+d = open('scripts/deploy.sh').read()
+d2 = d.replace('    T2) echo shiny-t2 ;; T2T)', '    T2T)').replace('    T2) echo 3851 ;; AllNets)', '    AllNets)').replace('set -- T2 T2T AllNets', 'set -- T2T AllNets')
+d2 = d2.replace('##     scripts/deploy.sh <App> [<App> ...]    # T2 T2T AllNets', '##     scripts/deploy.sh <App> [<App> ...]    # T2T AllNets')
+if d2 != d:
+    shutil.copy('scripts/deploy.sh', 'scripts/deploy.sh.pre-retire-' + stamp); open('scripts/deploy.sh', 'w').write(d2); print('scripts/deploy.sh: T2 entry removed')
+else: print('scripts/deploy.sh: no T2 entry')
+PY
+    docker compose config --quiet && echo "compose file still valid" ;;
 rollback-service)
     last=$(docker image ls --format '{{.Repository}}:{{.Tag}} {{.CreatedAt}}' | grep '^t2api:pre-' | sort -k2 -r | head -1 | cut -d' ' -f1)
     [ -n "$last" ] || { echo "no t2api:pre-* image"; exit 1; }

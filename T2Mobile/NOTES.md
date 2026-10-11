@@ -1151,3 +1151,30 @@ switch: the site config lives at `/etc/nginx/conf.d/nginx.conf` in the container
 top-level file is the image's); the pool's Shiny Server serves only the path in its conf, so
 `/T2/` is rewritten to `/T2Tc/` on the way in (and `conf/T2Tc.conf` declares `/T2` for the
 next pool restart); `/T2T/` and `/T2Tc/` redirect to `/T2/`.
+
+**api-mode, 2026-10-11 late evening (Nathan: "implement and test api-mode").** The sites now read
+through the service: `ops/deploy.sh api-mode canary|pool|off`. The canary (`shiny-t2t`, which
+serves nobody since `/T2T/` redirects, reachable on `127.0.0.1:3857/T2T/`) first died with
+"Could not connect to database: unable to open database file": **Shiny Server starts its R
+workers with its own environment, so a compose `environment:` never reaches the app** — it
+fell back to file mode with the data volumes gone. A file mounted into the read-only
+checkout or the shiny user's home needs a mountpoint the read-only root cannot create, so
+the two variables ride in a copy of the image's `Renviron.site` plus two lines
+(`conf/t2-api-mode.Renviron.site`, mounted over `/usr/local/lib/R/etc/Renviron.site`). Canary:
+Chrome suite 27/27, the contact form in the page, no data volumes. Then the pool: four
+instances recreated (about a minute of `/T2/` downtime), no data volumes, the live page
+shows the contact form; the live Chrome check (`ops/test.sh browser-live`): **ALL PASS, 27
+checks**, 2 min 9 s — the public site runs over the service. Rollback is `api-mode off`
+(restores the oldest `docker-compose.yml.pre-apimode-*`, the file-mode one). What it
+changes for a visitor: the variable menu gains ten clinical columns (`OS.time` …) and the
+CSV column order differs; the website has a contact form. The databases are still mounted
+by nothing but `t2api` now — a database deploy is `ops/deploy.sh data DIR` and the sites
+follow the service's version by themselves.
+
+**The test environment** (Nathan: "with a little luck the work you are doing can make a
+durable test environment"): `ops/test.sh <suite|all>` is the one entry point — `go`, `equiv`,
+`app`, `app-service`, `browser-files`, `browser-service`, `fuzz`, `swift` in `all`;
+`browser-live`, `browser-canary`, `ios [device]`, `dev-up` on demand — each suite where it
+belongs, logs in `/scratch/nathan/R/T2-devdata/logs/<date-time>/`, screenshots in
+`T2-devdata/screenshots/<mode>/`. A Sonnet agent runs it ("ops/test.sh all, report the
+verdict lines and any FAIL"). The dev data directory's README describes its contents.

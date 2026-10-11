@@ -79,6 +79,19 @@ on the Mac, Xcode 27 / iPhone 18 Pro).
 after approval; see the log entry "App Store listing"). Privacy and support pages live at
 fiveprime.org/t2app/; the service logs no successful request.
 
+**2026-10-11 (~21:30 PDT), the production switch is live.** Nathan ran `docs/deploy-20261010.sh`
+steps `service`, `data`, `code`, `nginx` (the classifier refuses production deploys to Claude).
+`https://fiveprime.org/T2/` is the new app served by the pool (Nginx forwards `/T2/…` to the
+pool as `/T2Tc/…`, the only path its Shiny Server knows — the first try without that rewrite
+was a 404; and a first copy went to the wrong path in the container, caught by `nginx -t`);
+`/T2T/` and `/T2Tc/` redirect to `/T2/` ("all pointing to the same place"). The service
+(`t2api:2026.10`, rollback tag `pre-sources-20261010`) and the sites read
+`/scratch/shinyusb/T2-data-20261010/` (the Toil copy with the data-source keys). Still to do by
+Nathan: step `archive` (stop/remove `shiny-t2`, move `/scratch/shinyusb/T2`, stop `shiny-t2t`
+too, edit the compose file and `scripts/deploy.sh`), `cd /scratch/Docker/Nginx && docker
+compose up -d --build` at a quiet moment (so the container's config survives a recreate),
+the contact scripts to `~/bin` (`ops/contact/README.md`), optionally `api-mode`.
+
 **2026-10-10, merged.** Apple reviews the uploaded build, not the branch, so `post-1.0` was
 fast-forwarded into `main` (3c2c042) and the submitted code is tagged **`v1.0-submitted`**
 (425927d). **When Apple answers** — rejection: hotfix branch from the tag, smallest fix, Mac

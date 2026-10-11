@@ -79,18 +79,28 @@ on the Mac, Xcode 27 / iPhone 18 Pro).
 after approval; see the log entry "App Store listing"). Privacy and support pages live at
 fiveprime.org/t2app/; the service logs no successful request.
 
-**2026-10-11 (~21:30 PDT), the production switch is live.** Nathan ran `docs/deploy-20261010.sh`
-steps `service`, `data`, `code`, `nginx` (the classifier refuses production deploys to Claude).
-`https://fiveprime.org/T2/` is the new app served by the pool (Nginx forwards `/T2/…` to the
-pool as `/T2Tc/…`, the only path its Shiny Server knows — the first try without that rewrite
-was a 404; and a first copy went to the wrong path in the container, caught by `nginx -t`);
-`/T2T/` and `/T2Tc/` redirect to `/T2/` ("all pointing to the same place"). The service
-(`t2api:2026.10`, rollback tag `pre-sources-20261010`) and the sites read
-`/scratch/shinyusb/T2-data-20261010/` (the Toil copy with the data-source keys). Still to do by
-Nathan: step `archive` (stop/remove `shiny-t2`, move `/scratch/shinyusb/T2`, stop `shiny-t2t`
-too, edit the compose file and `scripts/deploy.sh`), `cd /scratch/Docker/Nginx && docker
-compose up -d --build` at a quiet moment (so the container's config survives a recreate),
-the contact scripts to `~/bin` (`ops/contact/README.md`), optionally `api-mode`.
+**State at the end of 2026-10-11 (all of it in `main`, head 3d17d29; written for a session
+that starts cold).** The production switch is complete and verified:
+`https://fiveprime.org/T2/` is the new app (the merged `post-1.0` work) served by the T2Tc
+pool, **reading its data through the t2api service (api-mode)**; `/T2T/` and `/T2Tc/` redirect
+to `/T2/`; the old `shiny-t2` is gone (`/scratch/shinyusb/T2.archive-20261010`), `shiny-t2t`
+is the api-mode canary on `127.0.0.1:3857`; the service (`t2api:2026.10`) alone mounts the
+data, `/scratch/shinyusb/T2-data-20261010/` (the Toil copy with the data-source keys); the
+Nginx image was rebuilt with the new site config; the hardened contact scripts are in
+`~/bin` and run from cron. The live Chrome suite passes 27/27 over the service.
+**How to operate:** `ops/deploy.sh <step>` (status, service, data DIR, code, nginx,
+nginx-rebuild, pool-restart, fix-links, api-mode canary|pool|off, retire-t2, check,
+rollback-service, rollback-nginx) — Claude may run it (allowed by path in Nathan's settings;
+say what a step does first); `ops/test.sh <suite|all>` is the test environment (a Sonnet
+agent runs it). Lessons of the switch, all now encoded in those scripts: the site config is
+`/etc/nginx/conf.d/nginx.conf` in the Nginx container; the pool's Shiny Server serves only
+the path in its conf (so `/T2/` is rewritten to `/T2Tc/`); never remove the checkout's
+`tcga.db`/`datasets` links; Shiny Server passes no container environment to R.
+**Open:** Apple's verdict on 1.0 (tag `v1.0-submitted`; playbook in the memory file
+`apple-review-outcome` and below); `CODE-LAYOUT.md` — Nathan will read the file-structure
+assessment when there is budget (he said 24 h); the iPhone app could consume the service's
+group/exclusion lists instead of deriving them (follow-up, needs a Mac build); the standby
+provider decision (`docs/FAILOVER-PLAN.md`); the Model screen.
 
 **2026-10-10, merged.** Apple reviews the uploaded build, not the branch, so `post-1.0` was
 fast-forwarded into `main` (3c2c042) and the submitted code is tagged **`v1.0-submitted`**

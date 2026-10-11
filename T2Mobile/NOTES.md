@@ -79,7 +79,16 @@ on the Mac, Xcode 27 / iPhone 18 Pro).
 after approval; see the log entry "App Store listing"). Privacy and support pages live at
 fiveprime.org/t2app/; the service logs no successful request.
 
-**Branch `post-1.0`** (2026-10-09): Nathan's rule while 1.0 is in review — the code given to
+**2026-10-10, merged.** Apple reviews the uploaded build, not the branch, so `post-1.0` was
+fast-forwarded into `main` (3c2c042) and the submitted code is tagged **`v1.0-submitted`**
+(425927d). **When Apple answers** — rejection: hotfix branch from the tag, smallest fix, Mac
+tests, new build (Nathan unlocks the keychain, `ios/testflight.sh`), new submission with
+`asc.py`; approval: automatic release, invite Nathalie, the next build from main bumped to
+1.1. Never upload a build while a submission is pending. The production switch of the sites
+and the service (`docs/deploy-20261010.sh`) is Nathan's to run: the auto-mode classifier
+refuses production deploys to Claude. (The same playbook is in Claude's memory.)
+
+**Branch `post-1.0`** (2026-10-09, now merged): Nathan's rule while 1.0 is in review — the code given to
 Apple (`main` at 425927d) is not touched; everything after goes on this branch and he merges.
 On it: two UI-test fixes for 4.7" screens. **Simulator matrix 2026-10-09** (`ios/tools/sim_matrix.sh`,
 log entry "Simulator matrix"): all six UI tests green on iPhone SE (3rd gen), 13 mini, 17e,

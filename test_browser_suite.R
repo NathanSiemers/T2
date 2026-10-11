@@ -26,7 +26,19 @@ app <- if (nzchar(site)) {
   AppDriver$new(".", name = "t2-suite", load_timeout = 180000, timeout = 120000, height = 1000, width = 1400, wait = TRUE)
 }
 on.exit(app$stop(), add = TRUE)
+LIVE <- nzchar(site)      # a production site has no Shiny test mode: read everything from the page
 shot <- function(name) if (!is.na(shot_dir)) app$get_screenshot(file.path(shot_dir, paste0(name, ".png")))
+## an input's current value: from the server in test mode, from the widget on a live site
+input_value <- function(id) {
+  if (!LIVE) return(app$get_value(input = id))
+  v <- app$get_js(sprintf("(function(){var e=$('#%s'); if(e.length && e[0].selectize) return e[0].selectize.getValue();
+    var r=$('input[name=\"%s\"]:checked'); if(r.length) return r.map(function(){return this.value}).get();
+    if(e.length) return e.val(); return null;})()", id, id))
+  v <- unlist(v); if (is.null(v)) return(NULL); v[nzchar(v)]
+}
+## an output's text: the server's value in test mode, the rendered text on a live site
+output_text <- function(id) if (LIVE) text_of(id) else app$get_value(output = id)
+tab_value <- function() if (LIVE) app$get_js("$('#tabs li.active a').attr('data-value')") else tab_value()
 settle <- function(ms = 1500) { Sys.sleep(ms / 1000); app$wait_for_idle(500, timeout = 120000) }
 js <- function(code) app$get_js(code)
 setv <- function(id, value) app$run_js(sprintf("Shiny.setInputValue(%s, %s, {priority: 'event'})", jsonlite::toJSON(id, auto_unbox = TRUE), jsonlite::toJSON(value, auto_unbox = length(value) == 1)))
@@ -37,9 +49,9 @@ plot_now <- function(btn = "plot_btn", wait = 6000) { app$click(btn); settle(wai
 
 ## ---- 01 the Select tab as it opens ----
 settle(3000)
-ok(identical(app$get_value(input = "tabs"), "select"), "opens on the Select tab")
-ok(identical(app$get_value(input = "dataset"), "TCGA"), "TCGA is the default data set")
-co <- app$get_value(input = "cohort")
+ok(identical(tab_value(), "select"), "opens on the Select tab")
+ok(identical(input_value("dataset"), "TCGA"), "TCGA is the default data set")
+co <- input_value("cohort")
 ok(length(co) == 9 && "COAD" %in% co, sprintf("opens on the nine default cohorts (%s...)", paste(head(co, 3), collapse = ", ")))
 ok(setequal(choices("preset_group"), c("", "Primary tumors only", "Metastatic samples only", "Normal tissue only")),
    "the Samples radio offers TCGA's three groups and 'All samples'")
@@ -49,8 +61,8 @@ shot("01-select")
 
 ## ---- 02 the default plot: box plot by cohort ----
 plot_now()
-ok(identical(app$get_value(input = "tabs"), "plot") && img_ok("main_plot"), "Plot: the default box plot is drawn")
-s <- app$get_value(output = "plot_summary")
+ok(identical(tab_value(), "plot") && img_ok("main_plot"), "Plot: the default box plot is drawn")
+s <- output_text("plot_summary")
 ok(grepl("Total samples after filters", s) && grepl("Samples: TCGA Pan-Cancer 2018\\.", s), "the summary names the sample choice (whole collection)")
 shot("02-plot-default")
 
@@ -63,7 +75,7 @@ ok(!("Tumor samples only" %in% ex) && "Exclude tumors of heme origin" %in% ex,
 app$set_inputs(preset_excl = "Exclude tumors of heme origin"); settle(500)
 shot("03-select-presets")
 plot_now()
-s <- app$get_value(output = "plot_summary")
+s <- output_text("plot_summary")
 ok(grepl("Samples: TCGA Pan-Cancer 2018; Primary tumors only; Exclude tumors of heme origin", s), "the plot summary names group and exclusion")
 n_primary <- as.integer(sub(".*Total samples after filters: (\\d+).*", "\\1", s))
 ok(n_primary > 0 && n_primary < 12804, sprintf("fewer samples than the whole collection (%d)", n_primary))
@@ -75,29 +87,29 @@ app$set_inputs(preset_group = "", preset_excl = character(0)); settle(500)
 setv("x", "CD8A"); setv("y", "FOXP3"); settle(1500)
 plot_now()
 ok(img_ok("main_plot"), "scatter plot CD8A vs FOXP3 drawn")
-ok(grepl("FOXP3", app$get_value(output = "plot_summary")), "summary lists the Y variable")
+ok(grepl("FOXP3", output_text("plot_summary")), "summary lists the Y variable")
 shot("05-plot-scatter")
 
 ## ---- 05 a part of a collection as data source: GTEx ----
 app$set_inputs(tabs = "select"); settle(500)
 setv("dataset", "tcgatargetgtex|GTEx"); settle(4000)
-ok(identical(app$get_value(input = "dataset"), "tcgatargetgtex|GTEx"), "switched to TCGA-TARGET-GTEx (Toil): GTEx")
+ok(identical(input_value("dataset"), "tcgatargetgtex|GTEx"), "switched to TCGA-TARGET-GTEx (Toil): GTEx")
 ok(grepl("\u2014 GTEx", text_of("app_title")), "the page title names the part")
 ok(length(choices("preset_group")) == 0 && setequal(choices("preset_excl"), c("Exclude cell lines", "Exclude tumors of heme origin")),
    "within GTEx: no groups, the two exclusions")
-ok(identical(app$get_value(input = "x"), "CD8A") && identical(app$get_value(input = "y"), "FOXP3"), "X and Y were carried over (sticky picks)")
+ok(identical(input_value("x"), "CD8A") && identical(input_value("y"), "FOXP3"), "X and Y were carried over (sticky picks)")
 shot("06-select-gtex")
 app$set_inputs(tabs = "filter"); settle(2500)
-cnt <- app$get_value(output = "filter_count")
+cnt <- output_text("filter_count")
 ok(grepl("of 7,862", cnt), paste("the Filter tab's universe is the GTEx part:", cnt))
-vars <- app$get_value(input = "th_tcgatargetgtex_GTEx-vars")
+vars <- input_value("th_tcgatargetgtex_GTEx-vars")
 ok(length(vars) >= 2 && !("study" %in% vars), "its panels are the picked variables; 'study' (one value in GTEx) is not one")
 shot("07-filter-gtex")
 app$set_inputs(tabs = "select"); settle(500)
 app$set_inputs(preset_excl = "Exclude cell lines"); settle(500)
 setv("x", "cohort"); settle(1000)
 plot_now(wait = 8000)
-s <- app$get_value(output = "plot_summary")
+s <- output_text("plot_summary")
 ok(img_ok("main_plot") && grepl("Samples: GTEx; Exclude cell lines", s), "GTEx tissues without cell lines, plotted and named")
 ok(as.integer(sub(".*Total samples after filters: (\\d+).*", "\\1", s)) <= 7429, "at most the 7,429 normal tissues")
 shot("08-plot-gtex")
@@ -107,7 +119,7 @@ app$set_inputs(tabs = "select"); settle(500)
 setv("dataset", "TCGA"); settle(4000)
 setv("x", "OS"); setv("y", "MKI67"); settle(1500)
 plot_now(wait = 8000)
-ok(img_ok("main_plot") && grepl("MKI67", app$get_value(output = "plot_summary")), "Kaplan-Meier plot by MKI67 tertiles drawn")
+ok(img_ok("main_plot") && grepl("MKI67", output_text("plot_summary")), "Kaplan-Meier plot by MKI67 tertiles drawn")
 shot("09-plot-survival")
 app$set_inputs(tabs = "select"); settle(500)
 setv("x", "sample_type"); setv("y", "gender"); setv("color", ""); settle(1500)
@@ -119,7 +131,7 @@ shot("10-plot-counts")
 app$set_inputs(tabs = "select"); settle(500)
 setv("x", "cohort"); setv("y", "CD8A"); setv("color", "sample_type"); settle(1500)
 app$set_inputs(tabs = "publish"); settle(7000)
-ok(img_ok("pub_preview") && grepl("in", app$get_value(output = "pub_readout")), "Publish preview rendered with its readout")
+ok(img_ok("pub_preview") && grepl("in", output_text("pub_readout")), "Publish preview rendered with its readout")
 shot("11-publish")
 
 ## ---- 08 About: data types, clinical variables, contact form ----

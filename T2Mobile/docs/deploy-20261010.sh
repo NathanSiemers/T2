@@ -37,7 +37,8 @@ api-mode)  ## 3b. (optional) the sites read data through the service, no databas
     echo "add to shiny-t2t and shiny-t2tc in docker-compose.yml:"
     echo "    environment: {T2_API_URL: http://t2api:8080, T2_CONTACT_URL: http://t2api:8080/v1/contact}"
     echo "then: docker compose up -d shiny-t2t shiny-t2tc" ;;
-nginx)     ## 4. /T2/ -> the pool; keep /T2T/ and /T2Tc/ for links in circulation. Idempotent:
+nginx)     ## 4. /T2/ -> the pool (forwarded as /T2Tc/); /T2T/ and /T2Tc/ redirect to /T2/ (one address;
+           ##    the host nginx.conf carries both, 2026-10-11). Idempotent:
            ##    the backup is the config the running image was built with (never overwritten),
            ##    the edit is skipped when already made.
     cd /scratch/Docker/Nginx
@@ -75,7 +76,9 @@ PY
     docker cp nginx.conf nginx-nginx-1:/etc/nginx/conf.d/nginx.conf && docker exec nginx-nginx-1 nginx -t && docker exec nginx-nginx-1 nginx -s reload
     ## make it survive a container recreate: rebuild the image at a quiet moment (restarts
     ## nginx for a few seconds): cd /scratch/Docker/Nginx && docker compose up -d --build
-    curl -s -o /dev/null -w 'https://www.fiveprime.org/T2/ -> %{http_code}\n' https://www.fiveprime.org/T2/ ;;
+    for u in https://www.fiveprime.org/T2/ https://fiveprime.org/T2/ https://www.fiveprime.org/T2T/ https://www.fiveprime.org/T2Tc/; do
+        curl -s -o /dev/null -w "$u -> %{http_code} %{redirect_url}\n" "$u"   # /T2/ 200; the old names 301 -> /T2/
+    done ;;
 nginx-restore)  ## put the image's stock top-level nginx.conf back in the container (after a wrong copy)
     docker run --rm --entrypoint cat nginx-nginx /etc/nginx/nginx.conf > /tmp/nginx-top.conf
     grep -q "include /etc/nginx/conf.d" /tmp/nginx-top.conf && docker cp /tmp/nginx-top.conf nginx-nginx-1:/etc/nginx/nginx.conf
@@ -84,7 +87,8 @@ archive)   ## 5. stop the old app and archive its directory (code + the July dat
     cd /scratch/Docker/ShinyPublic && docker compose stop shiny-t2 && docker compose rm -f shiny-t2
     mv /scratch/shinyusb/T2 /scratch/shinyusb/T2.archive-20261010   # (PRODUCTION-SWITCH.md says the same)
     rm -f /scratch/shinyusb/T2T/tcga.db /scratch/shinyusb/T2T/datasets   # stale symlinks into the old directory
-    echo "now comment the shiny-t2 service out of docker-compose.yml and the T2 entry out of scripts/deploy.sh" ;;
+    echo "now comment the shiny-t2 service out of docker-compose.yml and the T2 entry out of scripts/deploy.sh"
+    echo "shiny-t2t (the single instance) serves nobody since /T2T/ redirects to /T2/: stop it too when convenient (docker compose stop shiny-t2t)" ;;
 check)     ## 6. the browser suite against the live site
     docker run --rm --network shinypublic -u rstudio -v /scratch/nathan/R:/home/rstudio/R -w /home/rstudio/R/T2 \
       -e NOT_CRAN=true -e CHROMOTE_CHROME=/home/rstudio/R/T2-devdata/chrome/chrome-headless-shell-linux64/chrome-headless-shell \

@@ -66,9 +66,11 @@ Nginx configuration and the running containers, so they wait for Nathan's "deplo
    rewrite `/T2/` is Shiny Server's "Page not found" (what happened on the first try,
    2026-10-11). `conf/T2Tc.conf` now also declares `location /T2`, which takes effect at the
    next pool restart and makes the rewrite unnecessary (keep it anyway; it is harmless).
-   (Or `set $app shiny-t2t; proxy_pass http://$app:3838;` for the single instance.) Keep
-   `/T2T/` and `/T2Tc/` as they are for now, so links in circulation keep working; retire
-   them later with `return 301 /T2/;`. Then `docker exec nginx-nginx-1 nginx -t && docker
+   (Or `set $app shiny-t2t; proxy_pass http://$app:3838;` for the single instance.)
+   Nathan, 2026-10-11: "/T2, /T2T, /T2Tc should all be pointing to the same place" — so
+   `/T2T/…` and `/T2Tc/…` now redirect (301) to `/T2/…`: one address, one session cookie,
+   links in circulation keep working; the single `shiny-t2t` instance serves nobody and can
+   be stopped with the old `shiny-t2`. Then `docker exec nginx-nginx-1 nginx -t && docker
    exec nginx-nginx-1 nginx -s reload`.
 
 5. **Stop and archive the old app.** `docker compose stop shiny-t2 && docker compose rm

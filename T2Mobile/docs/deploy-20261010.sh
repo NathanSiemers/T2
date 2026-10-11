@@ -86,7 +86,10 @@ nginx-restore)  ## put the image's stock top-level nginx.conf back in the contai
 archive)   ## 5. stop the old app and archive its directory (code + the July databases, 60 GB)
     cd /scratch/Docker/ShinyPublic && docker compose stop shiny-t2 && docker compose rm -f shiny-t2
     mv /scratch/shinyusb/T2 /scratch/shinyusb/T2.archive-20261010   # (PRODUCTION-SWITCH.md says the same)
-    rm -f /scratch/shinyusb/T2T/tcga.db /scratch/shinyusb/T2T/datasets   # stale symlinks into the old directory
+    ## DO NOT remove /scratch/shinyusb/T2T/tcga.db and /datasets: on the host they look like stale
+    ## symlinks into the old T2 directory, but inside the containers ../T2/ is the data mount and
+    ## the app reaches its databases through them (2026-10-11: removing them broke every plot on
+    ## the live site for ~15 minutes; ops/deploy.sh fix-links recreates them)
     echo "now comment the shiny-t2 service out of docker-compose.yml and the T2 entry out of scripts/deploy.sh"
     echo "shiny-t2t (the single instance) serves nobody since /T2T/ redirects to /T2/: stop it too when convenient (docker compose stop shiny-t2t)" ;;
 check)     ## 6. the browser suite against the live site

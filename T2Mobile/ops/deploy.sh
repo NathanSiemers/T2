@@ -98,6 +98,45 @@ if d2 != d:
 else: print('scripts/deploy.sh: no T2 entry')
 PY
     docker compose config --quiet && echo "compose file still valid" ;;
+fix-links)   ## the served checkout reaches the databases through two symlinks that resolve INSIDE the
+             ## containers to the data mount (/srv/shiny-server/T2/ = the T2-data directory); on the host
+             ## they look stale (they point into the archived T2 directory) -- never remove them
+    cd /scratch/shinyusb/T2T && ln -sfn ../T2/tcga.db tcga.db && ln -sfn ../T2/datasets datasets && ls -la tcga.db datasets
+    docker exec shinypublic-shiny-t2tc-1 ls -la /srv/shiny-server/T2T/tcga.db /srv/shiny-server/T2T/datasets/ | head -3 ;;
+api-mode)    ## the sites read through the service instead of the database files
+             ##   api-mode canary   shiny-t2t only (serves nobody since /T2T/ redirects; test it on 127.0.0.1:3857/T2T/)
+             ##   api-mode pool     the T2Tc pool (= the public /T2/)
+             ##   api-mode off      back to the files (restores the backup of the compose file)
+    cd "$PUB"; what=${2:?usage: deploy.sh api-mode canary|pool|off}
+    case $what in
+    off)  last=$(ls -t docker-compose.yml.pre-apimode-* 2>/dev/null | head -1); [ -n "$last" ] || { echo "no backup"; exit 1; }
+          cp "$last" docker-compose.yml && docker compose up -d shiny-t2t shiny-t2tc && echo "restored $last" ;;
+    canary|pool)
+          svc=shiny-t2t; [ "$what" = pool ] && svc=shiny-t2tc
+          cp docker-compose.yml "docker-compose.yml.pre-apimode-$stamp"
+          python3 - "$svc" <<'PY'
+import re, sys
+svc = sys.argv[1]
+c = open('docker-compose.yml').read()
+m = re.search(r'(?ms)^  %s:\n.*?(?=^  ## |^  [a-z][a-z0-9-]*:\n|\Z)' % re.escape(svc), c)
+block = m.group(0)
+if 'T2_API_URL' in block: print(svc + ': already in api-mode'); sys.exit(0)
+new = block
+# the data volumes go (the app needs no files over the service); the code mounts stay
+new = re.sub(r'(?m)^      - /scratch/shinyusb/T2-data-[0-9]+/tcga\.db:[^\n]*\n', '', new)
+new = re.sub(r'(?m)^      - /scratch/shinyusb/T2-data-[0-9]+/datasets:[^\n]*\n', '', new)
+env = ('    ## api-mode (2026-10-11): the data layer is the t2api service on this network; no\n'
+       '    ## database files are mounted (t2_api_client.R); the contact form posts to the service too\n'
+       '    environment:\n      T2_API_URL: http://t2api:8080\n      T2_CONTACT_URL: http://t2api:8080/v1/contact\n')
+new = new.replace('    volumes:\n', env + '    volumes:\n', 1)
+open('docker-compose.yml', 'w').write(c.replace(block, new, 1)); print(svc + ': api-mode set, data volumes removed')
+PY
+          docker compose config --quiet && docker compose up -d "$svc"
+          sleep 25
+          if [ "$what" = canary ]; then curl -s -o /dev/null -w 'canary http://127.0.0.1:3857/T2T/ -> %{http_code}\n' http://127.0.0.1:3857/T2T/
+          else curl -s -o /dev/null -w 'https://www.fiveprime.org/T2/ -> %{http_code}\n' https://www.fiveprime.org/T2/; fi
+          echo "rollback: $0 api-mode off" ;;
+    esac ;;
 rollback-service)
     last=$(docker image ls --format '{{.Repository}}:{{.Tag}} {{.CreatedAt}}' | grep '^t2api:pre-' | sort -k2 -r | head -1 | cut -d' ' -f1)
     [ -n "$last" ] || { echo "no t2api:pre-* image"; exit 1; }

@@ -79,8 +79,10 @@ Nginx configuration and the running containers, so they wait for Nathan's "deplo
    (the directory also holds the July database files, 60 GB: delete them once the new
    files have been in production for a while; `/scratch/shinyusb/T2.legacy` and
    `T2.22may2023` are older archives of the same kind). `/scratch/shinyusb/T2T/tcga.db` and
-   `datasets` are symlinks into the old `T2` directory: remove them (the containers mount
-   the data directly).
+   `datasets` are symlinks `../T2/tcga.db` and `../T2/datasets`: **keep them** — inside the
+   containers `../T2/` is the bind mount of the live data directory, and the app opens
+   `tcga.db` and `datasets/` relative to its own directory through these links (removing
+   them on 2026-10-11 broke every plot until `ops/deploy.sh fix-links` put them back).
 
 6. **Check** /T2/ in a browser (Select, a plot, Filter, Publish, About with the contact
    form), the pool health in `docker ps`, Nginx's error log.

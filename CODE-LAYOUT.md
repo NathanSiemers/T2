@@ -33,6 +33,7 @@ database_connection_shiny.R → lib.R (which sources the rest) → input_validat
 | `TCGA/`, `TCGATARGETGTEX/`, `build_demo_dataset.R` | the dataset builders (see `T2Mobile/NOTES.md` and the memory notes on rebuilding) |
 | `default_filters.R` | the presets of every dataset (`T2_DEFAULT_FILTERS`), written into each database as `default_filters`; `Rscript default_filters.R check|write <db> <dataset>` |
 | `dataset_meta.R` | `Rscript dataset_meta.R show|set <db> key=value` |
+| `T2Mobile/ops/test.sh <suite>` | **the test environment, one entry point** (`all`, `go`, `equiv`, `app`, `app-service`, `browser-files`, `browser-service`, `browser-live`, `browser-canary`, `fuzz`, `swift`, `ios`, `dev-up`): runs each suite where it belongs and writes the logs to `/scratch/nathan/R/T2-devdata/logs/<date-time>/`; a Sonnet agent runs it. `T2Mobile/ops/deploy.sh <step>` is the production deploy script. |
 | `test_*.R` | headless tests: `test_app_sources.R` (data sources / presets in the app), `test_app_thanos.R` (Filter tab data path), `test_app_server.R`, `test_app_survival.R`, `test_t2_backend.R`, `test_gitr_api.R` (files vs service), `test_figure_export.R`, `test_multidataset.R`, `test_plot_style.R`; run in the rstudio container (`docker exec -w /home/rstudio/R/T2 r101101-rstudio-1 Rscript <test>`), with `T2_DATASETS_DIR` for other database copies |
 | `T2Mobile/` | the query service (Go), the iPhone app, the standby unit, their docs and `NOTES.md` |
 

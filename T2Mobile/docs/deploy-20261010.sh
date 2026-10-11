@@ -53,8 +53,18 @@ new = """    ## /T2/ is the new app (T2T code) served by the pool since 2026-10-
 """
 assert old in s; open('nginx.conf', 'w').write(s.replace(old, new, 1))
 PY
-    docker cp nginx.conf nginx-nginx-1:/etc/nginx/nginx.conf && docker exec nginx-nginx-1 nginx -t && docker exec nginx-nginx-1 nginx -s reload
+    ## the site config lives at /etc/nginx/conf.d/nginx.conf in the container (Dockerfile); the
+    ## top-level /etc/nginx/nginx.conf is the image's stock file and must not be replaced.
+    ## (2026-10-11: a first version copied to the top-level path; nginx -t caught it, the running
+    ## process was unaffected; the stock file was restored from the image -- see `nginx-restore`.)
+    docker cp nginx.conf nginx-nginx-1:/etc/nginx/conf.d/nginx.conf && docker exec nginx-nginx-1 nginx -t && docker exec nginx-nginx-1 nginx -s reload
+    ## make it survive a container recreate: rebuild the image at a quiet moment (restarts
+    ## nginx for a few seconds): cd /scratch/Docker/Nginx && docker compose up -d --build
     curl -s -o /dev/null -w 'https://www.fiveprime.org/T2/ -> %{http_code}\n' https://www.fiveprime.org/T2/ ;;
+nginx-restore)  ## put the image's stock top-level nginx.conf back in the container (after a wrong copy)
+    docker run --rm --entrypoint cat nginx-nginx /etc/nginx/nginx.conf > /tmp/nginx-top.conf
+    grep -q "include /etc/nginx/conf.d" /tmp/nginx-top.conf && docker cp /tmp/nginx-top.conf nginx-nginx-1:/etc/nginx/nginx.conf
+    docker exec nginx-nginx-1 nginx -t ;;
 archive)   ## 5. stop the old app and archive its directory (code + the July databases, 60 GB)
     cd /scratch/Docker/ShinyPublic && docker compose stop shiny-t2 && docker compose rm -f shiny-t2
     mv /scratch/shinyusb/T2 /scratch/shinyusb/T2.archive-20261010   # (PRODUCTION-SWITCH.md says the same)

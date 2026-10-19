@@ -1210,10 +1210,12 @@ which the bare-id rule had made tumors; now a bare-id TPM column is a tumor iff 
 Tumor file lists it). Around it: `default_filters.R` gained the `cptac` presets, `lib.R` and the
 Swift `PlotBuilder` the title words for `.prot`/`.phospho`, `clinical_descriptions.tsv` 294 CPTAC
 lines (service image rebuild), `sql_tests.R` its missing `source("t2_api_client.R")` (standalone
-runs had broken with api-mode). Not deployed: a deploy is a new `T2-data-<date>/` directory with
-`cptac.db` beside the others and `ops/deploy.sh data`, plus `ops/deploy.sh service` for the
-descriptions; the service's cache budget is 512 MB per dataset in a 4 GB container, so watch
-`docker stats` with four datasets. The iPhone app lists datasets from the service and needs no
+runs had broken with api-mode). Deployed 2026-10-19 by Nathan: `/scratch/shinyusb/T2-data-20261019/` (the served `tcga.db` and
+the two unchanged datasets hard-linked, `cptac.db` copied under a staging name, byte-compared and
+renamed into place), then `ops/deploy.sh service` (the descriptions), `data`, `code`; the live
+service lists four datasets and `ops/deploy.sh check` passes 27/27 (after its own fix: the check
+now names the live contact endpoint). The classifier of Claude's auto mode refuses every step
+that touches `/scratch/shinyusb`, so the deploy commands were handed to Nathan to run. The iPhone app lists datasets from the service and needs no
 change (the Swift edit is cosmetic and waits for the next build after 1.0's review).
 The integration run (equiv, app, app-service, browser-service, go, swift; logs in
 `T2-devdata/logs/cptac-20261018/`) found one thing, fixed: a dataset without a subtype stores

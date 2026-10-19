@@ -261,6 +261,9 @@ write_default_filters(con, "tcgatargetgtex")
 ## 7. probe_types + indexes + views (shared DDL from ../t2_views.R)
 ## ============================================================================
 say("building probe_types, indexes, views ...")
+## genes that are 0 in every sample have no stored row: out of probes/allprobes (4,328 in the
+## 2026-10 build; they were offered in the menu and answered as missing)
+say("probes with no data removed:", drop_t2_dataless_probes(con))
 set_t2_sparse(con, "rna", sparse = TRUE, default_value = 0)   # zeros are not stored
 finalize_t2_core(con)
 

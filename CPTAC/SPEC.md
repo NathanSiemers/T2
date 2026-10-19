@@ -65,7 +65,10 @@ An Ensembl id with no symbol would be kept under its id (none expected; log the 
 | mut | `TP53.mut` | 1 | 0 | factor | only the 1s stored; tested = all columns of the binary file |
 | fmut | `TP53.fmut` | 0 | – | factor | `tcgacati`: `Hugo_Symbol_aaChange_Variant_Classification` |
 
-No probe name may contain a dot other than the type suffix; assert. One probe name ↔ one type
+A typed probe's name must END in its suffix (assert); a bare rna name must not end in one. Dots
+inside a symbol (`AL627309.1`, 22,054 GENCODE clone-based names) are allowed: both readers try the
+text after the last dot as a type and fall back to `probe_types` (verified against the dev service
+2026-10-19: `AL627309.1` is served as rna; the Toil dataset has the same names). One probe name ↔ one type
 (a `.prot` name never appears in `tcgai` with another type); `probes.probe` UNIQUE.
 
 **rna**: `collapse_ensembl_to_hgnc(expr, map, from_log=TRUE, log_base=2, log_offset=1,

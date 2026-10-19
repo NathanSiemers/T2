@@ -47,11 +47,17 @@ data-stage)
     ## T2_DATA_BASE overrides the base directory for a dry run on scratch space
     base=${T2_DATA_BASE:-/scratch/shinyusb}
     date=${2:?usage: deploy.sh data-stage YYYYMMDD [name.db ...]   (files from $REPO/datasets/)}; shift 2
-    cur=$(grep -o '/scratch/shinyusb/T2-data-[0-9]*' "$PUB/docker-compose.yml" | head -1)
+    cur=$(grep -o '/scratch/shinyusb/T2-data-[0-9]*' "$PUB/docker-compose.yml" | sort -u)
+    [ "$(printf '%s\n' "$cur" | wc -l)" = 1 ] || { echo "the compose file names more than one T2-data directory:"; echo "$cur"; exit 1; }
     [ -d "$cur/datasets" ] || { echo "served data directory not found ($cur)"; exit 1; }
     new="$base/T2-data-$date"
     [ ! -e "$new" ] || { echo "$new exists; a staging directory is never reused"; exit 1; }
-    for f in "$@"; do [ -f "$REPO/datasets/$f" ] || { echo "no $REPO/datasets/$f"; exit 1; }; done
+    for f in "$@"; do
+        [ -f "$REPO/datasets/$f" ] || { echo "no $REPO/datasets/$f"; exit 1; }
+        ## a single-file copy of a WAL-mode db would miss the un-checkpointed pages
+        [ ! -e "$REPO/datasets/$f-wal" ] || { echo "$f has a -wal sidecar: checkpoint it first"; exit 1; }
+        jm=$(sqlite3 -readonly "$REPO/datasets/$f" "PRAGMA journal_mode;"); [ "$jm" = delete ] || { echo "$f: journal_mode is $jm, not delete"; exit 1; }
+    done
     mkdir -p "$new/datasets"
     ln "$cur/tcga.db" "$new/tcga.db"
     for p in "$cur"/datasets/*.db; do

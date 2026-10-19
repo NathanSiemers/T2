@@ -74,12 +74,9 @@ if (!"cptac" %in% ds) {
   cat("  cptac: title =", bc$title, "| label =", bc$label, "\n")
   ok(bc$roles$cohort_col == "cancer_type" && bc$roles$sampletype_col == "sample_type",
      "cptac roles: cancer_type / sample_type")
-  ## one probe of each data type: RNA is bare, the others carry their suffix
-  cc <- RSQLite::dbConnect(RSQLite::SQLite(), bc$path, flags = RSQLite::SQLITE_RO)
-  one <- function(suffix) DBI::dbGetQuery(cc, "SELECT probe FROM probes WHERE probe LIKE ? LIMIT 1",
-                                          params = list(paste0("%", suffix)))$probe[1]
-  pphos <- one(".phospho")
-  DBI::dbDisconnect(cc)
+  ## one probe of each data type: RNA is bare, the others carry their suffix. The phosphosite
+  ## comes from the bundle's variable menu (works over the files and over the service alike).
+  pphos <- grep("\\.phospho$", bc$mygenesplus, value = TRUE)[1]
   vars <- c("CD8A", "CD8A.prot", pphos, "TP53.mut", "TP53.fmut", "cohort", "sample_type", "OS", "OS.time")
   dc <- gitr(vars, dbfile = bc$path, roles = bc$roles)
   cat("  cptac rows:", nrow(dc), "| cols:", paste(intersect(vars, names(dc)), collapse = ", "), "\n")

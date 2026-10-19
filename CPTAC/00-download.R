@@ -90,8 +90,15 @@ for (i in seq_len(nrow(sel))) {
   } else cat(sprintf("[skip] %s\n", nm))
   if (grepl("\\.zip$", nm) && have(nm)) {
     d <- file.path(DATADIR, sub("\\.zip$", "", nm))
-    if (!dir.exists(d) || !length(list.files(d))) {
-      dir.create(d, FALSE, TRUE); utils::unzip(file.path(DATADIR, nm), exdir = d)
+    stamp <- file.path(d, ".unzipped")          # written after a COMPLETE extraction only
+    if (!file.exists(stamp)) {
+      ## untrusted archive: refuse any entry that could land outside d (zip slip)
+      ent <- utils::unzip(file.path(DATADIR, nm), list = TRUE)$Name
+      bad <- grepl("^/|^[A-Za-z]:|(^|/)\\.\\.(/|$)", ent)
+      if (any(bad)) stop(nm, ": refusing to unzip, entry outside the target: ", ent[bad][1])
+      unlink(d, recursive = TRUE); dir.create(d, FALSE, TRUE)
+      utils::unzip(file.path(DATADIR, nm), exdir = d)
+      writeLines(format(Sys.time()), stamp)
       cat("[unzip]", nm, "\n")
     }
   }

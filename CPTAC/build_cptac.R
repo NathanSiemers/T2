@@ -133,7 +133,8 @@ COH <- trimws(strsplit(Sys.getenv("CPTAC_COHORTS", paste(ALL_COH, collapse = ","
 TYPES <- trimws(strsplit(Sys.getenv("CPTAC_TYPES", "rna,prot,phospho,cnv,mut,fmut"), ",")[[1]])
 SUBSET_GENES <- as.integer(Sys.getenv("CPTAC_SUBSET_GENES", "0"))
 CHUNK <- as.integer(Sys.getenv("CPTAC_CHUNK", "2000"))
-stopifnot(all(COH %in% ALL_COH), all(TYPES %in% c("rna","prot","phospho","cnv","mut","fmut")))
+stopifnot(all(COH %in% ALL_COH), all(TYPES %in% c("rna","prot","phospho","cnv","mut","fmut")),
+          any(c("rna","prot","phospho","cnv","mut") %in% TYPES))   # the samples come from the matrix types
 STUDY <- c(BRCA="CPTAC-2", COAD="CPTAC-2", OV="CPTAC-2")
 study_of <- function(C) ifelse(C %in% names(STUDY), STUDY[C], "CPTAC-3")
 
@@ -312,6 +313,7 @@ NROWS <- c(); bump <- function(tbl, type, n) NROWS[paste(tbl, type)] <<- sum(NRO
 insert_mat <- function(M, type, keep) {
   sk <- sample_key[colnames(M)]; stopifnot(!anyNA(sk))
   nr <- nrow(M); tot <- 0
+  if (nr == 0) { bump("tcgai", type, 0); return(0) }
   for (lo in seq(1, nr, by = CHUNK)) {
     hi <- min(lo + CHUNK - 1L, nr)
     sub <- M[lo:hi, , drop = FALSE]
@@ -369,6 +371,9 @@ if ("rna" %in% TYPES) {
     keepg <- cm$ids %in% common
     M <- cm$M[keepg, , drop = FALSE]; ids <- cm$ids[keepg]; rm(cm)
     nneg <- nneg + sum(M < 0, na.rm = TRUE); M[!is.na(M) & M < 0] <- 0
+    ## collapse_ensembl_to_hgnc() turns a non-finite cell into 0 (ensembl_to_hgnc.R), which would
+    ## read back as "unexpressed", not "missing": refuse a TPM file with NA cells (none measured)
+    if (anyNA(M)) stop(sprintf("rna %s: %d NA cells in the TPM matrix; the collapse would store them as 0", C, sum(is.na(M))))
     nmap_miss <- nmap_miss + sum(!ids %in% names(SYM))
     expr <- as.data.table(M); expr[, id := ids]; setcolorder(expr, "id"); rm(M)
     coll <- collapse_ensembl_to_hgnc(expr, hgmap, from_log = TRUE, log_base = 2, log_offset = 1,
@@ -565,7 +570,7 @@ for (C in COH) {
     else if (ty[[j]] == "CON") { x <- suppressWarnings(as.numeric(v)); nacoerce <- nacoerce + sum(is.na(x) & !is.na(v)); set(dt, j = j, value = x) }
     else set(dt, j = j, value = as.character(v))        # BIN / ORD / other: text
   }
-  dt[, case := case]
+  set(dt, j = "case", value = case)     # not dt[, case := case]: a meta column named `case` would win
   clin_list[[C]] <- dt
 }
 drop_log("clinical CON/event values not numeric (set to NA)", nacoerce)
@@ -660,6 +665,8 @@ dataset_meta <- data.frame(
 dbWriteTable(con, "dataset_meta", dataset_meta, overwrite = TRUE)
 write_default_filters(con, "cptac")
 
+## genes that are 0 in every sample have no stored row (sparse rna): take them out of the menu
+drop_log("probes with no data at all removed from probes/allprobes", drop_t2_dataless_probes(con))
 say("building probe_types, indexes, views ...")
 if ("rna" %in% tt) set_t2_sparse(con, "rna", TRUE, 0)
 if ("mut" %in% tt) set_t2_sparse(con, "mut", TRUE, 0)
@@ -679,7 +686,8 @@ db_i <- summ("SELECT type, COUNT(*) n FROM tcgai GROUP BY type"); db_c <- summ("
 cat("tcgai rows by query:\n"); print(db_i); cat("tcgacati rows by query:\n"); print(db_c)
 cat("\ntested rows per type\n"); print(summ("SELECT type, COUNT(*) n FROM tested GROUP BY type"))
 cat("\ndropped / logged counts\n"); print(rbindlist(DROPS), row.names = FALSE)
-cat("\nclinpheno columns:", ncol(clinpheno), "| allprobes:", nrow(allprobes_tbl), "\n")
+cat("\nclinpheno columns:", ncol(clinpheno), "| probes:", summ("SELECT COUNT(*) FROM probes")[1, 1],
+    "| allprobes:", summ("SELECT COUNT(*) FROM allprobes")[1, 1], "(after the data-less cleanup)\n")
 dbDisconnect(con)
 sz <- file.size(BUILD)
 file.rename(BUILD, OUT)

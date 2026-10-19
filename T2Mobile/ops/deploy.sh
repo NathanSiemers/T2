@@ -72,10 +72,13 @@ status)
         printf '%-40s ' "$u"; curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "$u"; done ;;
 check)
     ## screenshots: the host directory below is /home/rstudio/R/T2-devdata/... inside the container
+    ## T2_CONTACT_URL names the live contact endpoint so the suite expects the contact form (the sites
+    ## are in api-mode); the suite never submits it (test_browser_suite.R, header)
     d=/scratch/nathan/R/T2-devdata/screenshots/shiny-live; mkdir -m 777 -p "$d"; rm -f "${d:?}"/*
     docker run --rm --network shinypublic -u rstudio -v /scratch/nathan/R:/home/rstudio/R -w /home/rstudio/R/T2 \
       -e NOT_CRAN=true -e CHROMOTE_CHROME=/home/rstudio/R/T2-devdata/chrome/chrome-headless-shell-linux64/chrome-headless-shell \
-      -e T2_SITE_URL=https://www.fiveprime.org/T2/ --entrypoint Rscript rstudio:2026.03 test_browser_suite.R \
+      -e T2_SITE_URL=https://www.fiveprime.org/T2/ -e T2_CONTACT_URL=https://www.fiveprime.org/api/t2/v1/contact \
+      --entrypoint Rscript rstudio:2026.03 test_browser_suite.R \
       /home/rstudio/R/T2-devdata/screenshots/shiny-live 2>&1 | grep -E "PASS|FAIL|Error|done" ;;
 retire-t2)   ## after the archive step: take the old shiny-t2 out of the compose file and of scripts/deploy.sh
     cd "$PUB"

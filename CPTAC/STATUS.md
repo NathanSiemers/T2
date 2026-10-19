@@ -69,7 +69,11 @@ S3 mirror (`cptac-pancancer-data.s3.us-west-2.amazonaws.com/data_freeze_v1.2_reo
 
 **Done 2026-10-18 evening:** committed on main (one commit: `CPTAC/` + the shared edits + docs).
 
-**Next (needs Nathan's go, production):** deploy = a new `/scratch/shinyusb/T2-data-<date>/` with
+**Deployed 2026-10-19 by Nathan** (`T2-data-20261019/`, `ops/deploy.sh service`, `data`, `code`; the live
+service lists TCGA, DEMO, cptac, tcgatargetgtex). `ops/deploy.sh check` had one false FAIL: it did not
+pass the live contact endpoint, so the suite expected no contact form; fixed in deploy.sh.
+
+**The deploy recipe was:** deploy = a new `/scratch/shinyusb/T2-data-<date>/` with
 `tcga.db` (hard link, as the served one is) and `datasets/` holding DEMO.db, tcgatargetgtex.db and
 cptac.db; `ops/deploy.sh data <dir>`; `ops/deploy.sh service` so the service carries the CPTAC
 clinical descriptions (and `ops/deploy.sh code` for the Shiny checkout: lib.R, dataset_registry.R,

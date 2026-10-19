@@ -1215,7 +1215,11 @@ the two unchanged datasets hard-linked, `cptac.db` copied under a staging name, 
 renamed into place), then `ops/deploy.sh service` (the descriptions), `data`, `code`; the live
 service lists four datasets and `ops/deploy.sh check` passes 27/27 (after its own fix: the check
 now names the live contact endpoint). The classifier of Claude's auto mode refuses every step
-that touches `/scratch/shinyusb`, so the deploy commands were handed to Nathan to run. The iPhone app lists datasets from the service and needs no
+that touches `/scratch/shinyusb`, so the deploy commands were handed to Nathan to run. Afterwards
+(Nathan: "make the edit") `ops/deploy.sh` gained `data-stage <YYYYMMDD> [name.db ...]`, which
+builds the new data directory from the served one (hard links for the unchanged files, a verified
+copy of each named file), so a database deploy is four calls of the one allowed script:
+`data-stage`, `service`, `data`, `code`; dry-run with `T2_DATA_BASE=<scratch dir>`. The iPhone app lists datasets from the service and needs no
 change (the Swift edit is cosmetic and waits for the next build after 1.0's review).
 The integration run (equiv, app, app-service, browser-service, go, swift; logs in
 `T2-devdata/logs/cptac-20261018/`) found one thing, fixed: a dataset without a subtype stores

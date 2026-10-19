@@ -5,10 +5,16 @@
 ## and the right script to do it." Claude's Claude Code settings allow this script by path.
 ##
 ##   ops/deploy.sh service            rebuild the t2api image from the repo, tag the old one, restart
+##   ops/deploy.sh data-stage <YYYYMMDD> [<name>.db ...]
+##                                    stage a NEW data directory /scratch/shinyusb/T2-data-<YYYYMMDD>/
+##                                    from the served one: tcga.db and every dataset not named are
+##                                    hard links to the served files (same inodes, never written);
+##                                    each named file is copied from the repo's datasets/ under a
+##                                    .staging name, byte-compared, quick_checked, renamed into place
 ##   ops/deploy.sh data <dir>         point t2api, shiny-t2t and the pool at a NEW data directory
 ##                                    (never a write to a served file; the directory must hold
 ##                                    tcga.db and datasets/ with the dataset_meta keys applied)
-##   ops/deploy.sh code               pull main into the served checkout, restart T2T and the pool
+##   ops/deploy.sh code              pull main into the served checkout, restart T2T and the pool
 ##   ops/deploy.sh nginx              copy the host nginx.conf into the running container (conf.d),
 ##                                    test, reload (no restart, no dropped sessions)
 ##   ops/deploy.sh nginx-rebuild      rebuild the Nginx image so the config survives a recreate
@@ -37,6 +43,33 @@ service)
     sleep 15; printf 'healthz: '; curl -s https://www.fiveprime.org/api/t2/healthz
     curl -s https://www.fiveprime.org/api/t2/v1/datasets | grep -o '"name":"[^"]*"' | tr '\n' ' '; echo
     echo "rollback: docker tag t2api:pre-$stamp t2api:2026.10 && (cd $PUB && docker compose up -d t2api)" ;;
+data-stage)
+    ## T2_DATA_BASE overrides the base directory for a dry run on scratch space
+    base=${T2_DATA_BASE:-/scratch/shinyusb}
+    date=${2:?usage: deploy.sh data-stage YYYYMMDD [name.db ...]   (files from $REPO/datasets/)}; shift 2
+    cur=$(grep -o '/scratch/shinyusb/T2-data-[0-9]*' "$PUB/docker-compose.yml" | head -1)
+    [ -d "$cur/datasets" ] || { echo "served data directory not found ($cur)"; exit 1; }
+    new="$base/T2-data-$date"
+    [ ! -e "$new" ] || { echo "$new exists; a staging directory is never reused"; exit 1; }
+    for f in "$@"; do [ -f "$REPO/datasets/$f" ] || { echo "no $REPO/datasets/$f"; exit 1; }; done
+    mkdir -p "$new/datasets"
+    ln "$cur/tcga.db" "$new/tcga.db"
+    for p in "$cur"/datasets/*.db; do
+        b=$(basename "$p"); skip=0
+        for f in "$@"; do [ "$f" = "$b" ] && skip=1; done
+        [ $skip = 1 ] || ln "$p" "$new/datasets/$b"
+    done
+    for f in "$@"; do
+        src="$REPO/datasets/$f"; dst="$new/datasets/$f"
+        cp "$src" "$dst.staging"
+        cmp "$src" "$dst.staging" || { echo "copy of $f differs from the source"; exit 1; }
+        chk=$(sqlite3 -readonly "$dst.staging" "PRAGMA quick_check;" | head -1)
+        [ "$chk" = ok ] || { echo "$f: quick_check says $chk"; exit 1; }
+        mv "$dst.staging" "$dst"
+        printf '%-28s %s samples\n' "$f" "$(sqlite3 -readonly "$dst" 'SELECT COUNT(*) FROM samples')"
+    done
+    ls -la "$new" "$new/datasets"
+    echo "staged. next: $0 data $new" ;;
 data)
     dir=${2:?usage: deploy.sh data /scratch/shinyusb/T2-data-YYYYMMDD}
     [ -f "$dir/tcga.db" ] && [ -d "$dir/datasets" ] || { echo "$dir must hold tcga.db and datasets/"; exit 1; }

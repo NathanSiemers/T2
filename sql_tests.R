@@ -25,6 +25,7 @@ suppressMessages({ library(DBI); library(RSQLite) })
 }
 .ROOT <- .this_dir()
 if (!exists("gitr"))         source(file.path(.ROOT, "gitr.R"))
+if (!exists("t2_api_on"))    source(file.path(.ROOT, "t2_api_client.R"))   # dataset_registry.R needs it (api-mode switch)
 if (!exists("dataset_info")) source(file.path(.ROOT, "dataset_registry.R"))
 
 ## ---- small helpers ---------------------------------------------------------

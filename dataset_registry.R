@@ -115,8 +115,11 @@ DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
       heme_values       = .split_meta(meta$heme_values),
       sampletype_levels = .split_meta(meta$sampletype_levels)
     )
-    ## normalise empty strings to NA for the role columns
-    if (!nzchar(roles$sampletype_col %||% "")) roles$sampletype_col <- NA_character_
+    ## normalise empty strings to NA for the role columns (a dataset without a
+    ## subtype stores subtype_col = ""; the t2api client does the same, so the
+    ## variable menu is identical over files and over the service)
+    for (k in c("cohort_col", "subtype_col", "sampletype_col"))
+      if (!nzchar(roles[[k]] %||% "")) roles[[k]] <- NA_character_
     if (length(roles$normal_label) == 0)       roles$normal_label   <- NA_character_
     if (length(roles$sampletype_levels) == 0)  roles$sampletype_levels <- NULL
     ## the parts of the collection offered as data sources (see t2_presets.R)

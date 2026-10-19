@@ -24,6 +24,7 @@ during a build cannot change it (the pipeline `source()`s each step when it reac
     rm -rf TCGA/Data && ln -s ../../T2/TCGA/Data TCGA/Data        # inputs are gitignored, 21 GB
     ln -s ../../T2/TCGA/microbe.csv TCGA/microbe.csv
     rm -rf TCGATARGETGTEX/Data && ln -s ../../T2/TCGATARGETGTEX/Data TCGATARGETGTEX/Data
+    rm -rf CPTAC/Data && ln -s ../../T2/CPTAC/Data CPTAC/Data                  # 3.7G
 
 Then, in two containers at once (the builds are single-threaded and independent; image
 `rstudio:2026.03`, user 501:1000, no swap, `--oom-score-adj 1000` so a build dies before

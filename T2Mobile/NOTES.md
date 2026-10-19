@@ -1188,3 +1188,35 @@ durable test environment"): `ops/test.sh <suite|all>` is the one entry point —
 belongs, logs in `/scratch/nathan/R/T2-devdata/logs/<date-time>/`, screenshots in
 `T2-devdata/screenshots/<mode>/`. A Sonnet agent runs it ("ops/test.sh all, report the
 verdict lines and any FAIL"). The dev data directory's README describes its contents.
+
+### 2026-10-18 — CPTAC, the third dataset (Claude, two Sonnet agents)
+
+`datasets/cptac.db` (7 GB, built in 8 minutes by `CPTAC/build_cptac.R`): the CPTAC Pan-Cancer
+harmonized data freeze v1 (BCM pipeline, GENCODE v34; Li et al., *Cancer Cell* 2023), open on
+the Proteomic Data Commons (GraphQL file list + signed URLs, no login) with the log2(TPM+1) RNA
+from the LinkedOmicsKB mirror of the same freeze. Ten cohorts (BRCA, CCRCC, COAD, GBM, HNSCC,
+LSCC, LUAD, OV, PDAC, UCEC), 1,611 samples (1,040 tumors, 571 normal adjacent tissues, id
+`<case>_N`), six types: `rna` (bare, 59,286 symbols), `prot` (15,099), `phospho` (126,602 sites,
+`GENE_S123.phospho`), `cnv` (19,657 protein-coding genes), `mut` (0/1), `fmut` (TCGA's string
+format); 117 M fact rows. Clinical: the union of the ten meta files (293 columns, names
+normalised, survival as `OS`/`OS.time`/`PFI`/`PFI.time`, the 0/1 flags kept categorical), normal
+samples carry only the case-level columns. Nathan's decisions: RNA bare and the other types
+suffixed (the same word means the same measurement in every dataset), all six types, the ten
+freeze cohorts only (the post-freeze PDC cohorts SKCM, STAD, AML are proteome-only and a later
+phase). How it was done: a profile of the raw files first (`CPTAC/01-profile.R` →
+`CPTAC/Data/profile.md`, 11 sections), then the binding spec (`CPTAC/SPEC.md`), then the builder;
+one correction after the first build (the OV TPM file has columns for four normal-only cases,
+which the bare-id rule had made tumors; now a bare-id TPM column is a tumor iff BCM's own RNA UQ
+Tumor file lists it). Around it: `default_filters.R` gained the `cptac` presets, `lib.R` and the
+Swift `PlotBuilder` the title words for `.prot`/`.phospho`, `clinical_descriptions.tsv` 294 CPTAC
+lines (service image rebuild), `sql_tests.R` its missing `source("t2_api_client.R")` (standalone
+runs had broken with api-mode). Not deployed: a deploy is a new `T2-data-<date>/` directory with
+`cptac.db` beside the others and `ops/deploy.sh data`, plus `ops/deploy.sh service` for the
+descriptions; the service's cache budget is 512 MB per dataset in a 4 GB container, so watch
+`docker stats` with four datasets. The iPhone app lists datasets from the service and needs no
+change (the Swift edit is cosmetic and waits for the next build after 1.0's review).
+The integration run (equiv, app, app-service, browser-service, go, swift; logs in
+`T2-devdata/logs/cptac-20261018/`) found one thing, fixed: a dataset without a subtype stores
+`subtype_col = ""`, which the file path kept as a "subtype" menu entry while the service path
+dropped it; `dataset_registry.R` now treats an empty role column as NA like `t2_api_client.R`,
+and `lib.R` adds the `subtype` menu handle only when the dataset has a subtype role.

@@ -547,7 +547,7 @@ public enum PlotBuilder {
 
     static func title(x: String, y: String, dataset: String) -> String {
         var s = "Relationship of \(x) and \(y)" + (dataset.isEmpty ? "" : " across \(dataset)")
-        for (suffix, word) in [(".fmut", " mutation"), (".mut", " mutation"), (".cnv", " CNA")] {
+        for (suffix, word) in [(".fmut", " mutation"), (".mut", " mutation"), (".cnv", " CNA"), (".prot", " protein"), (".phospho", " phosphosite")] {
             s = s.replacingOccurrences(of: suffix, with: word)
         }
         return s

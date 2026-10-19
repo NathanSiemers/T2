@@ -84,6 +84,22 @@ automatically.
 | `build_demo_dataset.R` | **new** — builds a small, clearly-synthetic second dataset (`datasets/DEMO.db`) with a deliberately different clinical schema and numeric scale, to prove the machinery. |
 | `test_multidataset.R`, `test_app_server.R` | **new** — smoke tests for the registry/bundle/gitr stack and for the live Shiny server (load TCGA, switch to DEMO, switch back). |
 
+## The datasets so far
+
+| file | dataset | built by | content |
+|---|---|---|---|
+| `tcga.db` | TCGA | `TCGA/00-master.R` | TCGA 2018 Pan-Cancer, 12,804 samples, 19 data types |
+| `datasets/tcgatargetgtex.db` | tcgatargetgtex | `TCGATARGETGTEX/build_tcgatargetgtex.R` | UCSC Toil RNA-seq of TCGA + TARGET + GTEx, 19,131 samples, one type (`rna`) |
+| `datasets/cptac.db` | cptac | `CPTAC/build_cptac.R` (2026-10-18) | CPTAC Pan-Cancer harmonized freeze v1: ten cohorts, 1,611 samples (1,040 tumors, 571 normal adjacent tissues), six types: `rna` (bare names), `prot`, `phospho`, `cnv`, `mut`, `fmut` |
+| `datasets/DEMO.db` | DEMO | `build_demo_dataset.R` | synthetic, to prove the machinery |
+
+CPTAC is the first dataset with several numeric types besides RNA, and it follows the TCGA
+naming rule: **one probe name belongs to one type**; RNA is bare (`CD8A`), every other type
+carries its suffix (`CD8A.prot`, `MAPK1_Y187.phospho`, `CD8A.cnv`, `TP53.mut`, `TP53.fmut`),
+because both readers take the type from the text after the last dot and `probes.probe` is
+unique. Its proteome, phosphoproteome and copy number are `sparse = 0` types (no row = NA), its
+RNA and binary mutations `sparse = 1` (no row = 0). The data decisions are in `CPTAC/SPEC.md`.
+
 ## How to add a new dataset
 
 1. **Build a `<NAME>.db`** with the standard T2 schema shape. Two options:

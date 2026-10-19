@@ -30,7 +30,7 @@ database_connection_shiny.R → lib.R (which sources the rest) → input_validat
 
 | file | what |
 |---|---|
-| `TCGA/`, `TCGATARGETGTEX/`, `build_demo_dataset.R` | the dataset builders (see `T2Mobile/NOTES.md` and the memory notes on rebuilding) |
+| `TCGA/`, `TCGATARGETGTEX/`, `CPTAC/`, `build_demo_dataset.R` | the dataset builders (see `T2Mobile/NOTES.md` and the memory notes on rebuilding). `CPTAC/` (2026-10-18): `00-download.R`, `01-profile.R`, `build_cptac.R`, `test_cptac.R`, `SPEC.md` (the binding data decisions), `STATUS.md` |
 | `default_filters.R` | the presets of every dataset (`T2_DEFAULT_FILTERS`), written into each database as `default_filters`; `Rscript default_filters.R check|write <db> <dataset>` |
 | `dataset_meta.R` | `Rscript dataset_meta.R show|set <db> key=value` |
 | `T2Mobile/ops/test.sh <suite>` | **the test environment, one entry point** (`all`, `go`, `equiv`, `app`, `app-service`, `browser-files`, `browser-service`, `browser-live`, `browser-canary`, `fuzz`, `swift`, `ios`, `dev-up`): runs each suite where it belongs and writes the logs to `/scratch/nathan/R/T2-devdata/logs/<date-time>/`; a Sonnet agent runs it. `T2Mobile/ops/deploy.sh <step>` is the production deploy script. |

@@ -66,4 +66,33 @@ ok(is.numeric(dd$GENE01) && median(dd$GENE01) > 5 && median(dd$GENE01) < 11,
    "DEMO GENE01 numeric on log2-TPM scale (~8, not TCGA scale)")
 ok(is.factor(dd$TP53_DRIVER), "DEMO categorical driver is a factor")
 
+cat("\n== gitr against CPTAC (skipped when datasets/cptac.db is absent) ==\n")
+if (!"cptac" %in% ds) {
+  cat("  (no cptac dataset discovered)\n")
+} else {
+  bc <- load_dataset_bundle("cptac")
+  cat("  cptac: title =", bc$title, "| label =", bc$label, "\n")
+  ok(bc$roles$cohort_col == "cancer_type" && bc$roles$sampletype_col == "sample_type",
+     "cptac roles: cancer_type / sample_type")
+  ## one probe of each data type: RNA is bare, the others carry their suffix
+  cc <- RSQLite::dbConnect(RSQLite::SQLite(), bc$path, flags = RSQLite::SQLITE_RO)
+  one <- function(suffix) DBI::dbGetQuery(cc, "SELECT probe FROM probes WHERE probe LIKE ? LIMIT 1",
+                                          params = list(paste0("%", suffix)))$probe[1]
+  pphos <- one(".phospho")
+  DBI::dbDisconnect(cc)
+  vars <- c("CD8A", "CD8A.prot", pphos, "TP53.mut", "TP53.fmut", "cohort", "sample_type", "OS", "OS.time")
+  dc <- gitr(vars, dbfile = bc$path, roles = bc$roles)
+  cat("  cptac rows:", nrow(dc), "| cols:", paste(intersect(vars, names(dc)), collapse = ", "), "\n")
+  ok(nrow(dc) > 1000, "cptac gitr returns > 1000 samples")
+  ok(is.numeric(dc$CD8A) && is.numeric(dc$CD8A.prot), "CD8A (rna) and CD8A.prot numeric")
+  ok(!is.null(pphos) && is.numeric(dc[[pphos]]), paste("phosphosite numeric:", pphos))
+  ok(mean(is.na(dc$CD8A.prot)) > 0 && mean(is.na(dc$CD8A.prot)) < 1, "protein has some NA (sparse=0 type), not all")
+  ok(is.factor(dc$TP53.mut) && all(levels(dc$TP53.mut) %in% c("0", "1")), "TP53.mut is a 0/1 factor")
+  ok(is.factor(dc$TP53.fmut), "TP53.fmut is a factor of mutation strings")
+  ok(all(c("Primary Tumor", "Solid Tissue Normal") %in% dc$sample_type), "both sample types present")
+  dn <- gitr(c("CD8A", "cohort"), dbfile = bc$path, roles = bc$roles, nonormal = TRUE)
+  ok(nrow(dn) < nrow(dc), "nonormal drops the normal adjacent tissue")
+  ok(is.numeric(dc$OS.time) && all(dc$OS %in% c(0, 1, NA)), "survival columns OS / OS.time")
+}
+
 cat("\n== Done ==\n")

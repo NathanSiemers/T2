@@ -8,7 +8,7 @@
 ## data). Every dataset builder calls write_default_filters(con, "<dataset>") at
 ## the end of its build:
 ##   TCGA/297-default_filters.R (run by TCGA/00-master.R), build_demo_dataset.R,
-##   TCGATARGETGTEX/build_tcgatargetgtex.R.
+##   TCGATARGETGTEX/build_tcgatargetgtex.R, CPTAC/build_cptac.R.
 ##
 ## Table shape: one row per (preset, column, value).
 ##   preset         the name shown to the user
@@ -65,6 +65,14 @@ T2_DEFAULT_FILTERS = list(
             .rule("sample_type", "in", c("Normal Tissue", "Solid Tissue Normal"))),
     .preset("Exclude cell lines", "Leave out the GTEx cell lines",
             .rule("sample_type", "not in", "Cell Line"))
+  ),
+  ## CPTAC Pan-Cancer proteogenomics (2023 harmonized freeze, CPTAC/build_cptac.R):
+  ## tumors and their normal adjacent tissue, `sample_type` separates them.
+  cptac = list(
+    .preset("Tumor samples only", "Leave out the normal adjacent tissue samples",
+            .rule("sample_type", "not in", "Solid Tissue Normal")),
+    .preset("Normal adjacent tissue only", "The normal tissue taken next to the tumors",
+            .rule("sample_type", "in", "Solid Tissue Normal"))
   ),
   DEMO = list(
     .preset("Breast lines only", "Example preset for the synthetic demo data",

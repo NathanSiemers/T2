@@ -8,6 +8,8 @@ datasets/*.db
 *.db.building-shm
 TCGATARGETGTEX/Data/
 TCGA/Data/
+CPTAC/Data/
+CPTAC/build.log
 TCGA/microbe.csv
 ## SQLite WAL/shared-memory sidecars (created at runtime, never commit)
 *.db-wal

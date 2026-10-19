@@ -89,8 +89,10 @@ load_dataset_bundle = function(name) {
 
   ## Selectable variable list: virtual handles (subtype, cohort) + all probes +
   ## the sample-type role column when the dataset has one. Preserves the exact
-  ## TCGA ordering: subtype, cohort, <genes>, sample_type.
-  pheno_handles = c('subtype', 'cohort')
+  ## TCGA ordering: subtype, cohort, <genes>, sample_type. A dataset without a
+  ## subtype role (CPTAC) gets no `subtype` handle, as over the service.
+  has_subtype   = !is.null(roles$subtype_col) && !is.na(roles$subtype_col) && nzchar(roles$subtype_col)
+  pheno_handles = c(if (has_subtype) 'subtype', 'cohort')
   tail_handle   = if (!is.null(roles$sampletype_col) && !is.na(roles$sampletype_col))
                     roles$sampletype_col else character(0)
   mygenesplus = c(pheno_handles, mygenes, tail_handle)
@@ -610,6 +612,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     pstring = gsub( '\\.mut', ' mutation', pstring )
     pstring = gsub( '\\.fmut', ' mutation', pstring )
     pstring = gsub( '\\.cnv', ' CNA', pstring )
+    pstring = gsub( '\\.prot', ' protein', pstring )
+    pstring = gsub( '\\.phospho', ' phosphosite', pstring )
     if( !is.null(cohort[1]) ) {
         if( length(cohort) < 6) {
             pstring2 = paste( "Cohorts:",

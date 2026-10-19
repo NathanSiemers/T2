@@ -77,3 +77,11 @@ default_filters.R). Watch `docker stats t2api` with four datasets (dev: 285 MB o
 app needs nothing. Phase 2 candidates: post-freeze PDC cohorts (SKCM, STAD, AML) via quantDataMatrix;
 acetyl/ubiquityl/glyco; a `source_col` split (CPTAC-2 vs CPTAC-3).
 
+
+## Dev website (2026-10-19)
+
+A dev copy of the website runs as container `shiny-t2-dev` (image shinyt2t:2026.10, the canary's
+config, the local checkout /scratch/nathan/R/T2 mounted read-only, api-mode against t2api-dev via
+`T2-devdata/t2-api-mode-dev.Renviron.site`), LAN only: **http://10.1.0.1:3862/T2T/**. It picks up code
+edits on the next session (Shiny Server re-sources the app per session; a new dataset needs
+`docker restart t2api-dev` after copying the db into T2-devdata/datasets/). Stop: `docker rm -f shiny-t2-dev`.

@@ -139,6 +139,16 @@ confirmed on the simulator). The WEB app still lists it (`lib.R list_sources()` 
 entry): filter it the same way there, or better, have the service mark a dataset as hidden
 (`dataset_meta` key, e.g. `hidden = 1`, echoed in `/v1/datasets`) so neither app needs the rule. Next
 app round.
+**TODO (Nathan, 2026-10-20): tone down "statistics" in the description, and hint at survival plots.**
+The App Store description (`docs/APPSTORE.md`) and the About text talk up the tool's statistics; so far
+they are primitive (correlation, a group test) except for the time-to-event analysis (Kaplan-Meier,
+log-rank, Cox). Reword to "plots, with a few summary statistics" and let the survival analysis carry the
+weight. And make the "how to get OS etc." hint prominent: About already has a "Time-to-event
+variables" section with "Choose one of these as X to draw Kaplan-Meier curves by groups of Y", but it
+is far down; put a one-line hint near the top of About (and perhaps on the Select screen next to X)
+naming the variables (OS, PFI, DSS, DFI for TCGA; OS, PFI for CPTAC) — a valuable hint in an otherwise
+obtuse tool. Same wording in the web app. Listing text changes go in with the next build, not while
+build 2 is in review.
 **TODO (Nathan, 2026-10-20): the plot title should name the data source part.** When the GTEx
 subset of the Toil collection is selected, the title says only "TCGA-TARGET-GTEX (Toil)", not the
 subset; it should carry the part's label (`/meta sources` → `source_labels`; both apps). Not a huge

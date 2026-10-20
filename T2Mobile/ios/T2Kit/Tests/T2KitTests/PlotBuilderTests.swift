@@ -78,7 +78,10 @@ final class PlotBuilderTests: XCTestCase {
     /// dataset's sample type (and cohort) when the dataset has such a column.
     func testCompleteOnlyAlsoAsksForSampleType() {
         var r = PlotRequest(x: ["G1"], y: ["G2"])
-        XCTAssertEqual(PlotBuilder.build(r, columns: columnsWithSampleType, keep: keep).panels[0].points.map(\.sample), [0, 1, 4, 5, 6, 8])
+        let handles = PlotBuilder.Context(handleColumns: ["cohort", "sample_type"])      // from the dataset's `handles`
+        XCTAssertEqual(PlotBuilder.build(r, columns: columnsWithSampleType, keep: keep, context: handles).panels[0].points.map(\.sample), [0, 1, 4, 5, 6, 8])
+        // a context that names no handle asks for nothing extra: no column name is assumed
+        XCTAssertEqual(PlotBuilder.build(r, columns: columnsWithSampleType, keep: keep).panels[0].points.map(\.sample), [0, 1, 4, 5, 6, 7, 8])
         r.completeOnly = false
         XCTAssertEqual(PlotBuilder.build(r, columns: columnsWithSampleType, keep: keep).panels[0].points.map(\.sample), [0, 1, 4, 5, 6, 7, 8])
     }
@@ -359,8 +362,13 @@ final class PlotBuilderTests: XCTestCase {
             "Samples with data for both X and Y: 7 / 9",
             "Samples missing X and/or Y: 2",
             "Samples with all graph variables: 6 / 9"])
-        XCTAssertEqual(PlotBuilder.title(x: "TP53.mut", y: "CDKN2A.cnv", dataset: "TCGA"), "Relationship of TP53 mutation and CDKN2A CNA across TCGA")
-        XCTAssertEqual(PlotBuilder.title(x: "KRAS.fmut", y: "CD8A", dataset: ""), "Relationship of KRAS mutation and CD8A")
+        let words = ["mut": "mutation", "fmut": "mutation", "cnv": "CNA", "prot": "protein", "phospho": "phosphosite", "rna": ""]
+        XCTAssertEqual(PlotBuilder.title(x: "TP53.mut", y: "CDKN2A.cnv", dataset: "TCGA", typeLabels: words), "Relationship of TP53 mutation and CDKN2A CNA across TCGA")
+        XCTAssertEqual(PlotBuilder.title(x: "KRAS.fmut", y: "CD8A", dataset: "", typeLabels: words), "Relationship of KRAS mutation and CD8A")
+        // no labels (an old service): the names stay as they are; a type without a word adds none
+        XCTAssertEqual(PlotBuilder.title(x: "TP53.mut", y: "CD8A", dataset: ""), "Relationship of TP53.mut and CD8A")
+        XCTAssertEqual(PlotBuilder.title(x: "AL627309.1", y: "CD8A.rna", dataset: "", typeLabels: words), "Relationship of AL627309.1 and CD8A.rna")
+        XCTAssertEqual(PlotBuilder.titleWords("median-z(A.prot, B.phospho)", typeLabels: words), "median-z(A protein, B phosphosite)")
     }
 
     func testJitterIsBoundedSpreadAndRepeatable() {

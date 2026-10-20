@@ -82,7 +82,7 @@ final class PlotBuilderMoreTests: XCTestCase {
          "arm": Column(name: "arm", type: "clinical", data: .categorical(levels: ["6-MP", "control"], codes: (0..<42).map { $0 < 21 ? 0 : 1 }))]
     }
     let all = Mask(repeating: true, count: 42)
-    let survivalContext = PlotBuilder.Context(datasetLabel: "Trial", survivalEndpoints: ["OS"])
+    let survivalContext = PlotBuilder.Context(datasetLabel: "Trial", tte: [TTEVariable(name: "OS", label: "Overall Survival", eventCol: "OS", timeCol: "OS.time")])
 
     func testSurvivalByCategoricalMarkerMatchesSurvdiff() {
         var r = PlotRequest(x: ["OS"], y: ["arm"]); r.kmMaxDays = 0             // no limit on follow-up

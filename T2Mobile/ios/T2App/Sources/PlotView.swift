@@ -83,6 +83,8 @@ struct PlotView: View {
                 Section("Survival") {
                     Stepper("Marker groups: \(model.kmGroups)", value: $model.kmGroups, in: 2...6)
                         .accessibilityIdentifier("km-groups")
+                    // (the limits are in days: offered only where the variable's time is in days)
+                    if model.tteEntry?.timeUnit == "days" {
                     Picker("Follow-up", selection: $model.kmMaxDays) {
                         Text("1 year").tag(365.0)
                         Text("2 years").tag(730.0)
@@ -90,6 +92,7 @@ struct PlotView: View {
                         Text("5 years").tag(1825.0)
                         Text("10 years").tag(3650.0)
                         Text("no limit").tag(0.0)
+                    }
                     }
                 }
             } else {
@@ -113,7 +116,7 @@ struct PlotView: View {
             } header: {
                 Text("Table")
             } footer: {
-                Text("One row per sample in use (\(model.filter.selectedCount().formatted()), exactly as the presets and filters leave them), with every variable asked for in this dataset so far (\(model.tableProbeCount) probes) and all \(model.meta?.clinicalColumns.count ?? 0) clinical columns.")
+                Text("One row per sample in use (\(model.selectedCount().formatted()), exactly as the presets and filters leave them), with every variable asked for in this dataset so far (\(model.tableProbeCount) probes) and all \(model.meta?.clinicalColumns.count ?? 0) clinical columns.")
             }
             Section("Appearance") {
                 if scene.panels.count > 1 {
@@ -168,7 +171,7 @@ struct PlotView: View {
     }
 
     private func countLine(_ scene: PlotScene) -> String {
-        let passing = model.filter.selectedCount(), all = model.filter.sampleCount
+        let passing = model.selectedCount(), all = model.filter.sampleCount
         if scene.kind == .empty { return "\(passing.formatted()) of \(all.formatted()) samples pass the filters" }
         return "\(scene.countText) plotted; \(passing.formatted()) of \(all.formatted()) pass the filters"
     }

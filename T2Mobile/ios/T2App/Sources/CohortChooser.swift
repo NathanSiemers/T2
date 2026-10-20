@@ -14,7 +14,7 @@ struct CohortChooser: View {
                 Button("All cohorts") { model.setCohorts(nil) }.accessibilityIdentifier("cohorts-all")
                 Button("None") { model.setCohorts([]) }.accessibilityIdentifier("cohorts-none")
             } footer: {
-                Text("\(chosen.count) of \(levels.count) cohorts chosen; \(model.filter.selectedCount().formatted()) samples in use.")
+                Text("\(chosen.count) of \(levels.count) cohorts chosen; \(model.selectedCount().formatted()) samples in use.")
             }
             Section {
                 ForEach(levels, id: \.self) { level in

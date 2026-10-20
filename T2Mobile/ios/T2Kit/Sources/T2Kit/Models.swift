@@ -43,6 +43,42 @@ public struct Column: Sendable, Equatable {
         return nil
     }
     public var missingCount: Int { (0..<count).reduce(0) { $0 + (isMissing($1) ? 1 : 0) } }
+
+    // MARK: levels in use
+
+    /// the indices of the levels (`0..<levelCount`) that have at least one of `rows`, in level order
+    public static func levelsPresent(codes: [Int], levelCount: Int, rows: [Int]) -> [Int] {
+        var seen = [Bool](repeating: false, count: levelCount)
+        for r in rows where codes[r] >= 0 { seen[codes[r]] = true }
+        return (0..<levelCount).filter { seen[$0] }
+    }
+    /// the indices of the levels that have at least one sample where `mask` is true (nil = everywhere)
+    public static func levelsPresent(codes: [Int], levelCount: Int, in mask: Mask?) -> [Int] {
+        var seen = [Bool](repeating: false, count: levelCount)
+        for i in codes.indices where codes[i] >= 0 && (mask.map { i < $0.count && $0[i] } ?? true) { seen[codes[i]] = true }
+        return (0..<levelCount).filter { seen[$0] }
+    }
+    /// `rows` grouped by level code (missing values left out)
+    public static func groups(codes: [Int], rows: [Int]) -> [Int: [Int]] {
+        var g: [Int: [Int]] = [:]
+        for r in rows where codes[r] >= 0 { g[codes[r], default: []].append(r) }
+        return g
+    }
+    /// the levels of a categorical column that occur among `rows` (droplevels); [] for a numeric column
+    public func levelsPresent(rows: [Int]) -> [Int] {
+        guard case .categorical(let l, let c) = data else { return [] }
+        return Self.levelsPresent(codes: c, levelCount: l.count, rows: rows)
+    }
+    /// the levels that occur in the samples where `mask` is true (nil = all); [] for a numeric column
+    public func levelsPresent(in mask: Mask?) -> [Int] {
+        guard case .categorical(let l, let c) = data else { return [] }
+        return Self.levelsPresent(codes: c, levelCount: l.count, in: mask)
+    }
+    /// `rows` grouped by level code; [:] for a numeric column
+    public func groups(rows: [Int]) -> [Int: [Int]] {
+        guard case .categorical(_, let c) = data else { return [:] }
+        return Self.groups(codes: c, rows: rows)
+    }
 }
 
 extension Column: Decodable {
@@ -138,6 +174,8 @@ public struct DatasetSummary: Decodable, Sendable, Equatable, Identifiable {
     public let defaults: [String: String]
     /// the whole collection first, then its parts (absent from services before 2026-10-10)
     public let sources: [DataSource]?
+    /// the dataset contract's handles (absent from services before it)
+    public let handles: [Handle]?
     public var id: String { name }
     /// the parts offered as data sources of their own
     public var parts: [DataSource] { (sources ?? []).filter { !$0.isWhole } }
@@ -151,6 +189,8 @@ public struct DataTypeInfo: Decodable, Sendable, Identifiable, Equatable {
     public let description: String?
     public let example: String?
     public let reference: String?
+    /// the word a plot title uses for the type (absent from services before the dataset contract)
+    public let label: String?
     public var id: String { type }
 }
 
@@ -160,6 +200,67 @@ public struct ClinicalDescription: Decodable, Sendable, Identifiable, Equatable 
     public let description: String
     public let source: String?
     public var id: String { column }
+}
+
+/// A column that plays a part in every dataset (docs/DATASET-CONTRACT.md: `handles`). The
+/// `name` is the real column; the role says which part it plays.
+public struct Handle: Decodable, Sendable, Equatable {
+    public static let cohort = "cohort"
+    public static let subcohort = "subcohort"
+    public static let sampleType = "sample_type"
+    public let name: String
+    /// "cohort", "subcohort" or "sample_type"
+    public let role: String
+    public init(name: String, role: String) { self.name = name; self.role = role }
+}
+
+/// A time-to-event variable the dataset declares: `name` is what the user picks as X; the
+/// event column (1 = event, 0 = censored) and the time column are read from the clinical
+/// columns, in `timeUnit`. Nothing about them is guessed from the name.
+public struct TTEVariable: Decodable, Sendable, Equatable, Identifiable {
+    public let name: String
+    public let label: String
+    public let eventCol: String
+    public let timeCol: String
+    public let timeUnit: String
+    public let description: String
+    public var id: String { name }
+    public init(name: String, label: String = "", eventCol: String, timeCol: String, timeUnit: String = "days", description: String = "") {
+        self.name = name; self.label = label.isEmpty ? name : label; self.eventCol = eventCol; self.timeCol = timeCol
+        self.timeUnit = timeUnit; self.description = description
+    }
+    private enum Keys: String, CodingKey { case name, label, eventCol, timeCol, timeUnit, description }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        self.init(name: try c.decode(String.self, forKey: .name),
+                  label: try c.decodeIfPresent(String.self, forKey: .label) ?? "",
+                  eventCol: try c.decode(String.self, forKey: .eventCol),
+                  timeCol: try c.decode(String.self, forKey: .timeCol),
+                  timeUnit: try c.decodeIfPresent(String.self, forKey: .timeUnit) ?? "days",
+                  description: try c.decodeIfPresent(String.self, forKey: .description) ?? "")
+    }
+    /// how a time reads on an axis and in a median: "d" for days, else the unit's own word
+    public var unitSuffix: String { timeUnit == "days" ? "d" : " " + timeUnit }
+}
+
+/// The dataset's own About text (any part may be empty).
+public struct About: Decodable, Sendable, Equatable {
+    public let description: String
+    public let citation: String
+    public let attribution: String
+    public let url: String
+    public init(description: String = "", citation: String = "", attribution: String = "", url: String = "") {
+        self.description = description; self.citation = citation; self.attribution = attribution; self.url = url
+    }
+    private enum Keys: String, CodingKey { case description, citation, attribution, url }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        self.init(description: try c.decodeIfPresent(String.self, forKey: .description) ?? "",
+                  citation: try c.decodeIfPresent(String.self, forKey: .citation) ?? "",
+                  attribution: try c.decodeIfPresent(String.self, forKey: .attribution) ?? "",
+                  url: try c.decodeIfPresent(String.self, forKey: .url) ?? "")
+    }
+    public var isEmpty: Bool { description.isEmpty && citation.isEmpty && attribution.isEmpty && url.isEmpty }
 }
 
 public struct DatasetMeta: Decodable, Sendable {
@@ -182,6 +283,46 @@ public struct DatasetMeta: Decodable, Sendable {
     public let types: [DataTypeInfo]?
     /// what the clinical columns mean, in the order of `clinicalColumns` (absent from older services)
     public let clinicalDescriptions: [ClinicalDescription]?
+    // The dataset contract (docs/DATASET-CONTRACT.md); absent from services before it. The
+    // app does not guess what is missing: see `isOldService`.
+    /// the dataset's name as the service knows it
+    public let name: String?
+    /// the cohort / sub-cohort / sample-type columns, by role
+    public let handles: [Handle]?
+    /// the time-to-event variables the dataset declares (`survivalEndpoints` is their names)
+    public let tteVariables: [TTEVariable]?
+    public let about: About?
+    /// the cohorts to show first, as a list (`defaults["cohorts"]` is the same, comma-joined, for app 1.0)
+    public let defaultCohorts: [String]?
+
+    /// does the service lack what the app relies on? (Clients derive nothing: no literal
+    /// "cohort" column, no `X` / `X.time` pairs.)
+    public var isOldService: Bool { handles == nil || tteVariables == nil }
+
+    /// the column that holds the cohort (the handle with that role)
+    public var cohortColumn: String? { handleName(Handle.cohort) }
+    /// the sub-cohort column, if the dataset has one
+    public var subcohortColumn: String? { handleName(Handle.subcohort) }
+    /// the column that says tumor / normal ...
+    public var sampleTypeColumn: String? { handleName(Handle.sampleType) }
+    private func handleName(_ role: String) -> String? { handles?.first { $0.role == role }?.name }
+    /// every handle column, in the service's order
+    public var handleColumns: [String] { (handles ?? []).map(\.name) }
+    /// the time-to-event variables, [] when the service declares none
+    public var tte: [TTEVariable] { tteVariables ?? [] }
+    /// the word a plot title uses for a data type ("mutation" for `mut`); nil = no word (a bare RNA name).
+    /// Read from the `types` rows (`type` is a value there): the `type_labels` dictionary is not
+    /// decoded, because the snake-case key strategy would mangle type names such as `immune_score`.
+    public func typeLabel(for type: String) -> String? {
+        guard let w = types?.first(where: { $0.type == type })?.label, !w.isEmpty else { return nil }
+        return w
+    }
+    /// the type -> word pairs that have a word
+    public var typeWords: [String: String] {
+        var m: [String: String] = [:]
+        for t in types ?? [] { if let w = t.label, !w.isEmpty { m[t.type] = w } }
+        return m
+    }
 
     /// the description of a clinical column, if the service has one
     public func describe(_ column: String) -> ClinicalDescription? { clinicalDescriptions?.first { $0.column == column } }
@@ -191,13 +332,6 @@ public struct DatasetMeta: Decodable, Sendable {
     public func cohortTitle(_ value: String) -> String {
         guard let hit = cohorts?.first(where: { $0.cohort == value }), !hit.cohortstring.isEmpty else { return value }
         return hit.cohortstring
-    }
-    /// the survival endpoints this dataset can really analyse: an endpoint needs its event
-    /// column and its time column ("OS" and "OS.time") among the clinical columns.
-    /// (The service lists the same four names for every dataset.)
-    public var usableSurvivalEndpoints: [String] {
-        let have = Set(clinicalColumns)
-        return survivalEndpoints.filter { have.contains($0) && have.contains($0 + ".time") }
     }
 }
 
@@ -239,9 +373,29 @@ public struct Values: Decodable, Sendable {
     public let missing: [String]
 }
 
+/// One search hit with what the service knows about it (`hits_typed`): where the menu puts
+/// it and what it holds.
+public struct TypedHit: Decodable, Sendable, Equatable {
+    public let name: String
+    /// "handle", "probe" or "clinical"
+    public let section: String
+    /// a `types` name, or "clinical" / "virtual"
+    public let type: String
+    /// "num" or "cat"
+    public let kind: String
+    public init(name: String, section: String, type: String, kind: String) {
+        self.name = name; self.section = section; self.type = type; self.kind = kind
+    }
+    public var isNumeric: Bool { kind == "num" }
+}
+
 public struct ProbeSearch: Decodable, Sendable {
     public let probes: [String]
     public let totalMatches: Int
+    /// the same hits with section, type and kind (absent from services before the dataset contract)
+    public let hitsTyped: [TypedHit]?
+    /// the hit for a name, if the service typed it
+    public func hit(_ name: String) -> TypedHit? { hitsTyped?.first { $0.name == name } }
 }
 
 struct DatasetList: Decodable { let datasets: [DatasetSummary] }

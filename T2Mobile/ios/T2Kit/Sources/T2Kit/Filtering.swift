@@ -88,15 +88,63 @@ public struct Histogram: Sendable, Equatable {
     public var selectedTotal: Int
 }
 
+/// What a cross-filter works out once and reuses until it changes: each filter's own mask,
+/// how many active filters each sample fails (so every leave-one-out mask costs O(n), not
+/// O(filters x n)), the levels present in the universe. A class so that the value-type
+/// CrossFilter can fill it from non-mutating methods; every mutation gives the filter a fresh one.
+final class FilterMemo: @unchecked Sendable {
+    private let lock = NSRecursiveLock()      // failCounts() fills itself from ownMask()
+    private var own: [String: Mask] = [:]
+    private var fails: [Int32]?
+    private var present: [String: [Int]] = [:]
+    func with<T>(_ body: (FilterMemo) -> T) -> T { lock.lock(); defer { lock.unlock() }; return body(self) }
+    func ownMask(_ name: String, make: () -> Mask) -> Mask {
+        with { m in
+            if let hit = m.own[name] { return hit }
+            let made = make(); m.own[name] = made; return made
+        }
+    }
+    func failCounts(make: () -> [Int32]) -> [Int32] {
+        with { m in
+            if let hit = m.fails { return hit }
+            let made = make(); m.fails = made; return made
+        }
+    }
+    func levels(_ name: String, make: () -> [Int]) -> [Int] {
+        with { m in
+            if let hit = m.present[name] { return hit }
+            let made = make(); m.present[name] = made; return made
+        }
+    }
+}
+
+/// Facts about a loaded column that do not depend on the filters (the range the histogram
+/// bins are cut from): worked out once per column, kept until columns are loaded again.
+final class ColumnMemo: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ranges: [String: (lo: Double, hi: Double)?] = [:]
+    func range(_ name: String, make: () -> (lo: Double, hi: Double)?) -> (lo: Double, hi: Double)? {
+        lock.lock(); defer { lock.unlock() }
+        if let hit = ranges[name] { return hit }
+        let made = make(); ranges[name] = .some(made); return made
+    }
+}
+
 /// The cross-filter over a set of loaded columns.
 public struct CrossFilter: Sendable {
     public let sampleCount: Int
-    public private(set) var columns: [String: Column] = [:]
+    public private(set) var columns: [String: Column] = [:] { didSet { columnMemo = ColumnMemo(); changed() } }
     /// the filter columns, in display order
-    public private(set) var filters: [ColumnFilter] = []
+    public private(set) var filters: [ColumnFilter] = [] { didSet { changed() } }
     /// the universe: samples outside it do not exist as far as the filter is concerned
     /// (the combination of the active presets); nil = all samples
-    public var baseMask: Mask?
+    public var baseMask: Mask? { didSet { changed() } }
+    /// moves on every change of the columns, the filters or the universe: the key under which
+    /// anything computed from this filter (the mask, the plot) can be kept until it moves
+    public private(set) var revision = 0
+    private var memo = FilterMemo()
+    private mutating func changed() { memo = FilterMemo(); revision &+= 1 }
+    private var columnMemo = ColumnMemo()
 
     public init(sampleCount: Int) { self.sampleCount = sampleCount }
 
@@ -123,24 +171,42 @@ public struct CrossFilter: Sendable {
     /// the universe (base mask): a level of another part of a split dataset ("TCGA" in the
     /// GTEx part) is not offered as a filter choice, it would be a no-op
     public func levelsPresent(_ name: String) -> [Int] {
-        guard let col = columns[name], case .categorical(let levels, let codes) = col.data else { return [] }
-        let b = base()
-        var seen = [Bool](repeating: false, count: levels.count)
-        for i in 0..<min(codes.count, sampleCount) where b[i] && codes[i] >= 0 { seen[codes[i]] = true }
-        return levels.indices.filter { seen[$0] }
+        guard let col = columns[name], col.levels != nil else { return [] }
+        return memo.levels(name) { col.levelsPresent(in: baseMask) }
     }
 
     private func base() -> Mask { baseMask ?? Mask(repeating: true, count: sampleCount) }
 
+    /// one filter's own mask (not including the universe), kept until something changes
+    private func ownMask(_ f: ColumnFilter, _ col: Column) -> Mask {
+        memo.ownMask(f.column) { f.mask(for: col) }
+    }
+    /// per sample, how many of the active filters it fails
+    private func failCounts() -> [Int32] {
+        memo.failCounts {
+            var fails = [Int32](repeating: 0, count: sampleCount)
+            for f in filters where f.isActive {
+                guard let col = columns[f.column] else { continue }
+                let m = ownMask(f, col)
+                for i in 0..<sampleCount where !m[i] { fails[i] += 1 }
+            }
+            return fails
+        }
+    }
+
     /// samples passing the universe and every filter
     public func mask() -> Mask { mask(excluding: nil) }
-    /// samples passing the universe and every filter EXCEPT `name`'s (leave-one-out)
+    /// samples passing the universe and every filter EXCEPT `name`'s (leave-one-out): the
+    /// failure counts are made once, so each leave-one-out mask is one pass over the samples
     public func mask(excluding name: String?) -> Mask {
         var keep = base()
-        for f in filters where f.column != name && f.isActive {
-            guard let col = columns[f.column] else { continue }
-            let m = f.mask(for: col)
-            for i in 0..<sampleCount where !m[i] { keep[i] = false }
+        let fails = failCounts()
+        // an active filter on `name` that a sample fails counts once in `fails`: take it back
+        var own: Mask? = nil
+        if let name, let f = filters.first(where: { $0.column == name && $0.isActive }), let col = columns[name] { own = ownMask(f, col) }
+        for i in 0..<sampleCount where keep[i] {
+            let f = fails[i] - (own.map { $0[i] ? 0 : 1 } ?? 0)
+            if f > 0 { keep[i] = false }
         }
         return keep
     }
@@ -151,7 +217,7 @@ public struct CrossFilter: Sendable {
     public func histogram(_ name: String, bins: Int = 40) -> Histogram? {
         guard let col = columns[name] else { return nil }
         let loo = mask(excluding: name)
-        let own = (filter(name) ?? ColumnFilter(column: name)).mask(for: col)
+        let own = ownMask(filter(name) ?? ColumnFilter(column: name), col)
         var shownTotal = 0, selectedTotal = 0
         for i in 0..<sampleCount where loo[i] { shownTotal += 1; if own[i] { selectedTotal += 1 } }
         switch col.data {
@@ -165,8 +231,12 @@ public struct CrossFilter: Sendable {
                              shownTotal: shownTotal, selectedTotal: selectedTotal)
         case .numeric(let x):
             // bin edges come from the WHOLE column, so bars do not move as filters change
-            let present = x.filter { !$0.isNaN }
-            guard let lo = present.min(), let hi = present.max() else {
+            let range = columnMemo.range(name) {
+                let present = x.filter { !$0.isNaN }
+                guard let lo = present.min(), let hi = present.max() else { return nil }
+                return (lo, hi)
+            }
+            guard let (lo, hi) = range else {
                 return Histogram(labels: [], edges: [], width: 0, shown: [], selected: [], shownTotal: shownTotal, selectedTotal: selectedTotal)
             }
             let n = max(1, bins)

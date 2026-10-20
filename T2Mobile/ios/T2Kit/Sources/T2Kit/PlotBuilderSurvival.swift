@@ -1,8 +1,8 @@
 import Foundation
 
 // Survival plots: survival_km() of the website (survival_prototype.R) without the drawing.
-// X is a time-to-event endpoint (OS, PFI, DSS, DFI: an event column and "<endpoint>.time"
-// in days); the Y marker is cut into equal-count groups; one Kaplan-Meier curve per group
+// X is a time-to-event variable the dataset declares (a TTEVariable: its own event column,
+// time column, label and time unit, nothing guessed from the name); the Y marker is cut into equal-count groups; one Kaplan-Meier curve per group
 // with its confidence band, the median survival per group, the log-rank test and the Cox
 // hazard ratio per standard deviation of the marker.
 //
@@ -13,16 +13,15 @@ import Foundation
 //   - no faceted survival grids yet.
 
 extension PlotBuilder {
-    static let endpointNames = ["OS": "Overall Survival", "PFI": "Progression-Free Interval",
-                                "DSS": "Disease-Specific Survival", "DFI": "Disease-Free Interval"]
     /// the most groups a categorical marker may have
     static let maxSurvivalGroups = 8
 
-    static func survival(_ request: PlotRequest, endpoint: String, columns: [String: Column], keep: Mask, context: Context) -> PlotScene {
+    static func survival(_ request: PlotRequest, entry: TTEVariable, columns: [String: Column], keep: Mask, context: Context) -> PlotScene {
         var warnings: [String] = []
-        guard let eventAll = columns[endpoint]?.numbers, let timeAll = columns[endpoint + ".time"]?.numbers,
+        let endpoint = entry.name
+        guard let eventAll = columns[entry.eventCol]?.numbers, let timeAll = columns[entry.timeCol]?.numbers,
               eventAll.count == keep.count, timeAll.count == keep.count else {
-            return .empty("\(endpoint) needs the numeric columns \(endpoint) and \(endpoint).time, which this dataset does not provide.")
+            return .empty("\(entry.label) needs the numeric columns \(entry.eventCol) and \(entry.timeCol), which this dataset does not provide.")
         }
         let yNames = request.y.filter { !$0.isEmpty }
         let numericNames = yNames.filter { columns[$0]?.isNumeric ?? false }
@@ -32,7 +31,7 @@ extension PlotBuilder {
             categorical = c
             if yNames.count > 1 { warnings.append("Categorical markers are not combined: only \(yNames[0]) is used.") }
         } else if numericNames.count < yNames.count {
-            warnings.append("Several Y variables are combined, which needs numbers. Not used: \(yNames.filter { !numericNames.contains($0) }.joined(separator: ", ")).")
+            _ = numericOnly(yNames, columns: columns, warnings: &warnings) { "Several Y variables are combined, which needs numbers. Not used: \($0)." }
         }
         let markerName = categorical != nil ? yNames[0]
             : numericNames.count > 1 ? "median-z(\(numericNames.joined(separator: ", ")))" : numericNames[0]
@@ -59,7 +58,7 @@ extension PlotBuilder {
                 && !(categorical?.isMissing(i) ?? false)
         }
         guard rows.count >= 20 else {
-            return .empty("Too few samples with complete survival data (\(rows.count)) for \(markerName) and \(endpoint).", warnings: warnings)
+            return .empty("Too few samples with complete survival data (\(rows.count)) for \(markerName) and \(entry.label).", warnings: warnings)
         }
 
         // follow-up: administratively censor at the limit rather than drop anyone
@@ -76,8 +75,7 @@ extension PlotBuilder {
         var marker: [Double]? = nil
         var groupWord = "groups"
         if let c = categorical, let codes = c.codes, let levels = c.levels {
-            let present = Set(rows.map { codes[$0] })
-            let order = levels.indices.filter { present.contains($0) }
+            let order = Column.levelsPresent(codes: codes, levelCount: levels.count, rows: rows)
             guard order.count >= 2 else { return .empty("\(markerName) has one value among these samples: there are no groups to compare.", warnings: warnings) }
             guard order.count <= maxSurvivalGroups else {
                 return .empty("\(markerName) has \(order.count) values among these samples; a survival plot compares at most \(maxSurvivalGroups) groups. Filter the samples, or choose another marker.", warnings: warnings)
@@ -102,9 +100,10 @@ extension PlotBuilder {
 
         // one curve per group
         let colors = Palette.survival(count: labels.count)
-        var ticks: [Double] = stride(from: 0.0, through: xMax, by: 365).map { $0 }
+        // yearly ticks only where the unit is days; otherwise (or when they would be too many or too few) round numbers
+        var ticks: [Double] = entry.timeUnit == "days" ? stride(from: 0.0, through: xMax, by: 365).map { $0 } : []
         if ticks.count > 8 || ticks.count < 3 { ticks = PlotFormat.ticks(0, xMax) }
-        let xAxis = PlotAxis(kind: .numeric, lo: 0, hi: xMax * 1.02, ticks: ticks, labels: ticks.map(PlotFormat.tickLabel), title: "Time (days)")
+        let xAxis = PlotAxis(kind: .numeric, lo: 0, hi: xMax * 1.02, ticks: ticks, labels: ticks.map(PlotFormat.tickLabel), title: "Time (\(entry.timeUnit))")
         let yTicks = [0, 0.25, 0.5, 0.75, 1.0]
         let yAxis = PlotAxis(kind: .numeric, lo: 0, hi: 1.03, ticks: yTicks, labels: yTicks.map(PlotFormat.tickLabel), title: "\(endpoint) probability")
         var panel = PlotPanel(title: "", xAxis: xAxis, yAxis: yAxis)
@@ -130,7 +129,7 @@ extension PlotBuilder {
             }
             panel.bands.append(PlotBand(xs: xs, lower: lower, upper: upper, color: colors[g], opacity: 0.16))
             panel.lines.append(PlotLine(xs: xs, ys: ys, color: colors[g], width: 2))
-            let median = km.medianTime.map { "\(Int($0.rounded()))d" } ?? "NR"
+            let median = km.medianTime.map { "\(Int($0.rounded()))\(entry.unitSuffix)" } ?? "NR"
             medians.append("\(labels[g]) \(median)")
             legend.entries.append(PlotLegend.Entry(label: "\(labels[g]) (med \(median))", color: colors[g]))
             risk.rows.append(ticks.map { km.atRisk(at: $0) })
@@ -152,12 +151,11 @@ extension PlotBuilder {
         }
         panel.note = note.joined(separator: "\n")
 
-        let endpointName = endpointNames[endpoint] ?? endpoint
         var subtitle = "n = \(rows.count)   median \(endpoint): \(medians.joined(separator: " | "))"
-        if capped { subtitle += "   follow-up \u{2264} \(Int(request.kmMaxDays))d" }
+        if capped { subtitle += "   follow-up \u{2264} \(Int(request.kmMaxDays))\(entry.unitSuffix)" }
         if !covariates.isEmpty { subtitle += "   adj: \(conditionNames.joined(separator: ", "))" }
         if !context.datasetLabel.isEmpty { subtitle += "   \(context.datasetLabel)." }
-        return PlotScene(kind: .survival, title: "\(endpointName) by \(markerName) \(groupWord)", subtitle: subtitle,
+        return PlotScene(kind: .survival, title: "\(entry.label) by \(markerName) \(groupWord)", subtitle: subtitle,
                          panels: [panel], legend: legend, stats: stats, warnings: warnings, n: rows.count)
     }
 }

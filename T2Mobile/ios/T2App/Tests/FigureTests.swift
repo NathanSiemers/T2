@@ -34,7 +34,7 @@ final class FigureTests: XCTestCase {
         let cols = columns(cohorts: cohorts)
         let request = PlotRequest(x: ["cohort"], y: ["GENE"], color: "group", facet: facet)
         let keep = Mask(repeating: true, count: 120)
-        return PlotBuilder.build(request, columns: cols, keep: keep, context: PlotBuilder.Context(datasetLabel: "Test", survivalEndpoints: []))
+        return PlotBuilder.build(request, columns: cols, keep: keep, context: PlotBuilder.Context(datasetLabel: "Test"))
     }
 
     // MARK: rendering

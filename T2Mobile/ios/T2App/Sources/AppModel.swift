@@ -19,6 +19,14 @@ func initialServiceAddress() -> String {
     return t2DefaultService
 }
 
+/// The service does not describe the dataset the way the app needs (the dataset contract's
+/// `handles` and `tte_variables`). The app derives nothing itself, so it says so.
+struct ServiceTooOld: LocalizedError {
+    var errorDescription: String? {
+        "This T2 data service is older than the app expects: it does not say which columns hold the cohorts and the survival times. Please try again later, or update the app if a newer one is available."
+    }
+}
+
 @MainActor @Observable
 final class AppModel {
     // (one stored property per line: @Observable cannot track `var a = "", b = ""`)
@@ -37,6 +45,41 @@ final class AppModel {
     var activePresets: Set<String> = []
     /// the samples of every preset of the open dataset, by label (worked out once per dataset)
     private var presetMasks: [String: Mask] = [:]
+
+    // What a screen asks for on every redraw is worked out once per real change and kept: the
+    // plot scene, the mask and the count of samples in use, the cohort list, the preset
+    // choices. `filter.revision` moves on every change of the filter; `datasetRevision`
+    // moves when a dataset is opened (its meta, its preset masks and its source change).
+    // (`let` caches: not tracked by Observation; the values they are keyed by are read in the
+    // key, so a screen still redraws when any of them changes.)
+    private var datasetRevision = 0
+    private struct SceneKey: Equatable {
+        var x: String, y: String, color: String, size: String, facet: String
+        var xMore: [String], yMore: [String], condition: [String]
+        var conditionOn: PlotRequest.ConditionTarget
+        var kmGroups: Int, kmMaxDays: Double
+        var zscoreY: Bool, flip: Bool, waterfall: Bool, yIndividually: Bool, fitLine: Bool
+        var filterRevision: Int, datasetRevision: Int
+    }
+    private struct ChoicesKey: Equatable { var datasetRevision: Int, fixed: String?, version: String? }
+    private let sceneCache = KeyedCache<SceneKey, PlotScene>()
+    private let maskCache = KeyedCache<[Int], Mask>()
+    private let countCache = KeyedCache<[Int], Int>()
+    private let cohortCache = KeyedCache<[Int], [String]>()
+    private let sourceMaskCache = KeyedCache<ChoicesKey, Mask>()
+    private let groupCache = KeyedCache<ChoicesKey, [Preset]>()
+    private let exclusionCache = KeyedCache<ExclusionKey, [Preset]>()
+    private struct ExclusionKey: Equatable { var choices: ChoicesKey, group: String? }
+    private var choicesKey: ChoicesKey { ChoicesKey(datasetRevision: datasetRevision, fixed: fixedPreset, version: meta?.version) }
+
+    /// the samples passing the presets and every filter; worked out once per change
+    func currentMask() -> Mask {
+        maskCache.get([filter.revision, datasetRevision]) { filter.mask() }
+    }
+    /// how many samples are in use (the count every screen prints)
+    func selectedCount() -> Int {
+        countCache.get([filter.revision, datasetRevision]) { currentMask().reduce(0) { $0 + ($1 ? 1 : 0) } }
+    }
 
     // what is plotted
     var x = ""
@@ -69,6 +112,7 @@ final class AppModel {
     var lastError: Error?
     /// what to tell the user when the service could not be reached: their phone, or our server
     var outageText: String {
+        if lastError is ServiceTooOld { return (lastError as? ServiceTooOld)?.errorDescription ?? "" }
         if let e = lastError as? URLError,
            [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff].contains(e.code) {
             return "Your phone seems to be offline. T2 needs an internet connection to fetch its data."
@@ -125,13 +169,18 @@ final class AppModel {
 
     /// the cohorts that have samples in the chosen data source (all of them for a whole dataset)
     var availableCohorts: [String] {
-        guard let col = filter.columns["cohort"], case .categorical(let levels, let codes) = col.data else { return [] }
-        guard let mask = filter.baseMask else { return levels }
-        var seen = Set<Int>()
-        for i in codes.indices where mask[i] && codes[i] >= 0 { seen.insert(codes[i]) }
-        return levels.indices.filter { seen.contains($0) }.map { levels[$0] }
+        guard let cohortCol = meta?.cohortColumn else { return [] }
+        return cohortCache.get([filter.revision, datasetRevision]) {
+            guard let col = filter.columns[cohortCol], let levels = col.levels else { return [] }
+            return col.levelsPresent(in: filter.baseMask).map { levels[$0] }
+        }
     }
     func column(_ name: String) -> Column? { name.isEmpty ? nil : filter.columns[name] }
+    /// is this the name of one of the dataset's time-to-event variables?
+    func isTTE(_ name: String) -> Bool { !name.isEmpty && (meta?.tte.contains { $0.name == name } ?? false) }
+    /// a variable the dataset has: a column, or (as X) a time-to-event variable, which is
+    /// read from its entry's own columns and need not be a column itself
+    func isKnown(_ name: String) -> Bool { column(name) != nil || isTTE(name) }
 
     // MARK: loading
 
@@ -141,6 +190,7 @@ final class AppModel {
         if baseURL.isEmpty { baseURL = t2DefaultService }
         UserDefaults.standard.set(baseURL, forKey: "baseURL")
         meta = nil
+        datasetRevision += 1
         datasets = []
         filter = CrossFilter(sampleCount: 0)
         await start()
@@ -185,22 +235,27 @@ final class AppModel {
                               conditionOn: conditionOn, zscoreY: zscoreY, flip: flip, waterfall: waterfall, yIndividually: yIndividually, filters: filter.filters)
         }
         var m = try await api.meta(name)
+        // a service without the dataset contract: say so, derive nothing (the previous dataset stays open)
+        if m.isOldService { throw ServiceTooOld() }
         var clin: Clinical
         do {
             clin = try await api.clinical(name, version: m.version)
         } catch APIClient.APIError.versionChanged {
             // the database was replaced between the two requests: ask once more
             m = try await api.meta(name)
+            if m.isOldService { throw ServiceTooOld() }
             clin = try await api.clinical(name, version: m.version)
         }
         var cf = CrossFilter(sampleCount: clin.n)
         cf.load(clin.columns)
         meta = m
+        datasetRevision += 1
         samples = clin.samples
         filter = cf
         let presets = allPresets
         presetMasks = Dictionary(presets.map { ($0.label, $0.mask(columns: cf.columns, sampleCount: cf.sampleCount)) }, uniquingKeysWith: { a, _ in a })
         fixedPreset = preset.flatMap { label in presets.contains { $0.label == label } ? label : nil }
+        datasetRevision += 1
         if preset != nil && fixedPreset == nil { status = "This dataset has no part called \u{201C}\(preset ?? "")\u{201D}; showing all of it." }
         activePresets = Set(presets.filter(\.isDefault).map(\.label)).union(fixedPreset.map { [$0] } ?? [])
         func first(_ key: String, _ argument: String) -> String {
@@ -224,7 +279,7 @@ final class AppModel {
             // one request for every carried name; the ones the dataset does not have come back
             // missing (a failure here only means nothing is carried over)
             try? await ensureLoaded(c.names)
-            let has = { (n: String) in !n.isEmpty && self.column(n) != nil }
+            let has = { (n: String) in !n.isEmpty && self.isKnown(n) }
             if has(c.x) { x = c.x }
             if has(c.y) { y = c.y }
             if has(c.color) || c.color.isEmpty { color = c.color }
@@ -236,7 +291,7 @@ final class AppModel {
         }
         try await ensureLoaded([x, y, color, size, facet])
         // a variable the dataset does not have is not kept as a selection
-        if column(x) == nil { x = "" }
+        if !isKnown(x) { x = "" }
         if column(y) == nil { y = "" }
         if column(color) == nil { color = "" }
         if column(size) == nil { size = "" }
@@ -244,7 +299,7 @@ final class AppModel {
         for v in [x, y, color, size] { filter.add(v) }     // plotted variables are filterable from the start
         // the dataset's opening cohorts (TCGA: nine of 33, a plot of all of them is too busy),
         // unless the user's own cohort choice comes along from the previous dataset
-        if !(carried?.filters.contains { $0.column == "cohort" } ?? false) { applyDefaultCohorts() }
+        if !(carried?.filters.contains { $0.column == m.cohortColumn } ?? false) { applyDefaultCohorts() }
         if let c = carried {
             // the filter panels and their settings, where the names and the levels exist
             for f in c.filters where column(f.column) != nil {
@@ -270,7 +325,7 @@ final class AppModel {
     /// fetch any of these variables that are not on the device yet
     func ensureLoaded(_ names: [String]) async throws {
         guard let ds = datasetName else { return }
-        let need = Array(Set(names.filter { !$0.isEmpty && filter.columns[$0] == nil })).sorted()
+        let need = Array(Set(names.filter { !$0.isEmpty && filter.columns[$0] == nil && !isTTE($0) })).sorted()
         guard !need.isEmpty else { return }
         let r: (columns: [Column], missing: [String])
         do {
@@ -291,7 +346,7 @@ final class AppModel {
     func setVariable(_ slot: Slot, to name: String) async {
         await run(name.isEmpty ? "Updating" : "Loading \(name)") {
             try await self.ensureLoaded([name])
-            guard name.isEmpty || self.filter.columns[name] != nil else { return }
+            guard name.isEmpty || self.filter.columns[name] != nil || (slot == .x && self.isTTE(name)) else { return }
             switch slot {
             case .x: self.x = name
             case .y: self.y = name
@@ -360,53 +415,34 @@ final class AppModel {
     }
     /// names matching `query` (the best 200: exact, then starting with, then containing the
     /// letters) and how many match in all; nil when the search itself failed
-    func search(_ query: String) async -> (names: [String], total: Int)? {
-        guard let ds = datasetName else { return ([], 0) }
+    /// (`hits`: what the service says each name is: section, type, kind)
+    func search(_ query: String) async -> (names: [String], total: Int, hits: [String: TypedHit])? {
+        guard let ds = datasetName else { return ([], 0, [:]) }
         guard let r = try? await api.searchProbes(ds, query: query, limit: 200) else { return nil }
-        return (r.probes, r.totalMatches)
+        return (r.probes, r.totalMatches, Dictionary((r.hitsTyped ?? []).map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a }))
     }
 
     // MARK: samples
 
-    // The dataset's presets are of two kinds. A GROUP picks a set of samples ("GTEx normal
-    // tissues", "Primary tumors only": a rule with `in`); groups are alternatives, so one at
-    // most is in use. An EXCLUSION only removes samples ("Exclude cell lines", "Exclude
-    // tumors of heme origin": every rule a `not in`); any number can be on. A choice is
-    // offered only where it changes the samples in use: a group that is empty within the
-    // data source, or is the whole of it, is not offered, and nor is an exclusion that would
-    // remove nothing, or everything, from the source and the chosen group.
+    // The dataset's presets are of two kinds, groups and exclusions (T2Kit's PresetChoices has
+    // the rules and says what each is). They are worked out once per dataset and chosen
+    // group, not on every redraw.
 
     /// a preset that only removes samples
-    static func isExclusion(_ p: Preset) -> Bool { !p.rules.isEmpty && p.rules.allSatisfy { $0.op == "not in" } }
+    static func isExclusion(_ p: Preset) -> Bool { PresetChoices.isExclusion(p) }
 
     /// the samples of the data source: the fixed preset's, or all of them
     private var sourceMask: Mask {
-        fixedPreset.flatMap { presetMasks[$0] } ?? Mask(repeating: true, count: filter.sampleCount)
+        sourceMaskCache.get(choicesKey) {
+            fixedPreset.flatMap { presetMasks[$0] } ?? Mask(repeating: true, count: filter.sampleCount)
+        }
     }
     /// how many samples the data source has (the "of" in "n of N samples in use")
     var sourceCount: Int { fixedPreset == nil ? filter.sampleCount : sourceMask.reduce(0) { $0 + ($1 ? 1 : 0) } }
-    /// does this preset keep some, but not all, of `base`?
-    private func narrows(_ label: String, within base: Mask) -> Bool {
-        guard let pm = presetMasks[label], pm.count == base.count else { return false }
-        var inBase = 0, kept = 0
-        for i in base.indices where base[i] {
-            inBase += 1
-            if pm[i] { kept += 1 }
-        }
-        return kept > 0 && kept < inBase
-    }
-    /// the groups a user can choose from within the data source. A group that comes to the
-    /// same samples as an exclusion offered here (within GTEx, "GTEx normal tissues" is
-    /// exactly "Exclude cell lines") is left to the exclusion, the clearer control.
+    /// the groups a user can choose from within the data source
     var groupChoices: [Preset] {
-        let base = sourceMask
-        let exclusions = allPresets.filter { $0.label != fixedPreset && Self.isExclusion($0) && narrows($0.label, within: base) }
-        return allPresets.filter { p in
-            guard p.label != fixedPreset, !Self.isExclusion(p), narrows(p.label, within: base), let pm = presetMasks[p.label] else { return false }
-            return !exclusions.contains { e in
-                guard let em = presetMasks[e.label] else { return false }
-                return base.indices.allSatisfy { !base[$0] || pm[$0] == em[$0] }
-            }
+        groupCache.get(choicesKey) {
+            PresetChoices.groups(presets: allPresets, masks: presetMasks, fixed: fixedPreset, source: sourceMask)
         }
     }
     /// the group in use, if any
@@ -415,9 +451,10 @@ final class AppModel {
     }
     /// the exclusions that would make a difference to the source and the chosen group
     var exclusionChoices: [Preset] {
-        var base = sourceMask
-        if let g = chosenGroup, let gm = presetMasks[g] { base = zip(base, gm).map { $0 && $1 } }
-        return allPresets.filter { $0.label != fixedPreset && Self.isExclusion($0) && narrows($0.label, within: base) }
+        let group = chosenGroup
+        return exclusionCache.get(ExclusionKey(choices: choicesKey, group: group)) {
+            PresetChoices.exclusions(presets: allPresets, masks: presetMasks, fixed: fixedPreset, source: sourceMask, group: group)
+        }
     }
 
     func choose(group label: String?) {
@@ -454,22 +491,32 @@ final class AppModel {
     /// The current plot, worked out by T2Kit (PlotBuilder) from the selections and the samples in use.
     func scene(fitLine: Bool) -> PlotScene {
         guard let m = meta else { return .empty(busy ? "Loading\u{2026}" : (status.isEmpty ? "No dataset is open." : status)) }
-        var request = PlotRequest(x: [x] + xMore, y: [y] + yMore, color: color, size: size, facet: facet)
-        request.condition = condition
-        request.conditionOn = condition.isEmpty ? .none : conditionOn
-        request.kmGroups = kmGroups
-        request.kmMaxDays = kmMaxDays
-        request.zscoreY = zscoreY
-        request.yIndividually = yIndividually && !yMore.isEmpty
-        request.flip = flip
-        request.waterfall = waterfall
-        request.fitLine = fitLine
-        let context = PlotBuilder.Context(datasetLabel: m.label, survivalEndpoints: m.usableSurvivalEndpoints)
-        return PlotBuilder.build(request, columns: filter.columns, keep: filter.mask(), context: context)
+        let key = SceneKey(x: x, y: y, color: color, size: size, facet: facet, xMore: xMore, yMore: yMore, condition: condition,
+                           conditionOn: conditionOn, kmGroups: kmGroups, kmMaxDays: kmMaxDays, zscoreY: zscoreY, flip: flip,
+                           waterfall: waterfall, yIndividually: yIndividually, fitLine: fitLine,
+                           filterRevision: filter.revision, datasetRevision: datasetRevision)
+        return sceneCache.get(key) {
+            var request = PlotRequest(x: [x] + xMore, y: [y] + yMore, color: color, size: size, facet: facet)
+            request.condition = condition
+            request.conditionOn = condition.isEmpty ? .none : conditionOn
+            request.kmGroups = kmGroups
+            request.kmMaxDays = kmMaxDays
+            request.zscoreY = zscoreY
+            request.yIndividually = yIndividually && !yMore.isEmpty
+            request.flip = flip
+            request.waterfall = waterfall
+            request.fitLine = fitLine
+            // (the website also asks for the cohort and the sample type of a sample when it keeps only complete ones)
+            let required = [m.cohortColumn, m.sampleTypeColumn].compactMap { $0 }
+            let context = PlotBuilder.Context(datasetLabel: m.label, tte: m.tte, typeLabels: m.typeWords, handleColumns: required)
+            return PlotBuilder.build(request, columns: filter.columns, keep: currentMask(), context: context)
+        }
     }
 
-    /// is X a survival endpoint of this dataset (so the plot is a Kaplan-Meier plot)?
-    var isSurvival: Bool { meta?.usableSurvivalEndpoints.contains(x) ?? false }
+    /// is X a time-to-event variable of this dataset (so the plot is a Kaplan-Meier plot)?
+    var isSurvival: Bool { isTTE(x) }
+    /// the time-to-event entry X names, if it does
+    var tteEntry: TTEVariable? { meta?.tte.first { $0.name == x } }
 
     /// The columns of the export table: every probe the user has asked for in this dataset
     /// (the plotted ones first, then the other filter columns and anything else loaded), then
@@ -505,10 +552,10 @@ final class AppModel {
     func writeTable() -> URL? {
         guard let m = meta else { return nil }
         let names = tableColumns
-        let csv = TableExport.csv(samples: samples, columns: names.compactMap { filter.columns[$0] }, keep: filter.mask())
+        let csv = TableExport.csv(samples: samples, columns: names.compactMap { filter.columns[$0] }, keep: currentMask())
         let stamp = DateFormatter()
         stamp.dateFormat = "yyyyMMdd-HHmmss"
-        let file = "T2_table_\(m.dataset)_\(filter.selectedCount())samples_\(names.count)columns_\(stamp.string(from: Date())).csv"
+        let file = "T2_table_\(m.dataset)_\(selectedCount())samples_\(names.count)columns_\(stamp.string(from: Date())).csv"
             .replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(file)
         do { try csv.write(to: url, atomically: true, encoding: .utf8) } catch { return nil }
@@ -519,25 +566,25 @@ final class AppModel {
 
     /// the cohorts in use; nil = all
     var chosenCohorts: Set<String>? {
-        if case .levels(let s)? = filter.filter("cohort")?.value { return s }
+        if let col = meta?.cohortColumn, case .levels(let s)? = filter.filter(col)?.value { return s }
         return nil
     }
-    /// the cohorts the dataset says to show first (`defaults.cohorts`), where they exist; a
-    /// dataset without that default (or whose named cohorts are not there) starts with all
+    /// the cohorts the dataset says to show first (`default_cohorts`, a list), where they
+    /// exist; a dataset without that default (or whose named cohorts are not there) starts with all
     func applyDefaultCohorts() {
-        guard let wanted = meta?.defaults["cohorts"], !wanted.isEmpty else { return }
-        let present = Set(wanted.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-            .intersection(availableCohorts)
+        guard let wanted = meta?.defaultCohorts, !wanted.isEmpty else { return }
+        let present = Set(wanted).intersection(availableCohorts)
         guard !present.isEmpty else { return }
         setCohorts(present)
     }
 
     func setCohorts(_ chosen: Set<String>?) {
+        guard let col = meta?.cohortColumn else { return }
         let all = availableCohorts
         guard !all.isEmpty else { return }
-        filter.add("cohort")
-        if let chosen, chosen.count < all.count { filter.set("cohort", value: .levels(chosen)) }
-        else { filter.set("cohort", value: nil) }
+        filter.add(col)
+        if let chosen, chosen.count < all.count { filter.set(col, value: .levels(chosen)) }
+        else { filter.set(col, value: nil) }
     }
 
     private func run(_ what: String, _ work: @escaping () async throws -> Void) async {

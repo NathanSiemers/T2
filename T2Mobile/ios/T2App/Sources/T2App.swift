@@ -112,6 +112,8 @@ struct VariableSearch: View {
     @State private var query = ""
     @State private var results: [String] = []
     @State private var total = 0
+    /// what the service says each hit is (section, type, kind), shown under the name
+    @State private var hits: [String: TypedHit] = [:]
     @State private var searching = false
     @State private var searchFailed = false
     @State private var chosen: [String] = []
@@ -194,6 +196,7 @@ struct VariableSearch: View {
                 if Task.isCancelled { return }
                 searchFailed = found == nil
                 results = found?.names ?? []
+                hits = found?.hits ?? [:]
                 total = found?.total ?? 0
                 searching = false
             }
@@ -207,6 +210,18 @@ struct VariableSearch: View {
         return "\(results.count) match\(results.count == 1 ? "" : "es")"
     }
 
+    /// "mutation, categorical": what the service says a search hit is (its `hits_typed`); nothing for a name it did not type
+    private func kindLine(_ name: String) -> String? {
+        guard !q.isEmpty, let h = hits[name] else { return nil }
+        let what: String
+        switch h.section {
+        case "handle": what = "sample grouping"
+        case "clinical": what = "clinical"
+        default: what = model.meta?.typeLabel(for: h.type) ?? h.type
+        }
+        return "\(what), \(h.isNumeric ? "numeric" : "categorical")"
+    }
+
     private func row(_ name: String) -> some View {
         Button {
             if multiple {
@@ -218,7 +233,10 @@ struct VariableSearch: View {
             }
         } label: {
             HStack {
-                Text(name).foregroundStyle(Color.primary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).foregroundStyle(Color.primary)
+                    if let kind = kindLine(name) { Text(kind).font(.caption2).foregroundStyle(.secondary) }
+                }
                 Spacer()
                 if multiple, chosen.contains(name) { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
                 else if name == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
@@ -307,8 +325,8 @@ struct SelectView: View {
 
     private var variablesHelp: String {
         var s = "Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. Two numbers give a scatter plot; a category on X gives box plots."
-        if let endpoints = model.meta?.usableSurvivalEndpoints, !endpoints.isEmpty {
-            s += " A survival endpoint on X (\(endpoints.joined(separator: ", "))) gives Kaplan-Meier curves by groups of Y."
+        if let tte = model.meta?.tte, !tte.isEmpty {
+            s += " A time-to-event variable on X (\(tte.map(\.name).joined(separator: ", "))) gives Kaplan-Meier curves by groups of Y."
         }
         return s
     }
@@ -325,7 +343,7 @@ struct SelectView: View {
                 }
                 .accessibilityIdentifier("dataset-picker")
                 if let m = model.meta {
-                    let n = model.fixedPreset == nil ? m.nSamples : model.filter.selectedCount()
+                    let n = model.fixedPreset == nil ? m.nSamples : model.selectedCount()
                     Text("\(m.title)\n\(n.formatted()) samples, \(m.nProbes.formatted()) variables")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("dataset-summary")
@@ -386,12 +404,12 @@ struct SelectView: View {
                 } header: {
                     Text("Samples")
                 } footer: {
-                    Text("\(model.filter.selectedCount().formatted()) of \(model.sourceCount.formatted()) samples in use. Narrow them further on the Filter tab.")
+                    Text("\(model.selectedCount().formatted()) of \(model.sourceCount.formatted()) samples in use. Narrow them further on the Filter tab.")
                         .accessibilityIdentifier("select-count")
                 }
             } else {
                 Section {
-                    Text("\(model.filter.selectedCount().formatted()) of \(model.sourceCount.formatted()) samples in use. Narrow them on the Filter tab.")
+                    Text("\(model.selectedCount().formatted()) of \(model.sourceCount.formatted()) samples in use. Narrow them on the Filter tab.")
                         .font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("select-count")
                 } header: {

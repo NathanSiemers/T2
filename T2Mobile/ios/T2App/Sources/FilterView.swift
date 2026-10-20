@@ -25,7 +25,7 @@ struct FilterView: View {
     private var list: some View {
         List {
             Section {
-                let selected = model.filter.selectedCount(), universe = model.filter.universeCount()
+                let selected = model.selectedCount(), universe = model.filter.universeCount()
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(selected.formatted()) of \(universe.formatted()) samples selected")
                         .font(.headline)

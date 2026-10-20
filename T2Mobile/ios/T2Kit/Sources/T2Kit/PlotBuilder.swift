@@ -14,12 +14,20 @@ public enum PlotBuilder {
     public struct Context: Sendable {
         /// the dataset's display name, for titles
         public var datasetLabel: String
-        /// survival endpoints this dataset has (DatasetMeta.usableSurvivalEndpoints)
-        public var survivalEndpoints: [String]
+        /// the time-to-event variables the dataset declares (DatasetMeta.tte): an X variable
+        /// with one of these names is a survival analysis, read from the entry's own columns
+        public var tte: [TTEVariable]
+        /// type -> the word a title uses ("mut" -> "mutation"); a type without a word adds none
+        public var typeLabels: [String: String]
+        /// the dataset's handle columns (cohort, sub-cohort, sample type): the website also
+        /// asks for them to be present when incomplete samples are dropped
+        public var handleColumns: [String]
         /// the most panels a faceted plot may have
         public var maxPanels: Int
-        public init(datasetLabel: String = "", survivalEndpoints: [String] = [], maxPanels: Int = 36) {
-            self.datasetLabel = datasetLabel; self.survivalEndpoints = survivalEndpoints; self.maxPanels = maxPanels
+        public init(datasetLabel: String = "", tte: [TTEVariable] = [], typeLabels: [String: String] = [:],
+                    handleColumns: [String] = [], maxPanels: Int = 36) {
+            self.datasetLabel = datasetLabel; self.tte = tte; self.typeLabels = typeLabels
+            self.handleColumns = handleColumns; self.maxPanels = maxPanels
         }
     }
 
@@ -45,17 +53,20 @@ public enum PlotBuilder {
         guard !xNames.isEmpty, !yNames.isEmpty else {
             return .empty(xNames.isEmpty && yNames.isEmpty ? "Choose X and Y on the Select tab." : xNames.isEmpty ? "Choose an X variable." : "Choose a Y variable.")
         }
-        let absent = request.variables.filter { columns[$0] == nil }
+        // (a time-to-event variable on X is read from its entry's own columns, so its name need not be a column)
+        let tteX = xNames.count == 1 ? context.tte.first(where: { $0.name == xNames[0] }) : nil
+        let needed = request.variables.filter { $0 != tteX?.name }
+        let absent = needed.filter { columns[$0] == nil }
         guard absent.isEmpty else { return .empty("Not loaded: \(absent.joined(separator: ", ")).") }
-        guard request.variables.allSatisfy({ columns[$0]!.count == n }) else { return .empty("The loaded data do not match the dataset's sample list.") }
+        guard needed.allSatisfy({ columns[$0]!.count == n }) else { return .empty("The loaded data do not match the dataset's sample list.") }
 
         let summary = sampleSummary(request, columns: columns, keep: keep)
         guard keep.contains(true) else {
             return .empty("No samples pass the filters.", summary: summary)
         }
         // a survival endpoint on X switches to time-to-event analysis, as on the website
-        if xNames.count == 1, context.survivalEndpoints.contains(xNames[0]) {
-            var scene = survival(request, endpoint: xNames[0], columns: columns, keep: keep, context: context)
+        if let entry = tteX {
+            var scene = survival(request, entry: entry, columns: columns, keep: keep, context: context)
             scene.summary = summary
             return scene
         }
@@ -96,7 +107,7 @@ public enum PlotBuilder {
             if let s = size { required.append { !s[$0].isNaN } }
             if let f = facet { required.append { !f.isMissing($0) } }
             // the website also asks for the dataset's cohort and sample type, when it has them
-            for fixed in ["cohort", "sample_type"] { if let c = columns[fixed] { required.append { !c.isMissing($0) } } }
+            for fixed in context.handleColumns { if let c = columns[fixed] { required.append { !c.isMissing($0) } } }
         }
         var rows = (0..<n).filter { i in keep[i] && required.allSatisfy { $0(i) } }
         // "remove influences of" comes after the samples are chosen (lib.R does it after the
@@ -131,7 +142,7 @@ public enum PlotBuilder {
             scene = one(rows)
         }
         if request.flip { flip(&scene) }
-        scene.title = title(x: x.name, y: y.name, dataset: context.datasetLabel)
+        scene.title = title(x: x.name, y: y.name, dataset: context.datasetLabel, typeLabels: context.typeLabels)
         scene.subtitle = subtitle(request, color: color, size: size, facet: facet, n: scene.n, dataset: context.datasetLabel)
         if conditioned {
             // as the website words it under the title
@@ -163,11 +174,7 @@ public enum PlotBuilder {
             warnings.append("Plotted individually, a Y variable cannot also be X, color, size, a graph variable or a covariate. Dropped from Y: \(clashing.joined(separator: ", ")).")
             use.removeAll { others.contains($0) }
         }
-        let notNumeric = use.filter { !(columns[$0]?.isNumeric ?? false) }
-        if !notNumeric.isEmpty {
-            warnings.append("Individual Y plots need numbers. Not used: \(notNumeric.joined(separator: ", ")).")
-            use.removeAll { notNumeric.contains($0) }
-        }
+        use = numericOnly(use, columns: columns, warnings: &warnings) { "Individual Y plots need numbers. Not used: \($0)." }
         if use.count > maxIndividualY {
             warnings.append("At most \(maxIndividualY) Y probes are plotted individually; the first \(maxIndividualY) are used.")
             use = Array(use.prefix(maxIndividualY))
@@ -198,7 +205,7 @@ public enum PlotBuilder {
         }
         let yName = use.count <= 3 ? use.joined(separator: ", ") : "\(use.count) Y probes"
         var stackedColumns: [String: Column] = [:]
-        for name in Set(request.variables + ["cohort", "sample_type"]) where !use.contains(name) {
+        for name in Set(request.variables + context.handleColumns) where !use.contains(name) {
             if let c = columns[name] { stackedColumns[name] = repeated(c) }
         }
         stackedColumns[yName] = Column(name: yName, type: "stacked", data: .numeric(values))
@@ -232,12 +239,22 @@ public enum PlotBuilder {
         scene.probesStacked = k
         // a correlation over several genes' values at once means nothing
         scene.stats.removeAll { $0.label.hasPrefix("Pearson") || $0.label.hasPrefix("Spearman") }
-        scene.title = title(x: request.x.filter { !$0.isEmpty }.joined(separator: "."), y: "\(use.joined(separator: ", ")) (individually)", dataset: context.datasetLabel)
+        scene.title = title(x: request.x.filter { !$0.isEmpty }.joined(separator: "."), y: "\(use.joined(separator: ", ")) (individually)", dataset: context.datasetLabel, typeLabels: context.typeLabels)
         scene.warnings = warnings + scene.warnings
         return scene
     }
 
     // MARK: preparing the variables
+
+    /// The names whose column is numeric, in order. The others are dropped, and a warning
+    /// (`message` gets their comma-separated list) says so: the one wording of "needs numbers,
+    /// not used" for every place a list of variables must be numeric.
+    static func numericOnly(_ names: [String], columns: [String: Column], warnings: inout [String],
+                            message: (String) -> String) -> [String] {
+        let dropped = names.filter { !(columns[$0]?.isNumeric ?? false) }
+        if !dropped.isEmpty { warnings.append(message(dropped.joined(separator: ", "))) }
+        return dropped.isEmpty ? names : names.filter { !dropped.contains($0) }
+    }
 
     /// One variable, or several numeric ones as the median of their z-scores.
     /// A transformation (z-score, combination) uses only the samples in `keep`; a single
@@ -246,12 +263,8 @@ public enum PlotBuilder {
         func kept(_ v: [Double]) -> [Double] { v.indices.map { keep[$0] ? v[$0] : .nan } }
         var use = names
         if names.count > 1 {
-            let notNumeric = names.filter { !(columns[$0]?.isNumeric ?? false) }
-            if !notNumeric.isEmpty {
-                warnings.append("Several \(axis) variables are combined, which needs numbers. Not used: \(notNumeric.joined(separator: ", ")).")
-                use = names.filter { !notNumeric.contains($0) }
-                if use.isEmpty { use = [names[0]] }
-            }
+            use = numericOnly(names, columns: columns, warnings: &warnings) { "Several \(axis) variables are combined, which needs numbers. Not used: \($0)." }
+            if use.isEmpty { use = [names[0]] }
         }
         guard let first = columns[use[0]] else { return nil }
         if use.count == 1 {
@@ -334,8 +347,7 @@ public enum PlotBuilder {
             d.legend.title = colorName
             switch c.data {
             case .categorical(let levels, let codes):
-                let present = Set(rows.map { codes[$0] }.filter { $0 >= 0 })
-                let order = levels.indices.filter { present.contains($0) }
+                let order = Column.levelsPresent(codes: codes, levelCount: levels.count, rows: rows)
                 let colors = Palette.discrete(count: order.count)
                 var byCode = [RGB?](repeating: nil, count: levels.count)
                 for (k, code) in order.enumerated() { byCode[code] = colors[k] }
@@ -397,8 +409,7 @@ public enum PlotBuilder {
     static func box(_ request: PlotRequest, category: Variable, value: Variable, horizontal: Bool, dress d: Dress, rows: [Int]) -> PlotScene {
         let v = value.numbers!, codes = category.codes
         // the levels that have samples, in the variable's own order (droplevels) ...
-        var members: [Int: [Int]] = [:]
-        for r in rows { members[codes[r], default: []].append(r) }
+        let members = Column.groups(codes: codes, rows: rows)
         var order = category.levels.indices.filter { members[$0] != nil }
         // ... or by the median of the values (waterfall)
         if request.waterfall {
@@ -477,8 +488,7 @@ public enum PlotBuilder {
     /// all panels (facet_wrap's fixed scales); a categorical axis shows each panel's own levels.
     static func faceted(by levels: [String], codes: [Int], rows: [Int], maxPanels: Int, warnings: inout [String],
                         one: ([Int]) -> PlotScene) -> PlotScene {
-        var groups: [Int: [Int]] = [:]
-        for r in rows { groups[codes[r], default: []].append(r) }
+        let groups = Column.groups(codes: codes, rows: rows)
         var order = levels.indices.filter { groups[$0] != nil }
         if order.count > maxPanels {
             warnings.append("\(order.count) graphs asked for; the first \(maxPanels) are drawn. Filter the samples to see the others.")
@@ -545,12 +555,27 @@ public enum PlotBuilder {
 
     // MARK: words
 
-    static func title(x: String, y: String, dataset: String) -> String {
-        var s = "Relationship of \(x) and \(y)" + (dataset.isEmpty ? "" : " across \(dataset)")
-        for (suffix, word) in [(".fmut", " mutation"), (".mut", " mutation"), (".cnv", " CNA"), (".prot", " protein"), (".phospho", " phosphosite")] {
-            s = s.replacingOccurrences(of: suffix, with: word)
+    /// "TP53.mut" -> "TP53 mutation": the word the dataset gives the name's type (`typeLabels`,
+    /// the type being the text after the last dot); a name whose type has no word stays as it is.
+    /// Applied to every name inside `text` (names are runs without spaces, commas, brackets).
+    static func titleWords(_ text: String, typeLabels: [String: String]) -> String {
+        guard !typeLabels.isEmpty else { return text }
+        var out = "", token = ""
+        func flush() {
+            if let dot = token.lastIndex(of: "."), dot != token.startIndex,
+               let word = typeLabels[String(token[token.index(after: dot)...])], !word.isEmpty {
+                out += String(token[..<dot]) + " " + word
+            } else { out += token }
+            token = ""
         }
-        return s
+        for ch in text {
+            if ch == " " || ch == "," || ch == "(" || ch == ")" { flush(); out.append(ch) } else { token.append(ch) }
+        }
+        flush()
+        return out
+    }
+    static func title(x: String, y: String, dataset: String, typeLabels: [String: String] = [:]) -> String {
+        titleWords("Relationship of \(x) and \(y)" + (dataset.isEmpty ? "" : " across \(dataset)"), typeLabels: typeLabels)
     }
     static func subtitle(_ request: PlotRequest, color: Column?, size: [Double]?, facet: Column?, n: Int, dataset: String) -> String {
         var parts: [String] = []

@@ -84,9 +84,9 @@ final class DecodingTests: XCTestCase {
         XCTAssertFalse(p.isDefault)
     }
 
-    /// meta as the live service sends it (2026-10-05): cohort names, and the same four
-    /// survival endpoints for every dataset whether or not it has the columns
-    func testMetaCohortNamesAndUsableSurvivalEndpoints() throws {
+    /// meta as a service before the dataset contract sends it: the new fields are absent, the
+    /// meta decodes, and the app can tell that the service is old (it derives nothing itself)
+    func testMetaCohortNamesAndOldServiceWithoutContractFields() throws {
         func meta(clinical: String, cohorts: String) throws -> DatasetMeta {
             let json = """
             {"dataset":"D","title":"T","label":"L","version":"v","n_samples":3,"n_probes":9,
@@ -99,16 +99,77 @@ final class DecodingTests: XCTestCase {
         }
         let tcga = try meta(clinical: #"["gender","OS","OS.time","PFI","PFI.time","DSS","DFI.time"]"#,
                             cohorts: #","cohorts":[{"cohort":"BRCA","cohortstring":"breast invasive carcinoma ( BRCA )","lcohort":"breast invasive carcinoma"},{"cohort":"XX","cohortstring":null}]"#)
-        XCTAssertEqual(tcga.usableSurvivalEndpoints, ["OS", "PFI"])          // DSS has no time, DFI no event
         XCTAssertEqual(tcga.cohorts?.count, 2)
         XCTAssertEqual(tcga.cohortTitle("BRCA"), "breast invasive carcinoma ( BRCA )")
         XCTAssertEqual(tcga.cohortTitle("XX"), "XX")                         // a null name: the value itself
         XCTAssertEqual(tcga.cohortTitle("LUAD"), "LUAD")                     // not listed
-        // tcgatargetgtex and DEMO list the endpoints but have no such columns
+        // the new fields are absent: nothing is derived from the old ones
+        XCTAssertTrue(tcga.isOldService)
+        XCTAssertNil(tcga.handles); XCTAssertNil(tcga.cohortColumn); XCTAssertNil(tcga.sampleTypeColumn); XCTAssertNil(tcga.subcohortColumn)
+        XCTAssertEqual(tcga.tte, [])                                         // no pair rule: OS / OS.time are not guessed
+        XCTAssertEqual(tcga.handleColumns, [])
+        XCTAssertNil(tcga.typeLabel(for: "mut")); XCTAssertEqual(tcga.typeWords, [:])
+        XCTAssertNil(tcga.about); XCTAssertNil(tcga.defaultCohorts)
         let gtex = try meta(clinical: #"["study","disease","sample_type","gender"]"#, cohorts: "")
-        XCTAssertEqual(gtex.usableSurvivalEndpoints, [])
         XCTAssertNil(gtex.cohorts)                                           // a service without the field
         XCTAssertEqual(gtex.cohortTitle("Whole Blood"), "Whole Blood")
+    }
+
+    /// /meta as the live cptac dataset sends it with the dataset contract (2026-10-19)
+    func testMetaWithTheDatasetContract() throws {
+        let json = #"""
+        {"dataset":"cptac","name":"cptac","title":"T2: CPTAC Pan-Cancer","label":"CPTAC","version":"v1","n_samples":3,"n_probes":9,
+         "roles":{"cohort_col":"cohort","subtype_col":"","sampletype_col":"sample_type","normal_label":["Normal"],"heme_values":[],"sampletype_levels":["Tumor","Normal"]},
+         "defaults":{"x":"cohort","y":"CD8A","cohorts":"BRCA,CCRCC"},
+         "default_cohorts":["BRCA","CCRCC","a,b"],
+         "presets":[],"clinical_columns":["cohort","sample_type","death","days_to_death","PFI","PFI.time"],
+         "survival_endpoints":["OS","PFI"],
+         "handles":[{"name":"cohort","role":"cohort"},{"name":"subtype","role":"subcohort"},{"name":"sample_type","role":"sample_type"}],
+         "tte_variables":[{"name":"OS","label":"Overall Survival","event_col":"death","time_col":"days_to_death","time_unit":"days","description":"time to death"},
+                          {"name":"PFI","label":"PFI","event_col":"PFI","time_col":"PFI.time","time_unit":"days","description":""}],
+         "type_labels":{"mut":"mutation","cnv":"CNA","rna":"","immune_score":"immune score"},
+         "about":{"description":"D","citation":"C","attribution":"A","url":"https://example.org"},
+         "types":[{"type":"mut","description":"d","example":"TP53.mut","reference":"r","label":"mutation"},{"type":"rna","description":null,"example":null,"reference":null,"label":""},
+                  {"type":"cnv","label":"CNA"},{"type":"immune_score","label":"immune score"}]}
+        """#
+        let m = try APIClient.decoder.decode(DatasetMeta.self, from: Data(json.utf8))
+        XCTAssertFalse(m.isOldService)
+        XCTAssertEqual(m.name, "cptac")
+        XCTAssertEqual(m.cohortColumn, "cohort"); XCTAssertEqual(m.subcohortColumn, "subtype"); XCTAssertEqual(m.sampleTypeColumn, "sample_type")
+        XCTAssertEqual(m.handleColumns, ["cohort", "subtype", "sample_type"])
+        XCTAssertEqual(m.tte.map(\.name), ["OS", "PFI"])
+        XCTAssertEqual(m.tte[0], TTEVariable(name: "OS", label: "Overall Survival", eventCol: "death", timeCol: "days_to_death", timeUnit: "days", description: "time to death"))
+        XCTAssertEqual(m.tte[0].unitSuffix, "d")
+        XCTAssertEqual(m.survivalEndpoints, ["OS", "PFI"])                  // the old string array stays
+        XCTAssertEqual(m.typeLabel(for: "mut"), "mutation"); XCTAssertNil(m.typeLabel(for: "rna")); XCTAssertNil(m.typeLabel(for: "sig"))
+        XCTAssertEqual(m.typeWords, ["mut": "mutation", "cnv": "CNA", "immune_score": "immune score"])
+        // a type name with an underscore round-trips (it is a value in `types`, not a key the snake-case strategy touches)
+        XCTAssertEqual(m.typeLabel(for: "immune_score"), "immune score")
+        XCTAssertNil(m.typeLabel(for: "immuneScore"))
+        XCTAssertEqual(m.about, About(description: "D", citation: "C", attribution: "A", url: "https://example.org"))
+        XCTAssertEqual(m.defaultCohorts, ["BRCA", "CCRCC", "a,b"])           // an array: a name may contain a comma
+        XCTAssertEqual(m.defaults["cohorts"], "BRCA,CCRCC")                  // the 1.0 string is still decoded
+        XCTAssertEqual(m.types?.first?.label, "mutation")
+        // a sample-type-less dataset: the role is simply absent
+        let bare = try APIClient.decoder.decode(DatasetMeta.self, from: Data(json.replacingOccurrences(of: #",{"name":"sample_type","role":"sample_type"}"#, with: "").utf8))
+        XCTAssertNil(bare.sampleTypeColumn); XCTAssertEqual(bare.cohortColumn, "cohort")
+        // datasets list entries carry the handles too
+        let sum = #"""
+        {"name":"cptac","title":"T","label":"L","n_samples":1,"n_probes":1,"version":"v",
+         "roles":{"cohort_col":"cohort","subtype_col":"","sampletype_col":"","normal_label":[],"heme_values":[],"sampletype_levels":[]},
+         "defaults":{},"handles":[{"name":"cohort","role":"cohort"}]}
+        """#
+        let d = try APIClient.decoder.decode(DatasetSummary.self, from: Data(sum.utf8))
+        XCTAssertEqual(d.handles, [Handle(name: "cohort", role: "cohort")])
+    }
+
+    func testTypedSearchHitsDecode() throws {
+        let json = #"{"dataset":"cptac","probes":["TP53","TP53.mut"],"total_matches":2,"query":"tp53","hits_typed":[{"name":"TP53","section":"probe","type":"rna","kind":"num"},{"name":"TP53.mut","section":"probe","type":"mut","kind":"cat"}]}"#
+        let r = try APIClient.decoder.decode(ProbeSearch.self, from: Data(json.utf8))
+        XCTAssertEqual(r.hit("TP53.mut"), TypedHit(name: "TP53.mut", section: "probe", type: "mut", kind: "cat"))
+        XCTAssertTrue(r.hit("TP53")!.isNumeric); XCTAssertNil(r.hit("zzz"))
+        let old = try APIClient.decoder.decode(ProbeSearch.self, from: Data(#"{"probes":["A"],"total_matches":1}"#.utf8))
+        XCTAssertNil(old.hitsTyped); XCTAssertNil(old.hit("A"))
     }
 
     func testUnknownColumnKindIsAnError() {

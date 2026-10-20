@@ -51,18 +51,28 @@ public struct APIClient: Sendable {
     /// the dataset does not have. Pass the `version` the device's sample list belongs to:
     /// values of another database version must never be attached to it (`versionChanged`).
     public func values(_ dataset: String, probes names: [String], version: String? = nil) async throws -> (columns: [Column], missing: [String]) {
-        var columns: [Column] = [], missing: [String] = []
-        var start = 0
-        while start < names.count {
-            let chunk = Array(names[start..<min(start + Self.maxProbesPerRequest, names.count)])
+        let chunks = stride(from: 0, to: names.count, by: Self.maxProbesPerRequest).map {
+            Array(names[$0..<min($0 + Self.maxProbesPerRequest, names.count)])
+        }
+        func fetchChunk(_ chunk: [String]) async throws -> Values {
             var query = ["probes": chunk.joined(separator: ",")]
             if let version { query["v"] = version }
             let r = try await get("v1/\(dataset)/values", query: query, as: Values.self)
             if let version, let served = r.version, served != version { throw APIError.versionChanged }
-            columns += r.columns
-            missing += r.missing
-            start += Self.maxProbesPerRequest
+            return r
         }
+        // one request: no task overhead. Several: all at once, put back in the order asked.
+        var answers: [Values?] = Array(repeating: nil, count: chunks.count)
+        if chunks.count == 1 {
+            answers[0] = try await fetchChunk(chunks[0])
+        } else if chunks.count > 1 {
+            try await withThrowingTaskGroup(of: (Int, Values).self) { group in
+                for (i, chunk) in chunks.enumerated() { group.addTask { (i, try await fetchChunk(chunk)) } }
+                for try await (i, r) in group { answers[i] = r }
+            }
+        }
+        var columns: [Column] = [], missing: [String] = []
+        for r in answers.compactMap({ $0 }) { columns += r.columns; missing += r.missing }
         return (columns, missing)
     }
 

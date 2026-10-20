@@ -31,6 +31,18 @@ final class T2UITests: XCTestCase {
         }
         app.launchArguments = args
         app.launch()
+        // the one-time research-use notice covers the first launch on a fresh simulator;
+        // a test that photographs it asks for it with -t2ResetNotice and dismisses it itself
+        if !extra.contains("-t2ResetNotice") { dismissNoticeIfShown() }
+    }
+
+    /// tap Continue on the research-use notice if it is showing
+    private func dismissNoticeIfShown() {
+        let button = element("notice-continue")
+        if button.waitForExistence(timeout: 4) {
+            button.tap()
+            XCTAssertTrue(waitUntil(timeout: 10) { !button.exists }, "the research-use notice did not close")
+        }
     }
 
     private func shot(_ name: String) {
@@ -226,6 +238,34 @@ final class T2UITests: XCTestCase {
         shot("04d-about-clinical-variables")
         app.navigationBars.buttons.element(boundBy: 0).tap()      // back to About
         XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 10))
+        // Sources and citations: the data set's bibliography, the data types, the methods
+        scrollTo("sources").tap()
+        XCTAssertTrue(app.navigationBars["Sources and citations"].waitForExistence(timeout: 10), "the Sources and citations screen did not open")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] 'Pan-Cancer' OR label CONTAINS[c] 'Methods'")).firstMatch
+            .waitForExistence(timeout: 10), "no reference group on the Sources screen")
+        shot("04e-sources")
+        scrollTo("sources-methods", maxSwipes: 30)
+        shot("04f-sources-methods")
+        app.navigationBars.buttons.element(boundBy: 0).tap()      // back to About
+        XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 10))
+        app.buttons["Done"].tap()
+    }
+
+    /// the one-time research-use notice, then the plot's link to the methods
+    func test07_ResearchNoticeAndMethodsLink() {
+        launch(["-t2ResetNotice", "YES"])
+        XCTAssertTrue(element("notice-continue").waitForExistence(timeout: dataTimeout), "the research-use notice did not appear")
+        XCTAssertTrue(app.staticTexts["For research use"].exists)
+        shot("00-research-notice")
+        element("notice-continue").tap()
+        XCTAssertTrue(waitUntil(timeout: 10) { !element("notice-continue").exists }, "the notice did not close")
+        waitFor("dataset-summary", "the dataset's sample count")
+        // under the plot's statistics: Methods and sources
+        scrollTo("plot-button").tap()
+        waitFor("plot-count", "the plot's sample count")
+        scrollTo("methods-sources", maxSwipes: 20).tap()
+        XCTAssertTrue(element("sources-methods").waitForExistence(timeout: 10), "the Methods list did not open from the plot")
+        shot("04g-plot-methods-and-sources")
         app.buttons["Done"].tap()
     }
 

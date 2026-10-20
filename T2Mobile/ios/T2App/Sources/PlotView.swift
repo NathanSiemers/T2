@@ -7,6 +7,7 @@ struct PlotView: View {
     @Environment(AppModel.self) private var model
     @State private var tableURL: URL?
     @State private var fullScreen = false
+    @State private var sourcesOpen = false
     /// what the screen showed last: a changed plot is shown from its top again
     @State private var lastShown = ""
 
@@ -69,6 +70,11 @@ struct PlotView: View {
                     ForEach(scene.stats, id: \.label) { line in
                         LabeledContent(line.label) { Text(line.value).monospacedDigit() }
                     }
+                    Button { sourcesOpen = true } label: {
+                        Label("Methods and sources", systemImage: "books.vertical").font(.footnote)
+                    }
+                    .accessibilityIdentifier("methods-sources")
+                    .sheet(isPresented: $sourcesOpen) { SourcesSheet(scrollTo: "methods") }
                 }
             }
             if !scene.summary.isEmpty {

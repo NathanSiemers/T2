@@ -153,7 +153,7 @@ dataset_meta <- data.frame(
           "normal_label", "heme_values", "sampletype_levels",
           "default_x", "default_y", "default_color", "default_size",
           "default_condition",
-          "tte_variables", "about", "citation", "attribution", "about_url"),
+          "tte_variables", "references", "about", "citation", "attribution", "about_url"),
   value = c("DEMO: Synthetic Cell-Line Panel (not real data)",
             "Synthetic Cell-Line Panel",
             "tissue_origin", "growth_media", "",
@@ -164,6 +164,7 @@ dataset_meta <- data.frame(
               list(name = "OS", label = "Overall Survival", event_col = "OS", time_col = "OS.time", time_unit = "days",
                    description = "Synthetic overall survival (random event and follow-up days; not real data).")),
               auto_unbox = TRUE)),
+            "[]",   # references: synthetic data, no publication
             paste("DEMO is a small SYNTHETIC panel of 60 cell lines with 40 random expression probes and 3 random driver-mutation calls.",
                   "It is not real data: it exists to test the T2 apps and services, and to show that a dataset with a clinical vocabulary",
                   "unlike TCGA works. Its OS / OS.time pair is random, to exercise the Kaplan-Meier analysis."),

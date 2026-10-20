@@ -49,7 +49,7 @@ rtest() {   # rtest <script> [env...]: an R test in the R container, on the dev 
 case $step in
 go)      say go; (cd $REPO/T2Mobile/service && docker run --rm -v "$PWD":/src -w /src -v "$GOCACHE_DIR":/go/pkg/mod -e GOCACHE=/tmp/gocache golang:1.23-alpine sh -c 'go vet ./... && go test ./...') > "$LOGDIR/go.log" 2>&1; tail -2 "$LOGDIR/go.log" ;;
 equiv)   say equiv; (cd $REPO/T2Mobile/service && T2API_NET=t2api-dev T2API_HOST=t2api-dev T2API_PORT=3861 T2_CODE=$REPO T2_DB=$DEV N_PROBES=${N_PROBES:-20} ./test.sh equiv) > "$LOGDIR/equiv.log" 2>&1; verdict "$LOGDIR/equiv.log" 1 ;;
-app)     for t in test_app_sources.R test_app_thanos.R test_app_server.R test_app_survival.R test_t2_backend.R test_figure_export.R test_multidataset.R test_plot_style.R; do
+app)     for t in test_app_sources.R test_app_thanos.R test_app_server.R test_app_survival.R test_t2_backend.R test_figure_export.R test_multidataset.R test_plot_style.R test_about_references.R; do
              say "$t"; rapi $t > "$LOGDIR/${t%.R}.log" 2>&1; printf '%s PASS, ' "$(grep -c '^  PASS' "$LOGDIR/${t%.R}.log")"; grep -c "FAIL\|^Error" "$LOGDIR/${t%.R}.log" | sed 's/$/ FAIL+Error/'; done ;;
 app-service) say app-service; (cd $REPO/T2Mobile/service && T2API_NET=t2api-dev T2API_HOST=t2api-dev T2_CODE=$REPO T2_DB=$DEV ./test.sh shiny) > "$LOGDIR/app-service.log" 2>&1; grep -E "ALL PASS|FAILED|^  FAIL" "$LOGDIR/app-service.log" | head ;;
 browser-files)   say browser-files; echo "obsolete: the Shiny app reads everything from the service (T2_API_URL); use browser-service" ;;

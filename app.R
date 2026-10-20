@@ -259,6 +259,10 @@ ui = fluidPage(
         .t2-cite code { display: block; margin-top: 4px; white-space: normal; color: #2c3e50;
             background: transparent; padding: 0; }
         .t2-copy { font-size: 90%; }
+        .t2-statement { font-size: 105%; margin: 8px 0 14px 0; padding: 10px 14px; background: #fff8e1;
+            border-left: 4px solid #e08e0b; max-width: 1100px; }
+        .t2-ref { margin: 0 0 8px 0; max-width: 1100px; }
+        .t2-footer { font-size: 80%; color: #666; margin: 18px 0 8px 0; border-top: 1px solid #dce4ec; padding-top: 6px; }
     "))),
     uiOutput('app_title'),
     tabsetPanel(id = 'tabs',
@@ -347,11 +351,16 @@ ui = fluidPage(
         ## ---- (f) what this is ----
         tabPanel("About", value = "about",
             h4(paste("About", T2_SITE)),
+            div(class = "t2-statement", id = "t2_research_statement",
+                tags$b("T2 is a research tool for scientists in biomedical research. "),
+                "It shows public research data and statistics computed from them. It gives no medical advice ",
+                "and must not be used for diagnosis or treatment decisions."),
             tags$p("T2 is a database and plotting tool for large tumor-profiling compendia. Every measurement ",
                    "(expression, mutation, copy number, signatures, clinical annotation, survival) ",
                    "is stored per sample, so any variable can be plotted against any other."),
             ## the active data set's own words (from the service: /meta `about`)
             uiOutput('about_dataset'),
+            uiOutput('about_references'),
             tags$ul(
                 tags$li(tags$b("Select"), ": choose the data set, the variables to plot (X, Y, color, size, ",
                         "one graph per category) and the cohort(s); then press Plot."),
@@ -370,6 +379,9 @@ ui = fluidPage(
             h5( Sys.Date() ),
             h4("Types of Data Available"),
             htmlOutput('datatypes'),
+            h4("Statistical methods"),
+            tags$p("The survival curves and tests in T2 use these methods:"),
+            HTML(paste(vapply(T2_METHOD_REFERENCES, t2_reference_html, ""), collapse = "")),
             h4("Clinical variables"),
             htmlOutput('clinical_help'),
             contact_ui(),
@@ -377,7 +389,8 @@ ui = fluidPage(
             h5('Below is an area for my notes, you can ignore...'),
             verbatimTextOutput('print1')
         )
-    )
+    ),
+    div(class = "t2-footer", "For research use by biomedical scientists only; not medical advice. Sources: About tab.")
 )
 
 ################################################################
@@ -795,13 +808,18 @@ server = function(input, output, session) {
             tags$th("Example Probes"), tags$th("Source File"),
             tags$th("Reference"), tags$th("Data")
         )
+        has = function(col) if (col %in% names(type_df)) !is.na(type_df[[col]]) & nzchar(type_df[[col]]) else rep(FALSE, nrow(type_df))
+        full_ref = has("reference_title")
         rows = lapply(seq_len(nrow(type_df)), function(i) {
+            rec = if (full_ref[i]) list(title = type_df$reference_title[i], authors = type_df$reference_authors[i],
+                                        journal = type_df$reference_journal[i], year = type_df$reference_year[i],
+                                        url = type_df$reference_url[i])
             tags$tr(
                 tags$td(tags$code(type_df$type[i])),
                 tags$td(type_df$description[i]),
                 tags$td(tags$code(type_df$example[i])),
                 tags$td(tags$small(type_df$source_file[i])),
-                tags$td(HTML(type_df$reference[i])),
+                tags$td(HTML(if (full_ref[i]) t2_reference_html(rec) else type_df$reference[i])),
                 tags$td(HTML(type_df$source_link[i]))
             )
         })
@@ -820,6 +838,16 @@ server = function(input, output, session) {
         )
     })
     ## the data set's own About prose (/meta about): description, citation, attribution, link
+    ## the dataset's bibliography: full titles, authors, journal, year and links, grouped
+    output$about_references = renderUI({
+        refs = bundle()$about$references
+        if (!length(refs)) return(NULL)
+        grp = vapply(refs, function(r) as.character(r$group %||% ""), "")
+        tagList(h4("Sources and references"),
+            lapply(unique(grp), function(g) tagList(
+                if (nzchar(g)) h5(g),
+                HTML(paste(vapply(refs[grp == g], t2_reference_html, ""), collapse = "")))))
+    })
     output$about_dataset = renderUI({
         a = bundle()$about
         if (!any(nzchar(unlist(a)))) return(NULL)

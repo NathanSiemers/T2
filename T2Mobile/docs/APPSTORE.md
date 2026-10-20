@@ -97,8 +97,9 @@ Data sources and how to cite them:
   Fund — GTEx Consortium, Nature Genetics 45, 580–585 (2013).
 • Distribution: UCSC Xena — Goldman et al., Nature Biotechnology 38, 675–678 (2020).
 
-T2 Cancer Genomics is a research tool. It gives no medical advice and is not intended for
-diagnosis or treatment decisions.
+T2 Cancer Genomics is intended for scientists in biomedical research. It gives no medical
+advice and is not for diagnosis or treatment decisions. The sources of every data set and
+statistical method are listed in the app under About › Sources and citations.
 
 ## Keywords [100, comma-separated]
 
@@ -126,3 +127,32 @@ https://www.fiveprime.org/api/t2 (see /healthz). The contact form (Select → Ab
 sends name, email and message to the author only. Suggested test: open the app, tap Plot;
 on Select change Y to "FOXP3" and X to "CD8A" for a scatter plot; change X to "OS" for
 survival curves.
+
+T2 is a research tool for scientists in biomedical research; it shows public research data
+and statistics computed from them, gives no medical advice and is not for diagnosis or
+treatment decisions. The citations are in three places: a notice on first launch ("For
+research use", with a Continue button) that points to them; About (the "?" on the Select
+screen) › Sources and citations, which lists the full reference (title, authors, journal,
+year, link) of every data set, of every data type, and of every statistical method the app
+computes; and a "Methods and sources" link under the statistics of every plot, which opens
+the same list at the Methods section.
+
+## Reply to the 1.4.1 rejection (2026-10-20)
+
+Draft for the Resolution Center, to send with build 2:
+
+Thank you for the review and for the clear guidance. T2 Cancer Genomics is a research tool
+for scientists in biomedical research: it displays public research data sets (TCGA, TARGET,
+GTEx, CPTAC) and the statistics computed from them, such as survival curves, correlations
+and group comparisons. It gives no medical advice, makes no recommendations to patients, and
+is not for diagnosis or treatment decisions. Build 2 makes both points explicit and adds the
+citations you asked for. On first launch the app shows a notice, "For research use", that
+states the audience and that the app gives no medical advice. About now opens with a "Research
+use only" statement and a "Sources and citations" screen, which lists the full title, authors,
+journal, year and a link for the publications behind every data set, for the individual data
+types of each data set, and for each statistical method the app computes (Kaplan–Meier,
+log-rank, Cox, Pearson, Spearman, Kruskal–Wallis). Under the statistics of every plot, a
+"Methods and sources" link opens the same list at the Methods section. The citations are
+therefore one tap from the plot and from About, and the notice points to them from the first
+launch. Please let us know if anything further is needed.
+

@@ -140,3 +140,11 @@ app's (the R constant in `t2_util.R`).
 ## Status
 
 - 2026-10-20: plan written; agents A, B, D, E started.
+- 2026-10-20 11:30: A-E done. References verified online (TCGA 16, CPTAC 14, Toil 5 records; 6 method
+  papers in the iOS app, 3 in the Shiny app = exactly what each computes). Two wrong PMIDs found in the TCGA
+  data-type table (HRD/MSI cited 30625304, a DNA polymerase paper, correct 29617664; RABIT cited 26034287, a CTCF
+  paper, correct 26056275): fixed in `TCGA/type_descriptions.R`, `275-MSI.R` and the dev TCGA.db. CPTAC and Toil
+  data-type references gained the PMID of their paper (builders + dev files) so the service's join finds them.
+  `journal` is optional in a reference record (program pages). Dev service rebuilt; `/meta` verified for all
+  four datasets. T2App compiles on the Mac (after XcodeGen; `sim_matrix.sh` now regenerates the project).
+  Running: `ops/test.sh all` and the iOS simulator suite (step F).

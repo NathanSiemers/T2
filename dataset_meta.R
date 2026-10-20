@@ -1,11 +1,11 @@
 ## dataset_meta.R -- read or set keys of a dataset's dataset_meta table, and the types.label words.
 ##   Rscript dataset_meta.R show      <db>
 ##   Rscript dataset_meta.R set       <db> key=value [key=value ...]   (lists: a|b|c; creates the table when missing)
-##   Rscript dataset_meta.R set-json  <db> key @file.json              (validates the JSON, stores it compact)
+##   Rscript dataset_meta.R set-json  <db> key @file.json              (tte_variables | references; validates the JSON, stores it compact)
 ##   Rscript dataset_meta.R type-label <db> type=label [type=label ...] (adds types.label when absent;
 ##                                                                      refuses an unknown type; rna= sets "")
 ## All writes go through t2_build_lib.R (t2_write_meta / t2_write_types), the one writer the builders use too;
-## an unknown dataset_meta key is refused. `show` prints a JSON value (tte_variables) pretty. For the keys and their meaning see
+## an unknown dataset_meta key is refused. `show` prints a JSON value (tte_variables, references) pretty. For the keys and their meaning see
 ## T2Mobile/docs/DATASET-CONTRACT.md (the contract), dataset_registry.R (roles, defaults) and
 ## t2_presets.R (source_col, sources, source_labels, source_descriptions).
 ## Every mode refuses a path under /scratch/shinyusb (the served files). Never run against a
@@ -37,10 +37,12 @@ if (mode == "set") {
   t2_write_meta(con, meta = m)
 } else if (mode == "set-json") {
   if (length(args) != 4 || !startsWith(args[4], "@")) stop("set-json: need  key @file.json")
-  if (!identical(args[3], "tte_variables")) stop("set-json: only tte_variables holds JSON, not ", args[3])
+  if (!args[3] %in% c("tte_variables", "references")) stop("set-json: only tte_variables and references hold JSON, not ", args[3])
   f = substring(args[4], 2)
   if (!file.exists(f)) stop("no such json file: ", f)
-  t2_write_meta(con, tte = paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n"))
+  js = paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  if (identical(args[3], "references")) t2_write_meta(con, meta = list(references = js))   # validated by t2_references_norm
+  else t2_write_meta(con, tte = js)
 } else if (mode == "type-label") {
   if (length(args) < 3) stop("type-label: need type=label ...")
   kv = args[-(1:2)]

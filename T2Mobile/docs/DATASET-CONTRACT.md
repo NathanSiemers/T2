@@ -61,6 +61,7 @@ check (`dataset_contract_check.R`) requires the ones marked **req** of every fil
 | `source_col`, `sources`, `source_labels`, `source_descriptions` | the dataset's parts (Toil: GTEX, TARGET) |
 | `tte_variables` **req** (may be `[]`) | JSON array of `{"name","label","event_col","time_col","time_unit","description"}` |
 | `about` **req**, `citation`, `attribution`, `about_url` | the dataset's About prose; `attribution` is the sentence a data provider requires (CPTAC: the NCI sentence) |
+| `references` (optional) | JSON array, in display order, of full-title bibliography records `{"group","title","authors","journal","year","pmid","doi","url","note"}`: `title`, `authors`, `journal` and `year` (integer) are required (the api drops a record without a title and logs it), `pmid`, `doi`, `url`, `note` optional strings (give a pmid or doi where one exists). These are records for non-scientists: the full title of the paper, never a bare "Author 2018" tag. `group` is the heading the apps list the entry under |
 
 `types.label` **req**: the word a plot title uses for the type (`mut`/`fmut` → "mutation", `cnv` →
 "CNA", `prot` → "protein", `phospho` → "phosphosite", `rna` → "" since a bare name needs no word).
@@ -85,7 +86,8 @@ Nothing that exists today is removed or retyped (the shipped iPhone app requires
 | `tte_variables` | the declared list; for a file without the key: every clinical pair `X` + `X.time` with numeric `X` (label `X`, unit days) |
 | `survival_endpoints` | the names of `tte_variables` (never null; `[]` when none) |
 | `type_labels` | `{type: label}` from `types.label`, falling back to the type name |
-| `about` | `{description, citation, attribution, url}` |
+| `about` | `{description, citation, attribution, url, references}`; `references` is always an array (`[]` when the key is absent, never null) of `{group, title, authors, journal, year, pmid, doi, url, note}` in the input order, where `url` is computed: PubMed (`https://pubmed.ncbi.nlm.nih.gov/<pmid>/`) when there is a pmid, else `https://doi.org/<doi>`, else the url given in the data |
+| `types[]` reference join | each row keeps its `reference` text; the api extracts the first `PMID:?\s*(\d+)` (else a DOI) and, when a `references` record has that pmid (or doi, case-insensitive), adds `reference_title`, `reference_authors`, `reference_journal`, `reference_year`, `reference_url`; with no matching record but a PMID/DOI found, only `reference_url`; otherwise nothing is added |
 | `default_cohorts` | the list as a JSON array (lists are always arrays on the wire; cohort names may contain commas) |
 | `defaults.cohorts` | the same list comma-joined, kept only for the shipped iPhone 1.0 |
 | `roles`, `defaults`, `presets`, `sources`, `cohorts`, `types`, `datatypes`, `clinical_columns`, `clinical_descriptions`, `version`, `n_samples`, `n_probes` | as today |

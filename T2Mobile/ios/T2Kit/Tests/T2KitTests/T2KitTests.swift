@@ -323,4 +323,53 @@ final class StatsTests: XCTestCase {
         XCTAssertEqual(cf.levelsPresent("study"), [0])
         XCTAssertEqual(cf.levelsPresent("nope"), [])
     }
+
+    /// the citations round: the bibliography, the joined type rows, and the absent case
+    func testReferencesAndJoinedTypeRowsDecode() throws {
+        let json = #"""
+        {"dataset":"TCGA","title":"T","label":"TCGA","version":"v","n_samples":3,"n_probes":3,
+         "roles":{"cohort_col":"disease","subtype_col":"study","sampletype_col":"sample_type","normal_label":[],"heme_values":[],"sampletype_levels":[]},
+         "defaults":{"x":"cohort"},"presets":[],"clinical_columns":[],"survival_endpoints":[],
+         "about":{"description":"d","references":[
+           {"group":"The TCGA Pan-Cancer Atlas (2018)","title":"Cell-of-Origin Patterns Dominate the Molecular Classification of 10,000 Tumors from 33 Types of Cancer","authors":"Hoadley KA, et al.","journal":"Cell","year":2018,"pmid":"29625048","doi":"10.1016/j.cell.2018.03.022","url":"https://pubmed.ncbi.nlm.nih.gov/29625048/","note":""},
+           {"group":"Distribution","title":"Visualizing and interpreting cancer genomics data via the Xena platform","authors":"Goldman MJ, et al.","journal":"Nature Biotechnology","year":2020,"pmid":"","doi":"10.1038/s41587-020-0546-8","url":"https://doi.org/10.1038/s41587-020-0546-8","note":"Where the files come from."},
+           {"group":"The TCGA Pan-Cancer Atlas (2018)","title":"Second","authors":"A","journal":"Immunity","year":2018,"pmid":"29628290","doi":"","url":"https://pubmed.ncbi.nlm.nih.gov/29628290/","note":""}]},
+         "types":[{"type":"mut","description":"mutation calls","example":"TP53.mut","reference":"PMID:29625048","label":"mutation",
+                   "source_url":"https://gdc.cancer.gov/about-data/publications/pancanatlas",
+                   "reference_title":"Cell-of-Origin Patterns","reference_authors":"Hoadley KA, et al.","reference_journal":"Cell","reference_year":2018,
+                   "reference_url":"https://pubmed.ncbi.nlm.nih.gov/29625048/"},
+                  {"type":"rna","description":"expression"}]}
+        """#
+        let m = try APIClient.decoder.decode(DatasetMeta.self, from: Data(json.utf8))
+        let groups = m.referenceGroups
+        XCTAssertEqual(groups.map(\.group), ["The TCGA Pan-Cancer Atlas (2018)", "Distribution"])
+        XCTAssertEqual(groups[0].items.count, 2)
+        XCTAssertEqual(groups[0].items[0].journalYear, "Cell, 2018")
+        XCTAssertEqual(groups[0].items[0].id, groups[0].items[0].title + "https://pubmed.ncbi.nlm.nih.gov/29625048/")
+        XCTAssertEqual(groups[1].items[0].note, "Where the files come from.")
+        let t = try XCTUnwrap(m.types?.first)
+        XCTAssertEqual(t.referenceTitle, "Cell-of-Origin Patterns")
+        XCTAssertEqual(t.referenceYear, 2018)
+        XCTAssertEqual(t.referenceUrl, "https://pubmed.ncbi.nlm.nih.gov/29625048/")
+        XCTAssertEqual(t.sourceUrl, "https://gdc.cancer.gov/about-data/publications/pancanatlas")
+        XCTAssertNil(m.types?[1].referenceTitle)
+        XCTAssertNil(m.types?[1].sourceUrl)
+        // a service without references, and one without `about`
+        let bare = json.replacingOccurrences(of: #""references":"#, with: #""xrefs":"#)
+        XCTAssertEqual(try APIClient.decoder.decode(DatasetMeta.self, from: Data(bare.utf8)).referenceGroups.count, 0)
+        XCTAssertTrue(try APIClient.decoder.decode(About.self, from: Data(#"{"description":"d"}"#.utf8)).references.isEmpty)
+    }
+
+    func testMethodReferencesAreFullRecordsWithLinks() {
+        XCTAssertEqual(MethodReferences.all.count, 6)
+        for r in MethodReferences.all {
+            XCTAssertEqual(r.group, "Methods")
+            XCTAssertFalse(r.title.isEmpty); XCTAssertFalse(r.authors.isEmpty); XCTAssertFalse(r.journal.isEmpty)
+            XCTAssertFalse(r.note.isEmpty)
+            XCTAssertNotNil(r.year)
+            XCTAssertTrue(r.url.hasPrefix("https://"), r.title)
+        }
+        XCTAssertEqual(MethodReferences.all[1].url, "https://pubmed.ncbi.nlm.nih.gov/5910392/")
+        XCTAssertEqual(MethodReferences.all[0].url, "https://doi.org/10.1080/01621459.1958.10501452")
+    }
 }

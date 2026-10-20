@@ -1,0 +1,57 @@
+[
+  {
+    "group": "TCGA-TARGET-GTEx (UCSC Toil RNA-seq recompute)",
+    "title": "Toil enables reproducible, open source, big biomedical data analyses",
+    "authors": "Vivian J, Rao AA, Nothaft FA, et al.",
+    "journal": "Nature Biotechnology",
+    "year": 2017,
+    "pmid": "28398314",
+    "doi": "10.1038/nbt.3772",
+    "url": "",
+    "note": "The uniform re-processing of all the RNA-seq data (tumors and normal tissues) in this database was done with the method in this paper."
+  },
+  {
+    "group": "TCGA-TARGET-GTEx (UCSC Toil RNA-seq recompute)",
+    "title": "Visualizing and interpreting cancer genomics data via the Xena platform",
+    "authors": "Goldman MJ, Craft B, Hastie M, et al.",
+    "journal": "Nature Biotechnology",
+    "year": 2020,
+    "pmid": "32444850",
+    "doi": "10.1038/s41587-020-0546-8",
+    "url": "",
+    "note": "The data were obtained from the UCSC Xena platform described in this paper."
+  },
+  {
+    "group": "TCGA-TARGET-GTEx (UCSC Toil RNA-seq recompute)",
+    "title": "The Cancer Genome Atlas Pan-Cancer analysis project",
+    "authors": "Weinstein JN, Collisson EA, Mills GB, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Nature Genetics",
+    "year": 2013,
+    "pmid": "24071849",
+    "doi": "10.1038/ng.2764",
+    "url": "",
+    "note": "The original description of the TCGA Pan-Cancer project, the source of the adult tumor samples."
+  },
+  {
+    "group": "TCGA-TARGET-GTEx (UCSC Toil RNA-seq recompute)",
+    "title": "The Genotype-Tissue Expression (GTEx) project",
+    "authors": "GTEx Consortium",
+    "journal": "Nature Genetics",
+    "year": 2013,
+    "pmid": "23715323",
+    "doi": "10.1038/ng.2653",
+    "url": "",
+    "note": "The source of the normal (healthy) tissue samples in this database."
+  },
+  {
+    "group": "TCGA-TARGET-GTEx (UCSC Toil RNA-seq recompute)",
+    "title": "Therapeutically Applicable Research to Generate Effective Treatments (TARGET)",
+    "authors": "National Cancer Institute Office of Cancer Genomics",
+    "journal": "",
+    "year": 2006,
+    "pmid": "",
+    "doi": "",
+    "url": "https://www.cancer.gov/ccg/research/genome-sequencing/target",
+    "note": "The source of the childhood (pediatric) cancer samples in this database."
+  }
+]

@@ -143,7 +143,7 @@ type_spec <- data.frame(
   type = "rna",
   description = "Gene-level RNA-seq expression, UCSC Toil RSEM recompute, collapsed Ensembl->HGNC, log2(TPM+1)",
   example     = "CD8A",
-  reference   = "Vivian et al. Nat Biotechnol 2017; Goldman et al. Nat Biotechnol 2020 (UCSC Xena)",
+  reference   = "Vivian et al. Nat Biotechnol 2017 (PMID:28398314); Goldman et al. Nat Biotechnol 2020 (UCSC Xena)",
   source_url  = "https://xenabrowser.net/datapages/?cohort=TCGA%20TARGET%20GTEx",
   source_file = "TcgaTargetGtex_rsem_gene_tpm.gz",
   label       = "",                       # a bare gene name needs no word in a plot title
@@ -220,7 +220,7 @@ dataset_meta <- data.frame(
           "normal_label", "heme_values", "sampletype_levels",
           "default_x", "default_y", "default_color", "default_size",
           "default_condition",
-          "tte_variables", "about", "citation", "attribution", "about_url",
+          "tte_variables", "references", "about", "citation", "attribution", "about_url",
           ## the parts of the collection offered as data sources of their own (see
           ## T2Mobile/service/cmd/t2api/sources.go and dataset_registry.R): the levels
           ## of `source_col` listed in `sources`, with a display name and one line each.
@@ -252,6 +252,7 @@ dataset_meta <- data.frame(
     "cohort", "CD8A", "study", "", "",
     ## no survival data in this collection (the contract wants the key, `[]` = none)
     "[]",
+    t2_references_json(file.path(TTG_DIR, "references.json")),   # the bibliography, validated
     paste("T2 TCGA-TARGET-GTEx: the UCSC Toil recompute of RNA-seq for the TCGA tumors (and their matched normals), the TARGET pediatric cancers and the GTEx normal tissues,",
           "all quantified by one pipeline (RSEM, GRCh38 / GENCODE) so that tumor and normal expression can be compared across the three projects without batch differences between pipelines.",
           "Ensembl genes are collapsed to HGNC symbols; values are log2(TPM+1). Only RNA expression is stored, with a small clinical annotation (study, disease, primary site, sample type, gender);",

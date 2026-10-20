@@ -54,7 +54,14 @@ for (ds in intersect(t2_datasets(), names(files))) {
     ok(identical(unname(lapply(ba$tte, flat)), lapply(fd$tte, flat)), sprintf("time-to-event variables = the file's tte_variables (%d)", length(fd$tte)))
   } else cat("  (the file declares no tte_variables: the service derives them; not compared)\n")
   ok(identical(ba$type_labels[names(fd$type_labels)], fd$type_labels), sprintf("type labels = the file's types.label (%d)", length(fd$type_labels)))
-  ok(identical(unname(unlist(ba$about)), unname(unlist(fd$about))), "About = the file's about / citation / attribution / about_url")
+  ab4 <- c("description", "citation", "attribution", "url")
+  ok(identical(unname(unlist(ba$about[ab4])), unname(unlist(fd$about[ab4]))), "About = the file's about / citation / attribution / about_url")
+  ## the bibliography: the service serves the file's records (it only adds the computed url per record)
+  nref <- tryCatch({ con0 <- DBI::dbConnect(RSQLite::SQLite(), dbname = fi$path, flags = RSQLite::SQLITE_RO); on.exit(DBI::dbDisconnect(con0), add = TRUE)
+    v <- DBI::dbGetQuery(con0, "SELECT value FROM dataset_meta WHERE key = 'references'")$value
+    if (length(v)) length(jsonlite::fromJSON(v, simplifyVector = FALSE)) else 0L }, error = function(e) 0L)
+  ok(length(ba$about$references) == nref && all(vapply(ba$about$references, function(r) nzchar(r$title) && nzchar(r$url), logical(1))),
+     sprintf("references = the file's %d record(s), each with a title and a link", nref))
   ok(identical(ba$default_cohorts, fd$default_cohorts), sprintf("default cohorts = the file's default_cohorts (%d)", length(fd$default_cohorts)))
   ## the lists of the file
   con <- DBI::dbConnect(RSQLite::SQLite(), dbname = fi$path, flags = RSQLite::SQLITE_RO)

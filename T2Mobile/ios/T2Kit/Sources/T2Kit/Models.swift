@@ -191,6 +191,15 @@ public struct DataTypeInfo: Decodable, Sendable, Identifiable, Equatable {
     public let reference: String?
     /// the word a plot title uses for the type (absent from services before the dataset contract)
     public let label: String?
+    /// where the data of the type come from (a web page; absent from older services)
+    public let sourceUrl: String?
+    /// the full reference of the type, joined by the service to the data set's bibliography
+    /// (all absent from services before the citations round)
+    public let referenceTitle: String?
+    public let referenceAuthors: String?
+    public let referenceJournal: String?
+    public let referenceYear: Int?
+    public let referenceUrl: String?
     public var id: String { type }
 }
 
@@ -243,24 +252,77 @@ public struct TTEVariable: Decodable, Sendable, Equatable, Identifiable {
     public var unitSuffix: String { timeUnit == "days" ? "d" : " " + timeUnit }
 }
 
+/// One paper in a bibliography: the data set's (`about.references`) or the statistical
+/// methods' (`MethodReferences`). Shown with its full title, never abbreviated.
+public struct Reference: Decodable, Sendable, Equatable, Identifiable {
+    public let group: String
+    public let title: String
+    public let authors: String
+    public let journal: String
+    public let year: Int?
+    public let pmid: String
+    public let doi: String
+    /// the link (the service fills it: PubMed, else doi.org, else the project page)
+    public let url: String
+    /// one plain sentence on what the reference is for
+    public let note: String
+    public var id: String { title + url }
+    public init(group: String = "", title: String, authors: String = "", journal: String = "", year: Int? = nil,
+                pmid: String = "", doi: String = "", url: String = "", note: String = "") {
+        self.group = group; self.title = title; self.authors = authors; self.journal = journal; self.year = year
+        self.pmid = pmid; self.doi = doi; self.note = note
+        self.url = url.isEmpty ? Reference.link(pmid: pmid, doi: doi) : url
+    }
+    /// PubMed for a PMID, else doi.org, else empty (as the service derives it)
+    public static func link(pmid: String, doi: String) -> String {
+        if !pmid.isEmpty { return "https://pubmed.ncbi.nlm.nih.gov/\(pmid)/" }
+        if !doi.isEmpty { return "https://doi.org/\(doi)" }
+        return ""
+    }
+    /// "Journal, 2018" (either part may be missing)
+    public var journalYear: String {
+        [journal, year.map { String($0) } ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+    private enum Keys: String, CodingKey { case group, title, authors, journal, year, pmid, doi, url, note }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        // a PMID may arrive as text or as a number
+        var pmid = try? c.decodeIfPresent(String.self, forKey: .pmid)
+        if pmid == nil, let n = try? c.decodeIfPresent(Int.self, forKey: .pmid) { pmid = String(n) }
+        self.init(group: try c.decodeIfPresent(String.self, forKey: .group) ?? "",
+                  title: try c.decode(String.self, forKey: .title),
+                  authors: try c.decodeIfPresent(String.self, forKey: .authors) ?? "",
+                  journal: try c.decodeIfPresent(String.self, forKey: .journal) ?? "",
+                  year: try? c.decodeIfPresent(Int.self, forKey: .year),
+                  pmid: pmid ?? "",
+                  doi: try c.decodeIfPresent(String.self, forKey: .doi) ?? "",
+                  url: try c.decodeIfPresent(String.self, forKey: .url) ?? "",
+                  note: try c.decodeIfPresent(String.self, forKey: .note) ?? "")
+    }
+}
+
 /// The dataset's own About text (any part may be empty).
 public struct About: Decodable, Sendable, Equatable {
     public let description: String
     public let citation: String
     public let attribution: String
     public let url: String
-    public init(description: String = "", citation: String = "", attribution: String = "", url: String = "") {
+    /// the data set's bibliography, in display order (empty when it has none)
+    public let references: [Reference]
+    public init(description: String = "", citation: String = "", attribution: String = "", url: String = "", references: [Reference] = []) {
         self.description = description; self.citation = citation; self.attribution = attribution; self.url = url
+        self.references = references
     }
-    private enum Keys: String, CodingKey { case description, citation, attribution, url }
+    private enum Keys: String, CodingKey { case description, citation, attribution, url, references }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         self.init(description: try c.decodeIfPresent(String.self, forKey: .description) ?? "",
                   citation: try c.decodeIfPresent(String.self, forKey: .citation) ?? "",
                   attribution: try c.decodeIfPresent(String.self, forKey: .attribution) ?? "",
-                  url: try c.decodeIfPresent(String.self, forKey: .url) ?? "")
+                  url: try c.decodeIfPresent(String.self, forKey: .url) ?? "",
+                  references: try c.decodeIfPresent([Reference].self, forKey: .references) ?? [])
     }
-    public var isEmpty: Bool { description.isEmpty && citation.isEmpty && attribution.isEmpty && url.isEmpty }
+    public var isEmpty: Bool { description.isEmpty && citation.isEmpty && attribution.isEmpty && url.isEmpty && references.isEmpty }
 }
 
 public struct DatasetMeta: Decodable, Sendable {
@@ -322,6 +384,16 @@ public struct DatasetMeta: Decodable, Sendable {
         var m: [String: String] = [:]
         for t in types ?? [] { if let w = t.label, !w.isEmpty { m[t.type] = w } }
         return m
+    }
+
+    /// the bibliography grouped by its `group`, groups and items in order of first appearance
+    public var referenceGroups: [(group: String, items: [Reference])] {
+        var out: [(group: String, items: [Reference])] = []
+        for r in about?.references ?? [] {
+            if let i = out.firstIndex(where: { $0.group == r.group }) { out[i].items.append(r) }
+            else { out.append((group: r.group, items: [r])) }
+        }
+        return out
     }
 
     /// the description of a clinical column, if the service has one

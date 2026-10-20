@@ -116,6 +116,18 @@ agent runs it). Lessons of the switch, all now encoded in those scripts: the sit
 `/etc/nginx/conf.d/nginx.conf` in the Nginx container; the pool's Shiny Server serves only
 the path in its conf (so `/T2/` is rewritten to `/T2Tc/`); never remove the checkout's
 `tcga.db`/`datasets` links; Shiny Server passes no container environment to R.
+**TODO (Nathan, 2026-10-20): the synthetic DEMO data set must not show up in the apps** (the iPhone app
+and the web app list it today; `DatasetMeta.isDemo` exists in T2Kit but the dataset list still offers
+it). Not part of the citations round; do it in the next app round.
+**TODO (Nathan, 2026-10-20): api usage metrics without sensitive data.** The service logs no
+successful request today (privacy promise: no addresses, no selections kept). We still want to
+quantitate and understand api use and trends over time (requests per endpoint and dataset per
+day, distinct clients per period, app vs web, latency), and to identify attempted denial-of-service
+attacks quickly (request bursts per address, abusive patterns) without keeping sensitive user
+information in the log files. Design to settle: aggregated counters (e.g. per-minute counts in the
+service, or a sidecar reading the Nginx access log and keeping only hashed/truncated addresses with
+short retention) plus a small dashboard; then update the privacy page and the App Store privacy
+answers if anything changes. Not part of the citations round.
 **Open:** Apple's verdict on 1.0 (tag `v1.0-submitted`; playbook in the memory file
 `apple-review-outcome` and below); `CODE-LAYOUT.md` — Nathan will read the file-structure
 assessment when there is budget (he said 24 h); the iPhone app could consume the service's

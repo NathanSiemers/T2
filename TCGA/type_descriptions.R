@@ -60,8 +60,8 @@ type_info = data.frame(
     "Thorsson et al. 2018, Immunity 48(4):812-830. PMID:29628290",
     "Hoadley et al. 2018, Cell 173(2):291-304. PMID:29625048",
     "Hoadley et al. 2014, Cell 158(4):929-944. PMID:25109877",
-    "Jiang et al. 2015, PNAS 112(24):7511-7516. PMID:26034287",
-    "Knijnenburg et al. 2018, Cell Reports 26(2):525-537. PMID:30625304",
+    "Jiang et al. 2015, PNAS 112(25):7731-7736. PMID:26056275",
+    "Knijnenburg et al. 2018, Cell Reports 23(1):239-254. PMID:29617664",
     "Thorsson et al. 2018, Immunity 48(4):812-830. PMID:29628290",
     "Hoadley et al. 2018, Cell 173(2):291-304. PMID:29625048",
     "Thorsson et al. 2018, Immunity 48(4):812-830. PMID:29628290",
@@ -69,7 +69,7 @@ type_info = data.frame(
     "Ellrott et al. 2018, Cell Systems 6(3):271-281. PMID:29596782",
     "Derived from MC3 fmut counts. Ellrott et al. 2018. PMID:29596782",
     "Yoshihara et al. 2013, Nat Commun 4:2612. PMID:24113773",
-    "Knijnenburg et al. 2018, Cell Reports 26(2):525-537. PMID:30625304",
+    "Knijnenburg et al. 2018, Cell Reports 23(1):239-254. PMID:29617664",
     "Custom signatures from RNA-seq. Hoadley et al. 2018. PMID:29625048"
   ),
   source_file = c(

@@ -26,6 +26,10 @@ udid_for() {
     echo "$u"
 }
 
+## new Swift files only enter the project through XcodeGen (project.yml globs Sources/)
+if [ -x tools/xcodegen/bin/xcodegen ]; then
+    tools/xcodegen/bin/xcodegen generate --spec $APPDIR/project.yml --project $APPDIR --quiet >> "$SUMMARY" 2>&1 || echo "  xcodegen failed (building the old project)" | tee -a "$SUMMARY"
+fi
 echo "== building for testing $(date)" | tee -a "$SUMMARY"
 DEV=$(udid_for "iPhone 18 Pro")
 xcodebuild -project $APPDIR/T2.xcodeproj -scheme T2 -destination "platform=iOS Simulator,id=$DEV" \

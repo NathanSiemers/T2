@@ -82,6 +82,7 @@ type Dataset struct {
 	handles    []Handle          // the columns that play cohort / sub-cohort / sample type
 	clinNum    map[string]bool   // clinical + virtual column -> numeric?
 	tte        []TTEVariable
+	references []Reference
 	typeLabels map[string]string
 	hasLabel   bool // types.label exists
 
@@ -136,7 +137,7 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 		fileSize: fi.Size(), fileMtime: fi.ModTime(), fileIno: inode(fi),
 		version: fmt.Sprintf("%x%x", fi.Size(), fi.ModTime().Unix()),
 		cache:   newColumnCache(cacheBytes)}
-	steps := []func() error{d.loadRoles, d.loadClinical, d.loadTTE, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.loadSources, d.buildMeta}
+	steps := []func() error{d.loadRoles, d.loadClinical, d.loadTTE, d.loadReferences, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.loadSources, d.buildMeta}
 	for _, f := range steps {
 		if err := f(); err != nil {
 			db.Close()
@@ -854,6 +855,9 @@ func (d *Dataset) buildMeta() error {
 			row["label"] = ""
 		}
 	}
+	for _, row := range types {
+		d.joinReference(row)
+	}
 	survival := []string{}
 	for _, v := range d.tte {
 		survival = append(survival, v.Name)
@@ -867,8 +871,8 @@ func (d *Dataset) buildMeta() error {
 		SurvivalEndpoints:    survival,
 		TTEVariables:         d.tte,
 		TypeLabels:           d.typeLabels,
-		About: map[string]string{"description": d.meta["about"], "citation": d.meta["citation"],
-			"attribution": d.meta["attribution"], "url": d.meta["about_url"]},
+		About: map[string]any{"description": d.meta["about"], "citation": d.meta["citation"],
+			"attribution": d.meta["attribution"], "url": d.meta["about_url"], "references": d.references},
 		DefaultCohorts: splitMeta(d.meta["default_cohorts"]),
 		Cohorts:        table("SELECT * FROM cohorts"),
 		Types:          types,
@@ -918,7 +922,7 @@ type metaDoc struct {
 	SurvivalEndpoints    []string          `json:"survival_endpoints"`
 	TTEVariables         []TTEVariable     `json:"tte_variables"`
 	TypeLabels           map[string]string `json:"type_labels"`
-	About                map[string]string `json:"about"`
+	About                map[string]any    `json:"about"`
 	DefaultCohorts       []string          `json:"default_cohorts"` // the array form: names can contain commas
 	Cohorts              []map[string]any  `json:"cohorts"`
 	Types                []map[string]any  `json:"types"`

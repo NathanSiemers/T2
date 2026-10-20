@@ -1,6 +1,6 @@
 ################################################################
 ## MSI - Microsatellite Instability (MSIsensor scores)
-## Source: Knijnenburg et al. 2018, Cell Reports (PMID 30625304)
+## Source: Knijnenburg et al. 2018, Cell Reports 23(1):239-254 (PMID 29617664; an earlier note here had a wrong PMID)
 ##         Table S5 via Ding et al. 2018 supplementary
 ## MSIsensor score: 0 = microsatellite stable, higher = more unstable
 ##   Typical MSI-H threshold: >= 3.5 or >= 10 depending on study

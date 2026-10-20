@@ -13,6 +13,18 @@ struct AboutView: View {
         @Bindable var model = model
         NavigationStack {
             List {
+                Section {
+                    Text("For scientists in biomedical research. T2 gives no medical advice and is not for diagnosis or treatment decisions.")
+                        .font(.callout)
+                    NavigationLink {
+                        SourcesView()
+                    } label: {
+                        Label("Sources and citations", systemImage: "books.vertical")
+                    }
+                    .accessibilityIdentifier("sources")
+                } header: {
+                    Text("Research use only")
+                }
                 Section("T2") {
                     Text("T2 is a database and search tool for cancer genomics data collections. Pick two variables (genes, mutations, copy number, signatures, clinical annotation) and T2 draws the relationship across thousands of tumour samples, with the statistics; narrow the samples with the presets and the Filter screen; export a publication figure from the Publish screen. The phone fetches only the values of the variables you choose; filtering, statistics and drawing happen on the device.")
                         .font(.callout)
@@ -25,8 +37,7 @@ struct AboutView: View {
                 }
                 Section("Attribution") {
                     Text("Nathan O. Siemers, Ph.D.").font(.callout)
-                    Text("Please cite: \(t2Citation)").font(.footnote)
-                    Text("The data sets, and what their providers ask you to say about them, are described under \u{201C}This data set\u{201D} below.").font(.footnote).foregroundStyle(.secondary)
+                    Text("The papers and data sets behind T2, and how to cite T2, are under Sources and citations above.").font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
                     Text("Companies and institutions that would like an internal or privately hosted deployment of the T2 database, the web site or this app are welcome to get in touch.")
@@ -64,23 +75,6 @@ struct AboutView: View {
                         } footer: {
                             Text("Choose one of these as X to draw Kaplan-Meier curves by groups of Y.")
                         }
-                    }
-                    Section {
-                        if let types = m.types, !types.isEmpty {
-                            ForEach(types) { t in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(t.type).font(.callout.monospaced())
-                                    if let d = t.description, !d.isEmpty { Text(d).font(.footnote) }
-                                    if let e = t.example, !e.isEmpty { Text("e.g. \(e)").font(.footnote).foregroundStyle(.secondary) }
-                                }
-                            }
-                        } else {
-                            Text("This dataset does not describe its data types.").font(.footnote).foregroundStyle(.secondary)
-                        }
-                    } header: {
-                        Text("Data types in \(m.label)")
-                    } footer: {
-                        Text("A variable's suffix names its type (TP53.mut, CDKN2A.cnv, NK.sig); a bare gene name is RNA expression. Values are exactly those of the T2 database.")
                     }
                     if let described = m.clinicalDescriptions, !described.isEmpty {
                         Section {

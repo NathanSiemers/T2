@@ -61,3 +61,40 @@ t2_row_medians <- function(m) {
   if (requireNamespace("matrixStats", quietly = TRUE)) as.numeric(matrixStats::rowMedians(m, na.rm = TRUE))
   else as.numeric(apply(m, 1, stats::median, na.rm = TRUE))
 }
+
+## ---- references (citations) ----------------------------------------------------------
+## A reference record is a list(group, title, authors, journal, year, pmid, doi, url, note).
+## The statistics the Shiny app itself computes (survival_prototype.R: survfit, survdiff,
+## coxph) are cited here in full; nothing else is computed, so nothing else is cited.
+.t2_ref <- function(title, authors, journal, year, doi = "", pmid = "", note = "") list(
+  group = "Statistical methods", title = title, authors = authors, journal = journal, year = year,
+  pmid = pmid, doi = doi,
+  url = if (nzchar(pmid)) paste0("https://pubmed.ncbi.nlm.nih.gov/", pmid, "/") else paste0("https://doi.org/", doi),
+  note = note)
+T2_METHOD_REFERENCES <- list(
+  .t2_ref("Nonparametric Estimation from Incomplete Observations", "Kaplan EL, Meier P",
+          "Journal of the American Statistical Association", 1958, doi = "10.1080/01621459.1958.10501452",
+          note = "The method behind the survival curves (Kaplan-Meier estimate)."),
+  .t2_ref("Evaluation of survival data and two new rank order statistics arising in its consideration", "Mantel N",
+          "Cancer Chemotherapy Reports", 1966, pmid = "5910392",
+          note = "The log-rank test used to compare survival curves between groups."),
+  .t2_ref("Regression Models and Life-Tables", "Cox DR",
+          "Journal of the Royal Statistical Society, Series B", 1972, doi = "10.1111/j.2517-6161.1972.tb00899.x",
+          note = "The proportional hazards model behind the reported hazard ratio."))
+
+## One reference as HTML: the title (a link when there is a url), then authors, "journal year",
+## and the note in small text. Every field is escaped; the url only when http(s).
+t2_reference_html <- function(rec) {
+  f <- function(k) { v <- rec[[k]]; if (is.null(v) || length(v) == 0 || is.na(v[1])) "" else as.character(v[1]) }
+  esc <- htmltools::htmlEscape
+  title <- f("title"); url <- f("url")
+  head <- if (nzchar(url) && grepl("^https?://", url))
+    paste0('<a href="', esc(url, attribute = TRUE), '" target="_blank" rel="noopener">', esc(title), '</a>')
+  else esc(title)
+  jy <- trimws(paste(f("journal"), f("year")))
+  paste0('<div class="t2-ref"><b>', head, '</b>',
+         if (nzchar(f("authors"))) paste0('<br>', esc(f("authors"))) else "",
+         if (nzchar(jy)) paste0('<br><i>', esc(jy), '</i>') else "",
+         if (nzchar(f("note"))) paste0('<br><small>', esc(f("note")), '</small>') else "",
+         '</div>')
+}

@@ -15,7 +15,7 @@
 T2_META_KEYS <- c("title", "label", "cohort_col", "subtype_col", "sampletype_col", "sampletype_levels",
                   "normal_label", "heme_values", "default_x", "default_y", "default_color", "default_size",
                   "default_condition", "default_cohorts", "source_col", "sources", "source_labels",
-                  "source_descriptions", "tte_variables", "about", "citation", "attribution", "about_url", "order")   # order: optional integer, ascending in the dataset list
+                  "source_descriptions", "tte_variables", "references", "about", "citation", "attribution", "about_url", "order")   # order: optional integer, ascending in the dataset list
 T2_TTE_FIELDS <- c("name", "label", "event_col", "time_col", "time_unit", "description")
 
 if (!exists("set_t2_sparse")) stop("source t2_views.R before t2_build_lib.R")
@@ -47,8 +47,45 @@ t2_tte_json <- function(tte) {
   as.character(jsonlite::toJSON(unname(tte), auto_unbox = TRUE))
 }
 
+## references: the dataset's bibliography (dataset_meta key `references`), a JSON array of records in display order.
+## t2_references_check(x): x a parsed list (simplifyVector = FALSE) -> the validated list, or stop().
+T2_REF_REQUIRED <- c("title", "authors")   # journal may be "" (a program page or data portal)
+T2_REF_FIELDS   <- c("group", "title", "authors", "journal", "year", "pmid", "doi", "url", "note")
+t2_references_check <- function(x) {
+  if (!is.list(x) || (length(x) && !is.null(names(x)))) stop("references must be a JSON array of objects")
+  str1 <- function(v) is.character(v) && length(v) == 1 && !is.na(v)
+  for (i in seq_along(x)) {
+    r <- x[[i]]; id <- sprintf("references[%d]", i)
+    if (!is.list(r) || is.null(names(r))) stop(id, " is not an object")
+    bad <- setdiff(names(r), T2_REF_FIELDS)
+    if (length(bad)) stop(id, ": unknown field(s): ", paste(bad, collapse = ", "))
+    for (k in T2_REF_REQUIRED) if (!str1(r[[k]]) || !nzchar(trimws(r[[k]]))) stop(id, ": ", k, " must be a non-empty string")
+    y <- r$year
+    if (!(is.numeric(y) && length(y) == 1 && !is.na(y) && y == round(y))) stop(id, ": year must be an integer")
+    for (k in c("group", "journal", "pmid", "doi", "url", "note")) if (!is.null(r[[k]]) && !str1(r[[k]])) stop(id, ": ", k, " must be a string")
+    if (!any(vapply(c("pmid", "doi", "url"), function(k) str1(r[[k]]) && nzchar(trimws(r[[k]])), logical(1))))
+      stop(id, " (", r$title, "): needs at least one of pmid, doi, url")
+  }
+  x
+}
+## a JSON string -> the compact JSON to store (validated)
+t2_references_norm <- function(txt) {
+  txt <- paste(txt, collapse = "\n")
+  if (!isTRUE(jsonlite::validate(txt))) stop("references is not valid JSON")
+  x <- t2_references_check(jsonlite::fromJSON(txt, simplifyVector = FALSE))
+  if (!length(x)) return("[]")
+  as.character(jsonlite::toJSON(x, auto_unbox = TRUE))
+}
+## a references.json file -> the compact JSON string to store
+t2_references_json <- function(path) {
+  if (!file.exists(path)) stop("references file not found: ", path)
+  tryCatch(t2_references_norm(readLines(path, warn = FALSE, encoding = "UTF-8")),
+           error = function(e) stop(path, ": ", conditionMessage(e), call. = FALSE))
+}
+
 t2_write_meta <- function(con, meta = list(), tte = NULL) {
   if (!is.null(meta$tte_variables)) { if (is.null(tte)) tte <- meta$tte_variables; meta$tte_variables <- NULL }
+  if (!is.null(meta$references)) meta$references <- t2_references_norm(meta$references)   # a ready JSON string, validated
   bad <- setdiff(names(meta), T2_META_KEYS)
   if (length(bad)) stop("unknown dataset_meta key(s): ", paste(bad, collapse = ", "), " (known: ", paste(T2_META_KEYS, collapse = ", "), ")")
   if (!is.null(tte)) meta$tte_variables <- t2_tte_json(tte)

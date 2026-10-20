@@ -1,0 +1,178 @@
+[
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "The Cancer Genome Atlas: Creating Lasting Value beyond Its Data",
+    "authors": "Hutter C, Zenklusen JC",
+    "journal": "Cell",
+    "year": 2018,
+    "pmid": "29625045",
+    "doi": "10.1016/j.cell.2018.03.042",
+    "url": "",
+    "note": "The overview of the TCGA Pan-Cancer Atlas, which describes what the project produced and how the data are shared."
+  },
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "Cell-of-Origin Patterns Dominate the Molecular Classification of 10,000 Tumors from 33 Types of Cancer",
+    "authors": "Hoadley KA, Yau C, Hinoue T, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Cell",
+    "year": 2018,
+    "pmid": "29625048",
+    "doi": "10.1016/j.cell.2018.03.022",
+    "url": "",
+    "note": "The gene expression, copy number, microRNA and molecular subtype data of this database come from this paper."
+  },
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "An Integrated TCGA Pan-Cancer Clinical Data Resource to Drive High-Quality Survival Outcome Analytics",
+    "authors": "Liu J, Lichtenberg T, Hoadley KA, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Cell",
+    "year": 2018,
+    "pmid": "29625055",
+    "doi": "10.1016/j.cell.2018.02.052",
+    "url": "",
+    "note": "The clinical outcome data (survival times and events) of this database come from this paper."
+  },
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "The Immune Landscape of Cancer",
+    "authors": "Thorsson V, Gibbs DL, Brown SD, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Immunity",
+    "year": 2018,
+    "pmid": "29628290",
+    "doi": "10.1016/j.immuni.2018.03.023",
+    "url": "",
+    "note": "The immune signature scores, immune subtypes and viral read counts of this database come from this paper."
+  },
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "Scalable Open Science Approach for Mutation Calling of Tumor Exomes Using Multiple Genomic Pipelines",
+    "authors": "Ellrott K, Bailey MH, Saksena G, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Cell Systems",
+    "year": 2018,
+    "pmid": "29596782",
+    "doi": "10.1016/j.cels.2018.03.002",
+    "url": "",
+    "note": "The mutation calls (the MC3 call set) and the tumor mutation burden of this database come from this paper."
+  },
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "Genomic and Molecular Landscape of DNA Damage Repair Deficiency across The Cancer Genome Atlas",
+    "authors": "Knijnenburg TA, Wang L, Zimmermann MT, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Cell Reports",
+    "year": 2018,
+    "pmid": "29617664",
+    "doi": "10.1016/j.celrep.2018.03.076",
+    "url": "",
+    "note": "The homologous recombination deficiency and microsatellite instability scores of this database come from this paper."
+  },
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "Oncogenic Signaling Pathways in The Cancer Genome Atlas",
+    "authors": "Sanchez-Vega F, Mina M, Armenia J, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Cell",
+    "year": 2018,
+    "pmid": "29625050",
+    "doi": "10.1016/j.cell.2018.03.035",
+    "url": "",
+    "note": "Describes the cancer signaling pathways that are altered in these tumors, used for pathway-level annotations."
+  },
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "Comprehensive Characterization of Cancer Driver Genes and Mutations",
+    "authors": "Bailey MH, Tokheim C, Porta-Pardo E, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Cell",
+    "year": 2018,
+    "pmid": "29625053",
+    "doi": "10.1016/j.cell.2018.02.060",
+    "url": "",
+    "note": "Describes the driver genes and mutations identified across these tumors."
+  },
+  {
+    "group": "The TCGA Pan-Cancer Atlas (2018)",
+    "title": "The Cancer Genome Atlas Pan-Cancer analysis project",
+    "authors": "Weinstein JN, Collisson EA, Mills GB, et al. (The Cancer Genome Atlas Research Network)",
+    "journal": "Nature Genetics",
+    "year": 2013,
+    "pmid": "24071849",
+    "doi": "10.1038/ng.2764",
+    "url": "",
+    "note": "The original description of the TCGA Pan-Cancer project."
+  },
+  {
+    "group": "Methods behind individual data types",
+    "title": "GISTIC2.0 facilitates sensitive and confident localization of the targets of focal somatic copy-number alteration in human cancers",
+    "authors": "Mermel CH, Schumacher SE, Hill B, et al.",
+    "journal": "Genome Biology",
+    "year": 2011,
+    "pmid": "21527027",
+    "doi": "10.1186/gb-2011-12-4-r41",
+    "url": "",
+    "note": "The method (GISTIC2.0) behind the copy number classes: it finds the regions of the genome that are gained or lost in tumors."
+  },
+  {
+    "group": "Methods behind individual data types",
+    "title": "A pan-cancer proteomic perspective on The Cancer Genome Atlas",
+    "authors": "Akbani R, Ng PK, Werner HM, et al.",
+    "journal": "Nature Communications",
+    "year": 2014,
+    "pmid": "24871328",
+    "doi": "10.1038/ncomms4887",
+    "url": "",
+    "note": "The protein measurements (reverse-phase protein arrays) of this database are described in this paper."
+  },
+  {
+    "group": "Methods behind individual data types",
+    "title": "Multiplatform analysis of 12 cancer types reveals molecular classification within and across tissues of origin",
+    "authors": "Hoadley KA, Yau C, Wolf DM, et al.",
+    "journal": "Cell",
+    "year": 2014,
+    "pmid": "25109877",
+    "doi": "10.1016/j.cell.2014.06.049",
+    "url": "",
+    "note": "The method behind the gene programs (molecular groupings) used in this database."
+  },
+  {
+    "group": "Methods behind individual data types",
+    "title": "Inference of transcriptional regulation in cancers",
+    "authors": "Jiang P, Freedman ML, Liu JS, et al.",
+    "journal": "Proceedings of the National Academy of Sciences",
+    "year": 2015,
+    "pmid": "26056275",
+    "doi": "10.1073/pnas.1424272112",
+    "url": "",
+    "note": "The method (RABIT) that estimates how active each transcription factor, a protein that switches genes on or off, is in each tumor."
+  },
+  {
+    "group": "Methods behind individual data types",
+    "title": "Inferring tumour purity and stromal and immune cell admixture from expression data",
+    "authors": "Yoshihara K, Shahmoradgoli M, Martínez E, et al.",
+    "journal": "Nature Communications",
+    "year": 2013,
+    "pmid": "24113773",
+    "doi": "10.1038/ncomms3612",
+    "url": "",
+    "note": "The method (ESTIMATE) that scores tumor purity and the amount of stromal and immune cells in a tumor sample from gene expression."
+  },
+  {
+    "group": "Distribution",
+    "title": "Visualizing and interpreting cancer genomics data via the Xena platform",
+    "authors": "Goldman MJ, Craft B, Hastie M, et al.",
+    "journal": "Nature Biotechnology",
+    "year": 2020,
+    "pmid": "32444850",
+    "doi": "10.1038/s41587-020-0546-8",
+    "url": "",
+    "note": "The data files were downloaded from the UCSC Xena platform described in this paper."
+  },
+  {
+    "group": "Distribution",
+    "title": "The Cancer Genome Atlas Program (TCGA)",
+    "authors": "National Cancer Institute and National Human Genome Research Institute",
+    "journal": "",
+    "year": 2006,
+    "pmid": "",
+    "doi": "",
+    "url": "https://www.cancer.gov/ccg/research/genome-sequencing/tcga",
+    "note": "The program that produced the tumor data in this database."
+  }
+]

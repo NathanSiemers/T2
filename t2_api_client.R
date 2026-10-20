@@ -340,13 +340,18 @@ t2_api_bundle = function(ds) {
     exclusions = chr(s$exclusions), single_level_columns = chr(s$single_level_columns)))
   types = if (length(m$types)) do.call(rbind, lapply(m$types, function(t) as.data.frame(
     lapply(c(type = "type", description = "description", example = "example", reference = "reference",
-             source_file = "source_file", source_url = "source_url", label = "label"), function(k) t[[k]] %||% ""),
+             source_file = "source_file", source_url = "source_url", label = "label",
+             reference_title = "reference_title", reference_authors = "reference_authors",
+             reference_journal = "reference_journal", reference_year = "reference_year",
+             reference_url = "reference_url"), function(k) as.character(t[[k]] %||% "")),
     stringsAsFactors = FALSE))) else data.frame(type = character(0))
   tte = stats::setNames(lapply(m$tte_variables, function(t) list(
     name = t$name, label = t$label %||% t$name, event_col = t$event_col, time_col = t$time_col,
     time_unit = t$time_unit %||% "days", description = t$description %||% "")),
     chr(lapply(m$tte_variables, `[[`, "name")))
   about = lapply(m$about[c("description", "citation", "attribution", "url")], function(x) x %||% "")
+  ## the dataset's bibliography (seminal papers), as a list of records; empty when the service has none
+  about$references = lapply(m$about$references, function(r) as.list(r))
   list(name = ds, path = ds, title = info$title, label = info$label, roles = info$roles, defaults = info$defaults,
        handles = handles, mygenes = mygenes, clin_vars = clin_vars, mygenesplus = mygenesplus,
        menu = menu, names_lower = tolower(mygenesplus),

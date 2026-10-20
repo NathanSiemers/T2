@@ -65,7 +65,19 @@ whose single level is its `label`), `sample_type` (the real column, if declared)
 are missing or not numeric are dropped), else every numeric clinical `X` with a numeric `X.time`;
 always an array. `survival_endpoints` is the list of their names. `type_labels`: `{type: label}`
 from `types.label`, the type name where there is none. `about`: `{description, citation,
-attribution, url}`, empty strings when absent. See [DATASET-CONTRACT.md](DATASET-CONTRACT.md).
+attribution, url, references}`, empty strings when absent; `references` is always an array
+(`[]` when the dataset has none) of bibliography records in display order, with a computed
+`url` (PubMed, else doi.org, else the given url):
+
+    "about": {"description":"...", "references":[
+      {"group":"The TCGA Pan-Cancer Atlas (2018)","title":"Cell-of-Origin Patterns Dominate the Molecular Classification of 10,000 Tumors from 33 Types of Cancer",
+       "authors":"Hoadley KA, Yau C, et al.","journal":"Cell","year":2018,"pmid":"29625048",
+       "doi":"10.1016/j.cell.2018.03.022","url":"https://pubmed.ncbi.nlm.nih.gov/29625048/","note":""}]}
+
+A `types[]` row whose `reference` text names a PMID or DOI gains, when a bibliography record
+matches, `reference_title`, `reference_authors`, `reference_journal`, `reference_year`,
+`reference_url`; with no match only `reference_url`; the `reference` text itself is unchanged.
+See [DATASET-CONTRACT.md](DATASET-CONTRACT.md).
 
 ### Presets (default filters)
 

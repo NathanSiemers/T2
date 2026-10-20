@@ -182,6 +182,33 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE) {
     })
   })
 
+  ## ---- references (optional bibliography) ------------------------------------
+  refs <- NULL; refs_err <- NULL
+  if ("references" %in% names(meta)) {
+    refs <- tryCatch({
+      rv <- getm("references")
+      if (!isTRUE(jsonlite::validate(rv))) stop("not valid JSON")
+      t2_references_check(jsonlite::fromJSON(rv, simplifyVector = FALSE))
+    }, error = function(e) { refs_err <<- conditionMessage(e); NULL })
+  }
+  add("contract", "references (optional): parses, records well-formed", function() {
+    if (!"references" %in% names(meta)) P("not set")
+    else if (!is.null(refs_err)) F(refs_err) else P(sprintf("%d record(s)", length(refs)))
+  })
+  add("contract", "references: present (non-DEMO datasets)", function() {
+    if (identical(toupper(name), "DEMO") || "references" %in% names(meta)) P() else W("no references key (a bibliography is expected)")
+  })
+  add("contract", "types.reference PMIDs are in references", function() {
+    if (!has("types") || !"reference" %in% cols("types")) return(P("no types.reference"))
+    tr <- DBI::dbGetQuery(con, "SELECT type, reference FROM types WHERE reference IS NOT NULL")
+    if (!nrow(tr)) return(P("no references on types"))
+    have <- vapply(refs, function(r) trimws(as.character(r$pmid %||% "")), "")
+    ids <- unique(sub("^PMID:?\\s*", "", unlist(regmatches(tr$reference, gregexpr("PMID:?\\s*[0-9]+", tr$reference, perl = TRUE)))))
+    if (!length(ids)) return(P("no PMID in types.reference"))
+    miss <- setdiff(ids, have)
+    if (length(miss)) W(paste("PMID in types.reference with no references record:", paste(miss, collapse = ", "))) else P(sprintf("%d PMID(s)", length(ids)))
+  })
+
   ## ---- types -----------------------------------------------------------------
   add("contract", "types.label non-NULL for every type", function() {
     if (!has("types") || !"label" %in% cols("types")) return(F("types has no label column"))

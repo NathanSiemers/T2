@@ -1,0 +1,156 @@
+[
+  {
+    "group": "CPTAC Pan-Cancer",
+    "title": "Proteogenomic data and resources for pan-cancer analysis",
+    "authors": "Li Y, Dou Y, Da Veiga Leprevost F, et al.",
+    "journal": "Cancer Cell",
+    "year": 2023,
+    "pmid": "37582339",
+    "doi": "10.1016/j.ccell.2023.06.009",
+    "url": "",
+    "note": "The harmonized pan-cancer data freeze of ten cohorts from which this database is built."
+  },
+  {
+    "group": "CPTAC Pan-Cancer",
+    "title": "Connecting genomic alterations to cancer biology with proteomics: the NCI Clinical Proteomic Tumor Analysis Consortium",
+    "authors": "Ellis MJ, Gillette M, Carr SA, et al.",
+    "journal": "Cancer Discovery",
+    "year": 2013,
+    "pmid": "24124232",
+    "doi": "10.1158/2159-8290.CD-13-0219",
+    "url": "",
+    "note": "Introduces the National Cancer Institute's Clinical Proteomic Tumor Analysis Consortium (CPTAC), which generated these protein-level cancer data."
+  },
+  {
+    "group": "CPTAC Pan-Cancer",
+    "title": "The next horizon in precision oncology: Proteogenomics to inform cancer diagnosis and treatment",
+    "authors": "Rodriguez H, Zenklusen JC, Staudt LM, et al.",
+    "journal": "Cell",
+    "year": 2021,
+    "pmid": "33798439",
+    "doi": "10.1016/j.cell.2021.02.055",
+    "url": "",
+    "note": "Explains why measuring proteins together with genes (proteogenomics) matters for understanding cancer."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Proteogenomic Landscape of Breast Cancer Tumorigenesis and Targeted Therapy",
+    "authors": "Krug K, Jaehnig EJ, Satpathy S, et al.",
+    "journal": "Cell",
+    "year": 2020,
+    "pmid": "33212010",
+    "doi": "10.1016/j.cell.2020.10.036",
+    "url": "",
+    "note": "BRCA: breast cancer. The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Integrated Proteogenomic Characterization of Clear Cell Renal Cell Carcinoma",
+    "authors": "Clark DJ, Dhanasekaran SM, Petralia F, et al.",
+    "journal": "Cell",
+    "year": 2019,
+    "pmid": "31675502",
+    "doi": "10.1016/j.cell.2019.10.007",
+    "url": "",
+    "note": "CCRCC: clear cell renal cell carcinoma, a kidney cancer. The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Proteogenomic Analysis of Human Colon Cancer Reveals New Therapeutic Opportunities",
+    "authors": "Vasaikar S, Huang C, Wang X, et al.",
+    "journal": "Cell",
+    "year": 2019,
+    "pmid": "31031003",
+    "doi": "10.1016/j.cell.2019.03.030",
+    "url": "",
+    "note": "COAD: colon adenocarcinoma, a colon cancer. The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Proteogenomic and metabolomic characterization of human glioblastoma",
+    "authors": "Wang LB, Karpova A, Gritsenko MA, et al.",
+    "journal": "Cancer Cell",
+    "year": 2021,
+    "pmid": "33577785",
+    "doi": "10.1016/j.ccell.2021.01.006",
+    "url": "",
+    "note": "GBM: glioblastoma, a brain cancer. The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Proteogenomic insights into the biology and treatment of HPV-negative head and neck squamous cell carcinoma",
+    "authors": "Huang C, Chen L, Savage SR, et al.",
+    "journal": "Cancer Cell",
+    "year": 2021,
+    "pmid": "33417831",
+    "doi": "10.1016/j.ccell.2020.12.007",
+    "url": "",
+    "note": "HNSCC: head and neck squamous cell carcinoma (HPV-negative). The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "A proteogenomic portrait of lung squamous cell carcinoma",
+    "authors": "Satpathy S, Krug K, Jean Beltran PM, et al.",
+    "journal": "Cell",
+    "year": 2021,
+    "pmid": "34358469",
+    "doi": "10.1016/j.cell.2021.07.016",
+    "url": "",
+    "note": "LSCC: lung squamous cell carcinoma. The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Proteogenomic Characterization Reveals Therapeutic Vulnerabilities in Lung Adenocarcinoma",
+    "authors": "Gillette MA, Satpathy S, Cao S, et al.",
+    "journal": "Cell",
+    "year": 2020,
+    "pmid": "32649874",
+    "doi": "10.1016/j.cell.2020.06.013",
+    "url": "",
+    "note": "LUAD: lung adenocarcinoma. The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Proteogenomic Characterization of Ovarian HGSC Implicates Mitotic Kinases, Replication Stress in Observed Chromosomal Instability",
+    "authors": "McDermott JE, Arshad OA, Petyuk VA, et al.",
+    "journal": "Cell Reports Medicine",
+    "year": 2020,
+    "pmid": "32529193",
+    "doi": "10.1016/j.xcrm.2020.100004",
+    "url": "",
+    "note": "OV: ovarian high-grade serous carcinoma. The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Proteogenomic characterization of pancreatic ductal adenocarcinoma",
+    "authors": "Cao L, Huang C, Cui Zhou D, et al.",
+    "journal": "Cell",
+    "year": 2021,
+    "pmid": "34534465",
+    "doi": "10.1016/j.cell.2021.08.023",
+    "url": "",
+    "note": "PDAC: pancreatic ductal adenocarcinoma. The flagship study of this cohort."
+  },
+  {
+    "group": "The ten cohort studies",
+    "title": "Proteogenomic Characterization of Endometrial Carcinoma",
+    "authors": "Dou Y, Kawaler EA, Cui Zhou D, et al.",
+    "journal": "Cell",
+    "year": 2020,
+    "pmid": "32059776",
+    "doi": "10.1016/j.cell.2020.01.026",
+    "url": "",
+    "note": "UCEC: uterine corpus endometrial carcinoma. The flagship study of this cohort."
+  },
+  {
+    "group": "Distribution",
+    "title": "Proteomic Data Commons: CPTAC Pan-Cancer",
+    "authors": "National Cancer Institute Office of Cancer Clinical Proteomics Research",
+    "journal": "",
+    "year": 2023,
+    "pmid": "",
+    "doi": "",
+    "url": "https://pdc.cancer.gov/pdc/cptac-pancancer",
+    "note": "The public repository from which the CPTAC pan-cancer data files were obtained."
+  }
+]

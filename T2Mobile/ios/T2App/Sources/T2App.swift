@@ -13,6 +13,8 @@ struct T2App: App {
     // the tab shown first can be chosen at launch (-t2Tab select|plot|filter|publish):
     // mac_setup.sh and the UI tests use it to photograph each screen
     @State private var tab = UserDefaults.standard.string(forKey: "t2Tab") ?? "select"
+    // the one-time research-use notice (ResearchNoticeView.swift)
+    @State private var showNotice = researchNoticeNeeded()
 
     var body: some Scene {
         WindowGroup {
@@ -28,6 +30,7 @@ struct T2App: App {
             }
             .environment(model)
             .task { await model.start() }
+            .sheet(isPresented: $showNotice) { ResearchNoticeView() }
         }
     }
 }

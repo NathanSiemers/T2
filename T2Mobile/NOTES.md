@@ -136,6 +136,10 @@ the path in its conf (so `/T2/` is rewritten to `/T2Tc/`); never remove the chec
 **TODO (Nathan, 2026-10-20): the synthetic DEMO data set must not show up in the apps** (the iPhone app
 and the web app list it today; `DatasetMeta.isDemo` exists in T2Kit but the dataset list still offers
 it). Not part of the citations round; do it in the next app round.
+**TODO (Nathan, 2026-10-20): the plot title should name the data source part.** When the GTEx
+subset of the Toil collection is selected, the title says only "TCGA-TARGET-GTEX (Toil)", not the
+subset; it should carry the part's label (`/meta sources` → `source_labels`; both apps). Not a huge
+deal; next round of app work.
 **TODO (Nathan, 2026-10-20): api usage metrics without sensitive data.** The service logs no
 successful request today (privacy promise: no addresses, no selections kept). We still want to
 quantitate and understand api use and trends over time (requests per endpoint and dataset per

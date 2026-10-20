@@ -111,3 +111,15 @@ invariants of the built db. Verdicts after the lead's fact checks:
   both builders; plus `probes(key)` / `samples(key)` indexes (joins by key scanned the table).
 Validation: smoke build, test_cptac.R 70 PASS, sql_tests (DEMO, with T2_API_URL set), deploy dry run,
 and a full rebuild into `T2-devdata/scratch/cptac-pr.db` (not into datasets/, not deployed).
+
+## 2026-10-19 evening: PR #13 merged, cleaned database released
+
+Merge ca7d6cf. Rebuild from main into `T2-devdata/scratch/cptac-main.db` (8.1 min, same counts as
+the PR validation: 2,204 data-less names removed, probes 258,930, allprobes 259,224, 1,611 samples).
+Tests: sql_tests 40 PASS / 0 FAIL / 1 WARN (sparse=0 types, expected), test_cptac 70/0; on the dev
+service (`T2-devdata/datasets/cptac.db`, `dev-up`): go, equiv, app, app-service, browser-service
+all PASS; test_multidataset 22 PASS. Release: verified copy into `datasets/cptac.db`, then
+`deploy.sh data-stage 20261020 cptac.db` → `/scratch/shinyusb/T2-data-20261020/`, `data`, `code`,
+`status` (served ca7d6cf), `check` (all PASS). Live `/v1/datasets`: cptac 259,225 probes (allprobes
++ the virtual `cohort`), 1,611 samples. No service rebuild (no service change in the PR).
+Next: the dataset-contract work (plan file; `T2Mobile/docs/DATASET-CONTRACT.md` to come).

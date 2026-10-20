@@ -1221,6 +1221,14 @@ builds the new data directory from the served one (hard links for the unchanged 
 copy of each named file), so a database deploy is four calls of the one allowed script:
 `data-stage`, `service`, `data`, `code`; dry-run with `T2_DATA_BASE=<scratch dir>`. The iPhone app lists datasets from the service and needs no
 change (the Swift edit is cosmetic and waits for the next build after 1.0's review).
+**Review fixes released 2026-10-19 evening (PR #13, merge ca7d6cf):** `cptac.db` rebuilt from main
+(8.1 min; 2,204 data-less rna names removed; probes 258,930, allprobes 259,224, 1,611 samples;
+sha256 6bb42d65…2ce2), tested in scratch (sql_tests 40/0, test_cptac 70/0) and on the dev service
+(go, equiv, app, app-service, browser-service all pass), then `ops/deploy.sh data-stage 20261020
+cptac.db` (the directory name is a label; 20261019 was taken), `data`, `code`, `status`, `check`
+(all pass). Served data: `/scratch/shinyusb/T2-data-20261020/`. The service was not rebuilt:
+nothing under `T2Mobile/service/` changed and the live `/meta` already carried the 294 CPTAC
+descriptions. Rollback line printed by `data`: `cp docker-compose.yml.pre-data-20261019-1831 …`.
 The integration run (equiv, app, app-service, browser-service, go, swift; logs in
 `T2-devdata/logs/cptac-20261018/`) found one thing, fixed: a dataset without a subtype stores
 `subtype_col = ""`, which the file path kept as a "subtype" menu entry while the service path

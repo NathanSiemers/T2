@@ -90,7 +90,10 @@ ops/deploy.sh status
 ops/deploy.sh check
 ```
 
-Name several files to replace more than one dataset (`data-stage 2026MMDD cptac.db
+The files under `$REPO/datasets/` MUST be the dev files themselves (hard links of
+`/scratch/nathan/R/T2-devdata/datasets/*.db`, all four since 2026-10-20): a dataset_meta edit on the dev copy
+is then what gets staged. (2026-10-20: three stale copies in `datasets/` were staged without the new key;
+check `ls -li` before `data-stage`.) Name several files to replace more than one dataset (`data-stage 2026MMDD cptac.db
 tcgatargetgtex.db`). `TCGA.db` is a name like the others (`data-stage 2026MMDD TCGA.db`, 40 GB,
 10–20 min). A served directory of the old layout (top-level `tcga.db`) is staged into the new one
 (`datasets/TCGA.db`), and the `data` step then drops the top-level mount and the `-tcga` flag

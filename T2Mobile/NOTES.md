@@ -79,6 +79,26 @@ on the Mac, Xcode 27 / iPhone 18 Pro).
 after approval; see the log entry "App Store listing"). Privacy and support pages live at
 fiveprime.org/t2app/; the service logs no successful request.
 
+**1.0 REJECTED by App Review, 2026-10-20 (guideline 1.4.1, citations).** Apple's message, verbatim:
+> The app includes medical information but does not include citations for the medical
+> information. Specifically, the app provides health or medical calculations in the app
+> without citations, such as links to sources for this information. All apps with medical and
+> health information should include citations to ensure users are provided accurate
+> information. Next Steps: Include citations in the app of the sources of the recommendations
+> or information, such as links to those sources. The citations to the sources should be easy
+> for the user to find. Resources: Learn more about requirements for medical apps in
+> guideline 1.4.1.
+
+Nathan's guidance (2026-10-20): (1) emphasize to the user that the app is NOT intended to
+provide health advice; it is a tool *only* for scientists in biomedical research; (2) a list of
+sources for the major initiatives: the seminal TCGA papers (the 2018 Pan-Cancer Atlas) plus the
+seminal papers of every data source integrated (CPTAC, Toil/TCGA-TARGET-GTEx, Xena); (3) as in
+the Shiny app, a listing of all sources for the individual data types in each database, when
+available (`types.reference` and `types.source_url`); (4) strike the right balance: the
+information clearly available and easy to find without overwhelming the app. The Medical
+category may have been a mistake but the answer should address the reviewer without
+reclassifying. The plan and the work are logged below ("Citations round").
+
 **State at the end of 2026-10-11 (all of it in `main`, head 3d17d29; written for a session
 that starts cold).** The production switch is complete and verified:
 `https://fiveprime.org/T2/` is the new app (the merged `post-1.0` work) served by the T2Tc

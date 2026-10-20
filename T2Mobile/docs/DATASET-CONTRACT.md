@@ -1,0 +1,111 @@
+# The dataset contract
+
+What a T2 dataset file promises, what the query service (`t2api`) guarantees to its clients, and
+the few rules the tools (the Shiny app, the iPhone app) are allowed to assume. Three layers,
+kept apart on purpose:
+
+| layer | owns | changes by |
+|---|---|---|
+| **data / schema** | the SQLite file: tables below, `dataset_meta`, `types.label` | a builder run, or `dataset_meta.R` on a staged copy; released with `deploy.sh data-stage` + `data` |
+| **api** (`T2Mobile/service`) | the ONLY interpreter of `dataset_meta`; everything derived (handles, time-to-event variables, type labels, normalized defaults) is derived here | `deploy.sh service` |
+| **apps** | consumers of `/v1/{ds}/meta` and `/v1/{ds}/probes`; nothing dataset-specific in code | `deploy.sh code` (Shiny), TestFlight (iOS) |
+
+The Shiny app's file mode (SQLite without the service, used by the builders' tests and the
+`equiv` suite) reads the same `dataset_meta` keys **verbatim** and never re-derives anything. If a
+rule needs code, it is written once, in Go.
+
+## 1. The file
+
+Tables (the names are historical; every dataset uses them): `samples(key, sample)`,
+`probes(key, probe)`, `allprobes(probe)` (= probes + the clinical column names offered as
+variables), `types(key, type, description, example, reference, source_url, source_file, label)`,
+`datatypes(type, r_datatype)` with `r_datatype ∈ {numeric, factor}`, `tested(sample, value, type)`,
+`tcgai(samplekey, probekey, type, value)` (numeric facts), `tcgacati(samplekey, probekey, type,
+value)` (categorical facts), `probe_types(probekey, type)`, `clinpheno(sample, ...)`,
+`cohorts(cohort, lcohort, cohortstring)`, `dataset_meta(key, value)`, `default_filters`, `sparse(type,
+sparse, default_value)`; views `tcgas, tcga, tcgacats, tcgacat, bytype` from `t2_views.R`
+(`finalize_t2_core()`).
+
+Naming rule for probes (a convention the builders follow; the api resolves it): **one probe name
+belongs to one type**. The type of a name is the text after its last dot when that text is a
+`datatypes` type (`TP53.mut`, `CD8A.prot`, `MAPK1_Y187.phospho`), otherwise the `probe_types` row
+(bare RNA names, including GENCODE names such as `AL627309.1`). Sparse model per type: `sparse=1`
+means a tested sample without a row reads 0 (NA is a stored NULL row); `sparse=0` means no row =
+NA.
+
+### `dataset_meta` keys
+
+Lists are `|`-separated. Every key is optional for the api (fallbacks below), but the conformance
+check (`dataset_contract_check.R`) requires the ones marked **req** of every file built here.
+
+| key | meaning |
+|---|---|
+| `title` **req**, `label` **req** | display strings (`"T2: CPTAC Pan-Cancer …"`, `"CPTAC Pan-Cancer"`) |
+| `cohort_col` **req** | clinical column that becomes the virtual `cohort` |
+| `subtype_col` | clinical column that becomes the virtual `subtype` (the sub-cohort handle); empty = none |
+| `sampletype_col`, `sampletype_levels`, `normal_label` | the sample-type column, its level order, the value(s) meaning "normal" |
+| `heme_values` | cohort values dropped by the derived "Exclude tumors of heme origin" preset |
+| `default_x`, `default_y`, `default_color`, `default_size`, `default_condition`, `default_cohorts` | opening picks; `default_cohorts` is a `\|` list in the file (the api serves it comma-separated) |
+| `source_col`, `sources`, `source_labels`, `source_descriptions` | the dataset's parts (Toil: GTEX, TARGET) |
+| `tte_variables` **req** (may be `[]`) | JSON array of `{"name","label","event_col","time_col","time_unit","description"}` |
+| `about` **req**, `citation`, `attribution`, `about_url` | the dataset's About prose; `attribution` is the sentence a data provider requires (CPTAC: the NCI sentence) |
+
+`types.label` **req**: the word a plot title uses for the type (`mut`/`fmut` → "mutation", `cnv` →
+"CNA", `prot` → "protein", `phospho` → "phosphosite", `rna` → "" since a bare name needs no word).
+
+### Time-to-event variables
+
+A tte variable is a pair of clinical columns: `event_col` numeric with 1 = event, 0 = censored
+(NULL = unknown), `time_col` numeric, > 0, in `time_unit`. v1 accepts `time_unit = "days"` only.
+`name` is the handle the apps offer as an X variable (`OS`); `label` the long name ("Overall
+Survival").
+
+## 2. What the api guarantees (`/v1/{ds}/meta`, additive only)
+
+Nothing that exists today is removed or retyped (the shipped iPhone app requires `roles`,
+`presets`, `clinical_columns`, `survival_endpoints` as a string array, `defaults` as a string map).
+
+| field | content |
+|---|---|
+| `handles` | ordered `[{name, role}]`, role ∈ `cohort`, `subcohort`, `sample_type`; `name` is the real column (`cohort`, `subtype`, the `sampletype_col`) |
+| `tte_variables` | the declared list; for a file without the key: every clinical pair `X` + `X.time` with numeric `X` (label `X`, unit days) |
+| `survival_endpoints` | the names of `tte_variables` (never null; `[]` when none) |
+| `type_labels` | `{type: label}` from `types.label`, falling back to the type name |
+| `about` | `{description, citation, attribution, url}` |
+| `defaults.cohorts` | comma-separated |
+| `roles`, `defaults`, `presets`, `sources`, `cohorts`, `types`, `datatypes`, `clinical_columns`, `clinical_descriptions`, `version`, `n_samples`, `n_probes` | as today |
+
+The virtual `cohort` column always exists: from `cohort_col`, or a single level equal to `label`
+when a file declares none. `subtype` exists when `subtype_col` is set. A dataset's own `cohort`
+column is renamed `lcohort`.
+
+### The variable list (`/v1/{ds}/probes`)
+
+`?all=1` returns the names as today. `?all=1&typed=1` returns the same names with, per entry,
+`section` (handle | probe | clinical), `type` (a `types` name, or `clinical` / `virtual`) and
+`kind` (num | cat), columnar and code-indexed to stay small. Search (`?q=`) hits carry the same
+three fields with `typed=1`. The apps build their menus from these fields, not from the order of
+the list or from literal names.
+
+## 3. What the tools may assume (and nothing else)
+
+1. The variable list tells them what to offer and what each name is (section, type, kind).
+2. `handles` tells them which columns are the cohort, the sub-cohort and the sample type.
+3. `tte_variables` tells them which X variables are time-to-event and which columns to read.
+4. `type_labels` gives the words for titles; `about` the About prose.
+5. Presets and sources are `in` / `not in` rules on categorical columns; a preset whose rules
+   are all `not in` is an exclusion.
+6. A factor type with numeric levels (`.mut` 0/1) is plotted with its full level set, so an
+   absent level still shows as an empty group.
+
+Analysis policy that is NOT dataset knowledge and stays in the tools: Kaplan–Meier excludes
+normal samples; follow-up caps and group counts; z-scores and residualization require numeric
+variables; the limits in `T2_LIMITS`.
+
+## 4. Conformance
+
+`Rscript dataset_contract_check.R <db> <name>` (also run by `sql_tests.R`): required tables and
+columns, `sample` column, the **req** keys present and parsable, each tte pair present and numeric
+with events in {0, 1, NULL} and unit `days`, `types.label` non-NULL, role columns present in
+`clinpheno`, `default_cohorts` values are cohort levels, every `datatypes.type` in `types`, one
+type per probe. Every builder runs it last; a file that fails it is not released.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run the UI tests (T2UITests) on several iPhone simulators, light and dark, building once.
+# Run the unit tests (T2AppTests) once and the UI tests (T2UITests) on several iPhone simulators, light and dark, building once.
 # Runs on the Mac, in the T2Mobile folder (the one around ios/):
 #   ./ios/tools/sim_matrix.sh "iPhone SE (3rd generation)":light "iPhone 13 mini":dark ...
 # with no arguments: the list at the end of this file. A simulator that does not exist is
@@ -31,6 +31,13 @@ DEV=$(udid_for "iPhone 18 Pro")
 xcodebuild -project $APPDIR/T2.xcodeproj -scheme T2 -destination "platform=iOS Simulator,id=$DEV" \
     -derivedDataPath build build-for-testing > "$LOGS/build.log" 2>&1 || { echo "BUILD FAILED (see $LOGS/build.log)" | tee -a "$SUMMARY"; exit 1; }
 echo "build ok $(date)" | tee -a "$SUMMARY"
+
+## unit tests (T2AppTests: FigureTests etc.) once, on the build device, before the UI matrix
+echo "== unit tests $(date)" | tee -a "$SUMMARY"
+xcodebuild -project $APPDIR/T2.xcodeproj -scheme T2 -destination "platform=iOS Simulator,id=$DEV" \
+    -derivedDataPath build -only-testing:T2AppTests test-without-building > "$LOGS/unit.log" 2>&1 \
+    && echo "  unit passed: $(grep -E 'Executed [0-9]+ tests?' "$LOGS/unit.log" | tail -1)" | tee -a "$SUMMARY" \
+    || { echo "  FAILED: unit tests (see $LOGS/unit.log)" | tee -a "$SUMMARY"; grep -E "error:|XCTAssert|failed -" "$LOGS/unit.log" | sort -u | head -20 | sed 's/^/    /' | tee -a "$SUMMARY"; }
 
 run_one() {   # run_one "device name" light|dark
     local name="$1" app="$2" udid tag log failed=0

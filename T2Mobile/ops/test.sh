@@ -69,7 +69,7 @@ ios)     say ios; dev=${2:-iPhone 18 Pro}   ## T2_MAC=<address> overrides the Ma
          scp -q $REPO/T2Mobile/ios/tools/sim_matrix.sh nathan@${T2_MAC:-10.13.13.4}:Claude/T2Mobile/ios/tools/ && ssh nathan@${T2_MAC:-10.13.13.4} 'chmod +x ~/Claude/T2Mobile/ios/tools/sim_matrix.sh'
          pgrep -f 'R 3861:127.0.0.1:3861' >/dev/null || ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -R 3861:127.0.0.1:3861 nathan@${T2_MAC:-10.13.13.4}
          ssh nathan@${T2_MAC:-10.13.13.4} "cd ~/Claude/T2Mobile && TEST_RUNNER_T2_SERVICE=http://127.0.0.1:3861 ./ios/tools/sim_matrix.sh \"$dev\":light" > "$LOGDIR/ios.log" 2>&1
-         grep -E "passed:|FAILED:|Executed" "$LOGDIR/ios.log" | tail -3 ;;
+         grep -E "passed:|FAILED:|Executed" "$LOGDIR/ios.log" | tail -4 ;;
 dev-up)  say dev-up; (cd $REPO/T2Mobile/service && docker compose build && docker compose -f docker-compose.yml -f $DEV/t2api-dev-contact.yml up -d) 2>&1 | tail -2; sleep 20; curl -s http://127.0.0.1:3861/healthz ;;
 ## (browser-files is no longer in `all`: the app has no file mode)
 all)     for s in go equiv app app-service browser-service fuzz swift; do "$0" "$s"; done; echo; echo "logs: $LOGDIR" ;;

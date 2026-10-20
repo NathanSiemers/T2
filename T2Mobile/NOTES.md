@@ -1280,3 +1280,11 @@ date (1171.7.0 < 1174.9.2)" and the component install needs authorization on the
 Failed: Authorization is required to install the packages"), which is Nathan's step: open Xcode once
 and let it install its components, or `sudo xcodebuild -runFirstLaunch`; then `T2_MAC=10.0.0.110
 ops/test.sh ios` (UI tests against the dev service through the tunnel).
+**iOS simulator tests, 2026-10-20 10:40:** after Nathan installed Xcode 27.1's components,
+`T2_MAC=10.0.0.110 ops/test.sh ios` ran clean on iPhone 18 Pro / iOS 27.0 (light): T2UITests
+`Executed 6 tests, with 0 failures` (66 screenshots, 741 s, all against t2api-dev through the tunnel);
+T2AppTests (FigureTests) `Executed 7 tests, with 0 failures`. The unit tests had to be run by hand
+because `sim_matrix.sh` only ran the UI matrix; it now runs `-only-testing:T2AppTests` once after the
+build (`logs/matrix/unit.log` on the Mac, a `unit passed:`/`FAILED: unit tests` line in summary.txt).
+Logs: `/scratch/nathan/R/T2-devdata/logs/20261020-1027/ios.log`. The contract round is now verified on
+every layer; nothing is uploaded to App Store Connect while 1.0 is in review.

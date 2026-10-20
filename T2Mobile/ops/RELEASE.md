@@ -14,7 +14,7 @@ call of one script, `/scratch/nathan/R/T2/T2Mobile/ops/deploy.sh`, by its absolu
 | `/scratch/nathan/R/T2-devdata/` | the test environment: `datasets/` holds **copies** of the dataset files for the dev service, `logs/`, `screenshots/`, `scratch/` for smoke builds. Safe to delete and recreate. |
 | `t2api-dev` (127.0.0.1:3861) | the development query service, mounting T2-devdata. `ops/test.sh dev-up` rebuilds and restarts it. |
 | `/scratch/shinyusb/T2T` | the **served** checkout of this repo, on `main`. Never edit it; `deploy.sh code` pulls it. |
-| `/scratch/shinyusb/T2-data-<YYYYMMDD>/` | the **served** data directory: `tcga.db` + `datasets/`. Never write into one; a data release is a new directory. |
+| `/scratch/shinyusb/T2-data-<YYYYMMDD>/` | the **served** data directory: `datasets/*.db` (TCGA is `datasets/TCGA.db` since 2026-10-19; older directories have a top-level `tcga.db`). Never write into one; a data release is a new directory. |
 | `/scratch/Docker/ShinyPublic/docker-compose.yml` | production compose: `t2api` (the only container that mounts data), `shiny-t2t` (canary), `shiny-t2tc` pool (= the public `/T2/`), haproxy. `deploy.sh` edits it and keeps dated backups. |
 | GitHub `main` | the source of truth for code. Production only ever pulls from it. |
 
@@ -31,8 +31,12 @@ new directory the compose file is switched to. Nothing served is ever modified i
    into `datasets/`. Then the generic suite: `Rscript sql_tests.R datasets/<name>.db <name>`
    and the dataset's own test file (`CPTAC/test_cptac.R`, `TCGATARGETGTEX/test_tcgatargetgtex.R`).
 3. Put the new file where the dev service sees it:
-   `cp datasets/<name>.db /scratch/nathan/R/T2-devdata/datasets/<name>.db`
-   then `T2Mobile/ops/test.sh dev-up` (the dev service loads datasets at start-up only).
+   `cp datasets/<name>.db /scratch/nathan/R/T2-devdata/datasets/<name>.db.staging && cmp … && mv …`
+   (the dev `TCGA.db` is a hard link of the checkout's `datasets/TCGA.db`), then
+   `T2Mobile/ops/test.sh dev-up` (the dev service loads datasets at start-up only).
+   A dataset must pass `Rscript dataset_contract_check.R datasets/<name>.db <name>` (also run
+   inside `sql_tests.R`); `dataset_meta.R set|set-json|type-label` fixes metadata on a dev copy
+   without a rebuild (see `docs/DATASET-CONTRACT.md`).
 4. Run the suites: `T2Mobile/ops/test.sh all` (or the relevant ones: `go`, `equiv`, `app`,
    `app-service`, `browser-service`, `swift`; logs in `T2-devdata/logs/<date-time>/`). A Sonnet
    agent can run them and report the verdict lines.
@@ -46,7 +50,7 @@ Which steps apply depends on what changed:
 
 | what changed | step |
 |---|---|
-| R files of the app (`app.R`, `lib.R`, `gitr.R`, `dataset_registry.R`, tests, docs, builders) | `deploy.sh code` |
+| R files of the app (`app.R`, `lib.R`, `t2_api_client.R`, tests, docs, builders; the app is an api client only since 2026-10-19) | `deploy.sh code` |
 | anything under `T2Mobile/service/` (Go code, `clinical_descriptions.tsv`, which is compiled in) | `deploy.sh service` |
 | both | `service` then `code` |
 | the iPhone app | not this runbook: Xcode / TestFlight from the Mac (`T2Mobile/NOTES.md`); never upload a build while one is in App Review |
@@ -87,9 +91,10 @@ ops/deploy.sh check
 ```
 
 Name several files to replace more than one dataset (`data-stage 2026MMDD cptac.db
-tcgatargetgtex.db`). To replace `tcga.db` itself, stage with no names and then replace the
-hard link by hand before switching (`rm` the link, `cp` + `cmp` + `mv` as the step does), or
-extend the step.
+tcgatargetgtex.db`). `TCGA.db` is a name like the others (`data-stage 2026MMDD TCGA.db`, 40 GB,
+10–20 min). A served directory of the old layout (top-level `tcga.db`) is staged into the new one
+(`datasets/TCGA.db`), and the `data` step then drops the top-level mount and the `-tcga` flag
+from the compose file; the service finds `datasets/TCGA.db` by itself.
 
 Rollback: the `data` step prints `cp docker-compose.yml.pre-data-<stamp> docker-compose.yml
 && docker compose up -d ...`; the previous directory is untouched, so the switch back is a

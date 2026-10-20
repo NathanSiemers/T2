@@ -123,3 +123,15 @@ all PASS; test_multidataset 22 PASS. Release: verified copy into `datasets/cptac
 `status` (served ca7d6cf), `check` (all PASS). Live `/v1/datasets`: cptac 259,225 probes (allprobes
 + the virtual `cohort`), 1,611 samples. No service rebuild (no service change in the PR).
 Next: the dataset-contract work (plan file; `T2Mobile/docs/DATASET-CONTRACT.md` to come).
+
+## 2026-10-19 night: the dataset contract (cptac rebuilt again)
+
+Round driven by Nathan's "the api should have all information necessary to run any database". See
+`T2Mobile/docs/DATASET-CONTRACT.md` and `APP-CONFIG-PLAN.md`. For CPTAC: the builder now writes
+`tte_variables` (OS, PFI), `about`/`citation`/`attribution` (the NCI sentence)/`about_url` and
+`types.label` through `t2_build_lib.R`, rounds numeric facts to 6 decimals, and ends with the
+conformance check. Rebuilt three times in scratch (v1 old code, v2 lib, v3 rounding: metadata
+and dimension tables identical, 12,033 fact values differ by ≤ 7e-15 from SQLite's round): test_cptac
+70/0, sql_tests 62/0, contract check 22/0. sha256 018547d6…3c49a, in `datasets/cptac.db` and
+`T2-devdata/datasets/cptac.db`. The Shiny app shows the attribution on About and KM on OS/PFI from the
+declared entries. Release: with the contract round (data-stage with TCGA.db and cptac.db, DEMO.db).

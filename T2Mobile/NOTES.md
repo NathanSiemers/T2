@@ -1234,3 +1234,32 @@ The integration run (equiv, app, app-service, browser-service, go, swift; logs i
 `subtype_col = ""`, which the file path kept as a "subtype" menu entry while the service path
 dropped it; `dataset_registry.R` now treats an empty role column as NA like `t2_api_client.R`,
 and `lib.R` adds the `subtype` menu handle only when the dataset has a subtype role.
+
+### 2026-10-19 night: the dataset contract (api owns dataset knowledge; apps consume it)
+
+Nathan: "Ideally, the api would have all information necessary to run any database … keep
+data/schema, api, and app as separate as possible." Three Explore surveys, a Plan agent, two review
+agents (generalization, performance; `docs/REVIEW-2026-10-19-*.md` with verdicts), then four Sonnet
+implementation agents by layer, the lead reviewing and committing:
+- **Contract** `docs/DATASET-CONTRACT.md`; plan `docs/APP-CONFIG-PLAN.md`. Decisions: `subtype` keeps
+  its name, role `subcohort`; tcga.db gets a real `dataset_meta`; the file is `datasets/TCGA.db`; the
+  Shiny app is api-only (`gitr()` = builders' library + equiv oracle); values rounded to 6 decimals at
+  build; `tcgai` WITHOUT ROWID at next rebuilds.
+- **Api** (b0c7638): `handles`, `tte_variables` (declared, else derived), `type_labels`, `about`,
+  `default_cohorts` array, typed probe list (`section`/`type`/`kind`), one summary struct, discovery
+  "every *.db in datasets/", `order` key, TCGA block deleted; `survival_endpoints` real and never null;
+  `defaults.cohorts` comma string kept for the shipped 1.0. `contract_test.go`.
+- **Data** (d62fe10): `t2_build_lib.R`, `dataset_contract_check.R` (inside `sql_tests.R`),
+  `t2_test_helpers.R`, `dataset_meta.R` set/set-json/type-label, `TCGA/write_tcga_meta.R` (+00-master),
+  builders through the lib; dev files all conform (TCGA 23/0 with 5 WARN: zero survival times, no bytype).
+- **Shiny** (f2810d3): api client only; `t2_plot_ctx`; survival from the tte entry; `T2_CONTROLS`,
+  `T2_LIMITS`; About from `about`; `t2_util.R`; cached factored clinical frame; shared lowercased menu;
+  suites equiv 72 / app 0 FAIL / app-service 89 / browser-service ALL PASS; dev site KM on OS renders.
+- **iOS** (720f84c): contract decoders, no client derivations (`ServiceTooOld`), caches by revision,
+  CrossFilter O(F·n), TaskGroup chunks; 71 T2Kit tests on Linux; T2App built on the Mac in the
+  verification run. No upload (1.0 in review).
+- **Dev layout** (baadea4): `datasets/TCGA.db` (hard link into T2-devdata/datasets), dev compose and
+  harness without `-tcga`. `deploy.sh data-stage`/`data` learned the layout (dry run in scratch OK).
+Open: matrixStats is not in the shinyt2t image (`t2_row_medians` falls back to apply); the Toil file
+got its keys via `dataset_meta.R` (builder writes them at its next rebuild); `bytype` view absent in
+TCGA/Toil files (WARN).

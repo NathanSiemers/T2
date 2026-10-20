@@ -59,7 +59,10 @@ data-stage)
         jm=$(sqlite3 -readonly "$REPO/datasets/$f" "PRAGMA journal_mode;"); [ "$jm" = delete ] || { echo "$f: journal_mode is $jm, not delete"; exit 1; }
     done
     mkdir -p "$new/datasets"
-    ln "$cur/tcga.db" "$new/tcga.db"
+    ## the TCGA file is datasets/TCGA.db (2026-10-19); a legacy served dir has it as tcga.db at the top
+    if [ -f "$cur/datasets/TCGA.db" ]; then src_tcga="$cur/datasets/TCGA.db"; else src_tcga="$cur/tcga.db"; fi
+    named_tcga=0; for f in "$@"; do [ "$f" = TCGA.db ] && named_tcga=1; done
+    [ $named_tcga = 1 ] || [ -f "$cur/datasets/TCGA.db" ] || ln "$src_tcga" "$new/datasets/TCGA.db"
     for p in "$cur"/datasets/*.db; do
         b=$(basename "$p"); skip=0
         for f in "$@"; do [ "$f" = "$b" ] && skip=1; done
@@ -78,12 +81,16 @@ data-stage)
     echo "staged. next: $0 data $new" ;;
 data)
     dir=${2:?usage: deploy.sh data /scratch/shinyusb/T2-data-YYYYMMDD}
-    [ -f "$dir/tcga.db" ] && [ -d "$dir/datasets" ] || { echo "$dir must hold tcga.db and datasets/"; exit 1; }
+    [ -d "$dir/datasets" ] && { [ -f "$dir/datasets/TCGA.db" ] || [ -f "$dir/tcga.db" ]; } || { echo "$dir must hold datasets/ with TCGA.db (or a legacy top-level tcga.db)"; exit 1; }
     cur=$(grep -o '/scratch/shinyusb/T2-data-[0-9]*' "$PUB/docker-compose.yml" | head -1)
     [ -n "$cur" ] || { echo "no T2-data directory found in $PUB/docker-compose.yml"; exit 1; }
     [ "$cur" = "$dir" ] && { echo "already on $dir"; exit 0; }
     cp "$PUB/docker-compose.yml" "$PUB/docker-compose.yml.pre-data-$stamp"
     sed -i "s|$cur/|$dir/|g" "$PUB/docker-compose.yml"
+    if [ -f "$dir/datasets/TCGA.db" ]; then   # new layout: no top-level mount, no -tcga flag (the service finds datasets/TCGA.db)
+        sed -i "\|$dir/tcga.db:/data/tcga.db:ro|d" "$PUB/docker-compose.yml"
+        sed -i 's|"-tcga", "/data/tcga.db", ||' "$PUB/docker-compose.yml"
+    fi
     grep -n "T2-data-" "$PUB/docker-compose.yml"
     (cd "$PUB" && docker compose up -d t2api shiny-t2t shiny-t2tc)
     echo "rollback: cp $PUB/docker-compose.yml.pre-data-$stamp $PUB/docker-compose.yml && (cd $PUB && docker compose up -d t2api shiny-t2t shiny-t2tc)" ;;

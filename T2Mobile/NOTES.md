@@ -156,6 +156,13 @@ description of the filtering shows in the plot's caption, so people remember wha
 every text element of the figure can be kept or removed individually: title, subtitle, caption,
 attribution/source line (today only the source line can be dropped, with the "please cite" reminder),
 axis titles too if easy; the Publish screen gets a switch per element; same in the web app's Publish tab.
+**TODO (Nathan, 2026-10-20): no stale collection lists in the summaries.** Wherever the app or the
+listing names the collections ("Explore TCGA, TARGET and GTEx" subtitle, the promotional text, the
+description's first paragraph, keywords, the About "T2" paragraph, the website blurb), say "TCGA (The
+Cancer Genome Atlas) and other genomic databases" instead of listing TCGA, TARGET, GTEx: the collections
+are expanding (CPTAC is in, more to come) and the descriptions must not go stale. The per-dataset
+specifics stay where the data describe themselves (About › this data set, Sources and citations).
+Listing texts change with the next build, not while build 2 is in review.
 **TODO (Nathan, 2026-10-20): the plot title should name the data source part.** When the GTEx
 subset of the Toil collection is selected, the title says only "TCGA-TARGET-GTEX (Toil)", not the
 subset; it should carry the part's label (`/meta sources` → `source_labels`; both apps). Not a huge

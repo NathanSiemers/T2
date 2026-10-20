@@ -111,8 +111,10 @@ then tag `v1.0-build2-submitted`.
 App Store Connect writes to Claude): build 972d48a8 (uploaded 12:41, VALID) attached to version 1.0
 (`20c097c4-…`), the old submission `bfa3ef77` canceled (its item REMOVED), new reviewSubmission
 `635f739b-cb12-4e66-bacd-9f1f07d428e9` with the version as its item, state WAITING_FOR_REVIEW; the simulator
-suite had passed against the live service (7+7). Tag `v1.0-build2-submitted` = 1ab06b7. Open: the
-Resolution Center reply (paste from `docs/APPSTORE.md`); never upload while this is pending.
+suite had passed against the live service (7+7). Tag `v1.0-build2-submitted` = 1ab06b7. The Resolution Center thread died with the canceled submission (no Reply button on a fresh
+submission), so the reply was put at the top of the version's App Review notes (`asc.py patch
+appStoreReviewDetails 20a521bc-…`, 2026-10-20 13:20, 200; Nathan's original notes kept below it).
+Never upload while this is pending.
 
 **State at the end of 2026-10-11 (all of it in `main`, head 3d17d29; written for a session
 that starts cold).** The production switch is complete and verified:

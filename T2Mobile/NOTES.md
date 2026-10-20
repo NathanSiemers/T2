@@ -98,6 +98,15 @@ available (`types.reference` and `types.source_url`); (4) strike the right balan
 information clearly available and easy to find without overwhelming the app. The Medical
 category may have been a mistake but the answer should address the reviewer without
 reclassifying. The plan and the work are logged below ("Citations round").
+**Citations round RELEASED 2026-10-20 ~12:15 (Nathan ran the steps; all passed):** `deploy.sh service`
+(rollback tag `t2api:pre-20261020-1213`), `data /scratch/shinyusb/T2-data-20261020b` (the four files with
+the `references` key and the corrected TCGA type PMIDs), `code` (6eb1c08), `status`, `check`. Live api:
+TCGA 16 / CPTAC 14 / Toil 5 references, every data type joined to its full reference. Code: 1ab06b7
+(the round) + 6eb1c08 (RELEASE.md). iOS 1.0 **build 2** compiled and green on the simulator against the
+dev service (7 unit + 7 UI); the run against the live service is the pre-upload check. Next: Nathan
+unlocks the keychain in his own terminal, `./ios/testflight.sh` on the Mac, submits build 2 for review
+with `asc.py`, pastes the Resolution Center reply (`docs/APPSTORE.md`, "Reply to the 1.4.1 rejection"),
+then tag `v1.0-build2-submitted`.
 
 **State at the end of 2026-10-11 (all of it in `main`, head 3d17d29; written for a session
 that starts cold).** The production switch is complete and verified:
@@ -1320,3 +1329,26 @@ because `sim_matrix.sh` only ran the UI matrix; it now runs `-only-testing:T2App
 build (`logs/matrix/unit.log` on the Mac, a `unit passed:`/`FAILED: unit tests` line in summary.txt).
 Logs: `/scratch/nathan/R/T2-devdata/logs/20261020-1027/ios.log`. The contract round is now verified on
 every layer; nothing is uploaded to App Store Connect while 1.0 is in review.
+
+**Citations round, 2026-10-20 (App Review 1.4.1 rejection of iOS 1.0).** Plan `docs/CITATIONS-PLAN.md`.
+Data: `references` key (JSON records: group, title, authors, journal, year, pmid, doi, url, note; full
+titles for non-scientists, verified against PubMed/CrossRef by an agent) in `<dataset>/references.json`,
+written by the builders through `t2_build_lib.R::t2_references_json`; `dataset_meta.R set-json` and
+`dataset_contract_check.R` know it; `journal` may be empty (program pages). Two wrong PMIDs in the TCGA
+data-type table found by the verification (HRD/MSI cited 30625304 = a DNA polymerase paper, correct
+29617664; RABIT cited 26034287 = a CTCF paper, correct 26056275): fixed in `TCGA/type_descriptions.R`
+and in the files. CPTAC and Toil type references now carry their paper's PMID so the service's join
+finds them. Service: `about.references` (computed links), `types[].reference_title/authors/journal/
+year/url` (join by PMID, else DOI), `references.go` + tests. iOS: `ResearchNoticeView` (once, flag
+`t2ResearchNoticeSeen`, `-t2ResetNotice YES` for the tests), About opens with "Research use only" +
+"Sources and citations" (`SourcesView`: bibliography by group, data types with full references and
+data links, Methods = the six statistics the app computes, T2), "Methods and sources" under the plot
+statistics (`SourcesSheet`), UI test 07, build 2, `APPSTORE.md` (description, review notes, the
+Resolution Center reply draft). Shiny: statement box on About, bibliography, full type references,
+"Statistical methods" (survfit/survdiff/coxph only), footer line; `test_about_references.R`. Harness:
+`sim_matrix.sh` runs XcodeGen before building (new Swift files are invisible otherwise) and the unit
+tests; `test_gitr_api.R` compares the four About keys + the record count. Suites: go ok, equiv 72,
+app 305/0, app-service 93, browser-service, fuzz, swift 73, iOS 7+7, all green. Staging slip caught
+before `data`: `datasets/` held stale copies of three files; they are hard links of the dev files now
+(RELEASE.md). TODOs added: DEMO must not show in the apps; api usage metrics without sensitive data.
+

@@ -148,3 +148,7 @@ app's (the R constant in `t2_util.R`).
   `journal` is optional in a reference record (program pages). Dev service rebuilt; `/meta` verified for all
   four datasets. T2App compiles on the Mac (after XcodeGen; `sim_matrix.sh` now regenerates the project).
   Running: `ops/test.sh all` and the iOS simulator suite (step F).
+- 2026-10-20 12:15: F done (all suites green, iOS 7+7 on the simulator), G done by Nathan (service, data
+  T2-data-20261020b, code, check all passed). H in progress: simulator suite against the live service; then
+  Nathan's TestFlight upload and submission (I).
+

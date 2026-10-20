@@ -105,6 +105,10 @@ run('280-add_signatures_to_db.R')
 ## rebuild views + probe_types to pick up signature probes
 run('300-final_indexing.R')
 run('250-create_views.R')
+## the dataset's self-description (roles, defaults, survival endpoints, About prose, type labels):
+## T2Mobile/docs/DATASET-CONTRACT.md; the conformance check runs inside run_sql_tests below
+source('write_tcga_meta.R')
+write_tcga_meta(.build_db)
 run('290-record_environment.R')
 run('295-type_descriptions.R')
 run('297-default_filters.R')

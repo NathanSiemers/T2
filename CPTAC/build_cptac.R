@@ -124,6 +124,8 @@ setwd(ROOT)
 source(file.path(ROOT, "ensembl_to_hgnc.R"))
 source(file.path(ROOT, "t2_views.R"))
 source(file.path(ROOT, "default_filters.R"))
+source(file.path(ROOT, "t2_build_lib.R"))
+source(file.path(ROOT, "dataset_contract_check.R"))
 setDTthreads(8)
 
 ## --- config -----------------------------------------------------------------
@@ -322,7 +324,7 @@ insert_mat <- function(M, type, keep) {
     if (length(idx)) {
       r <- (idx - 1L) %% nrow(sub) + 1L; c <- (idx - 1L) %/% nrow(sub) + 1L
       dbAppendTable(con, "tcgai", data.frame(samplekey = unname(sk[c]), probekey = pk[r],
-                                             value = sub[idx], type = type))
+                                             value = round(sub[idx], 6), type = type))   # no float noise in the file
       tot <- tot + length(idx)
     }
   }
@@ -647,31 +649,43 @@ tdef <- list(
   fmut = c("Somatic mutations spelled out: gene, protein change and variant class (TP53_p.R273H_Missense_Mutation), from the BCM MAF.", "TP53.fmut",
            PDCURL, "<C>_somatic_mutation.maf"))
 tt <- intersect(names(tdef), TYPES)
-types_tbl <- data.frame(key = seq_along(tt), type = tt,
-                        description = sapply(tdef[tt], `[`, 1), example = sapply(tdef[tt], `[`, 2),
-                        reference = REF, source_url = sapply(tdef[tt], `[`, 3),
-                        source_file = sapply(tdef[tt], `[`, 4), stringsAsFactors = FALSE, row.names = NULL)
-dbWriteTable(con, "types", types_tbl, overwrite = TRUE)
-dbWriteTable(con, "datatypes", data.frame(type = tt, r_datatype = ifelse(tt %in% c("mut", "fmut"), "factor", "numeric"),
-                                          stringsAsFactors = FALSE), overwrite = TRUE)
-dataset_meta <- data.frame(
-  key = c("title","label","cohort_col","subtype_col","sampletype_col","normal_label","heme_values",
-          "sampletype_levels","default_x","default_y","default_color","default_size","default_condition",
-          "default_cohorts"),
-  value = c("T2: CPTAC Pan-Cancer Proteogenomics (2023 harmonized freeze)", "CPTAC Pan-Cancer",
-            "cancer_type", "", "sample_type", "Solid Tissue Normal", "",
-            "Primary Tumor|Solid Tissue Normal", "cohort", "CD8A", "sample_type", "", "",
-            paste(COH, collapse = "|")), stringsAsFactors = FALSE)
-dbWriteTable(con, "dataset_meta", dataset_meta, overwrite = TRUE)
-write_default_filters(con, "cptac")
+## types, datatypes and sparse model per type in one table (t2_build_lib.R writes all three)
+type_spec <- data.frame(type = tt, description = sapply(tdef[tt], `[`, 1), example = sapply(tdef[tt], `[`, 2),
+                        reference = REF, source_url = sapply(tdef[tt], `[`, 3), source_file = sapply(tdef[tt], `[`, 4),
+                        ## the word a plot title uses for the type ("" = a bare name needs none)
+                        label = unname(c(rna = "", prot = "protein", phospho = "phosphosite", cnv = "CNA",
+                                         mut = "mutation", fmut = "mutation")[tt]),
+                        r_datatype = ifelse(tt %in% c("mut", "fmut"), "factor", "numeric"),
+                        sparse = tt %in% c("rna", "mut"), default_value = ifelse(tt %in% c("rna", "mut"), 0, NA_real_),
+                        stringsAsFactors = FALSE, row.names = NULL)
+t2_write_types(con, type_spec)
+ABOUT <- paste("T2 CPTAC Pan-Cancer: the harmonized proteogenomic data freeze of the National Cancer Institute's Clinical Proteomic Tumor Analysis Consortium (CPTAC),",
+               "ten cancer cohorts (BRCA, CCRCC, COAD, GBM, HNSCC, LSCC, LUAD, OV, PDAC, UCEC) with tumors and normal adjacent tissue.",
+               "RNA-seq expression, TMT mass-spectrometry protein and phosphosite abundance, copy number and somatic mutations were processed by one pipeline (BCM, GENCODE v34).",
+               "Protein and phosphosite values are comparable within a cohort; across cohorts only with care, since each cohort has its own reference.",
+               "Overall survival (OS) and progression-free interval (PFI) are clinical variables; select one as the X variable for a Kaplan-Meier analysis.")
+t2_write_meta(con,
+  meta = list(title = "T2: CPTAC Pan-Cancer Proteogenomics (2023 harmonized freeze)", label = "CPTAC Pan-Cancer",
+              cohort_col = "cancer_type", subtype_col = "", sampletype_col = "sample_type",
+              normal_label = "Solid Tissue Normal", heme_values = "",
+              sampletype_levels = c("Primary Tumor", "Solid Tissue Normal"),
+              default_x = "cohort", default_y = "CD8A", default_color = "sample_type", default_size = "",
+              default_condition = "", default_cohorts = COH, about = ABOUT,
+              citation = "Li Y, Dou Y, Da Veiga Leprevost F, et al. Proteogenomic data and resources for pan-cancer analysis. Cancer Cell 2023;41:1397-1406. doi:10.1016/j.ccell.2023.06.009",
+              attribution = "Data used in this publication were generated by the National Cancer Institute Clinical Proteomic Tumor Analysis Consortium (CPTAC).",
+              about_url = "https://pdc.cancer.gov/pdc/cptac-pancancer"),
+  tte = list(
+    t2_tte("OS", "Overall Survival", "OS", "OS.time", "days",
+           "Overall survival from the CPTAC cohort meta files (OS_event: 1 = death, 0 = censored; OS_days: follow-up in days)."),
+    t2_tte("PFI", "Progression-Free Interval", "PFI", "PFI.time", "days",
+           "Progression-free survival from the CPTAC cohort meta files (PFS_event: 1 = progression or death, 0 = censored; PFS_days: days). Named PFI to match the TCGA endpoint handle.")))
 
-## genes that are 0 in every sample have no stored row (sparse rna): take them out of the menu
-drop_log("probes with no data at all removed from probes/allprobes", drop_t2_dataless_probes(con))
+## genes that are 0 in every sample have no stored row (sparse rna): take them out of the menu; probe_types,
+## indexes, views, the default_filters table; then the dataset contract (DATASET-CONTRACT.md s.4) -- a file
+## that fails it is not released (the .building file stays for inspection)
 say("building probe_types, indexes, views ...")
-if ("rna" %in% tt) set_t2_sparse(con, "rna", TRUE, 0)
-if ("mut" %in% tt) set_t2_sparse(con, "mut", TRUE, 0)
-for (t in intersect(c("prot", "phospho", "cnv", "fmut"), tt)) set_t2_sparse(con, t, FALSE)
-finalize_t2_core(con)
+fin <- t2_finalize_dataset(con, "cptac")
+drop_log("probes with no data at all removed from probes/allprobes", fin$dropped)
 
 ## ============================================================================
 ## 11. summary

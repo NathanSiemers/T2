@@ -68,7 +68,9 @@ check (`dataset_contract_check.R`) requires the ones marked **req** of every fil
 ### Time-to-event variables
 
 A tte variable is a pair of clinical columns: `event_col` numeric with 1 = event, 0 = censored
-(NULL = unknown), `time_col` numeric, > 0, in `time_unit`. v1 accepts `time_unit = "days"` only.
+(NULL = unknown), `time_col` numeric, ≥ 0, in `time_unit` (TCGA's Clinical Data Resource has real
+0-day times; the conformance check fails a negative time and warns on zeros; the tools drop
+non-positive times as analysis policy). v1 accepts `time_unit = "days"` only.
 `name` is the handle the apps offer as an X variable (`OS`); `label` the long name ("Overall
 Survival").
 

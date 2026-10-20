@@ -27,6 +27,9 @@ suppressMessages({ library(DBI); library(RSQLite) })
 if (!exists("gitr"))         source(file.path(.ROOT, "gitr.R"))
 if (!exists("t2_api_on"))    source(file.path(.ROOT, "t2_api_client.R"))   # dataset_registry.R needs it (api-mode switch)
 if (!exists("dataset_info")) source(file.path(.ROOT, "dataset_registry.R"))
+.HROOT <- Filter(function(d) file.exists(file.path(d, "t2_test_helpers.R")), c(.ROOT, getwd(), dirname(.ROOT)))[1]   # sourced from CPTAC/test_cptac.R, --file is CPTAC/
+if (!exists("t2_run_checks")) source(file.path(.HROOT, "t2_test_helpers.R"))   # PASS/FAIL/SKIP/WARN + running/printing, shared with dataset_contract_check.R
+if (!exists("check_dataset_contract")) source(file.path(.HROOT, "dataset_contract_check.R"))   # the dataset contract (DATASET-CONTRACT.md s.4)
 
 ## ---- small helpers ---------------------------------------------------------
 .q1  <- function(con, sql) tryCatch(DBI::dbGetQuery(con, sql)[1, 1], error = function(e) NA)
@@ -34,18 +37,12 @@ if (!exists("dataset_info")) source(file.path(.ROOT, "dataset_registry.R"))
 .tables <- function(con) DBI::dbListTables(con)
 .cols   <- function(con, t) tryCatch(DBI::dbListFields(con, t), error = function(e) character(0))
 .has    <- function(con, t) t %in% .tables(con)
-PASS <- function(detail = "") list(ok = TRUE,  detail = detail)
-FAIL <- function(detail = "") list(ok = FALSE, detail = detail)
-SKIP <- function(detail = "") list(ok = NA,    detail = paste("SKIP:", detail))
-## WARN: a noted condition that is NOT a failure (e.g. an expected-but-worth-
-## flagging data property). Does not affect the overall ok/pass verdict.
-WARN <- function(detail = "") list(ok = TRUE, warn = TRUE, detail = detail)
 
 ## resolve a role map for an arbitrary db path (reuses the registry resolver)
 .roles_for <- function(dbpath, name = NULL) {
   if (is.null(name)) {
     bn <- basename(dbpath)
-    name <- if (tolower(bn) == "tcga.db") "TCGA" else sub("\\.db$", "", bn)
+    name <- sub("\\.db$", "", bn); if (tolower(name) == "tcga") name <- "TCGA"   # tcga.db (legacy) and TCGA.db
   }
   ## the roles of the FILE under test: never the service's (T2_API_URL may be set in the
   ## container), and a failure to resolve them is said, not hidden behind TCGA's map
@@ -417,28 +414,15 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
   })
 
   ## ---- run ------------------------------------------------------------------
-  res <- data.frame(group=character(), test=character(), status=character(),
-                    detail=character(), stringsAsFactors = FALSE)
-  for (tt in tests) {
-    r <- tryCatch(tt$fn(), error = function(e) FAIL(paste("ERROR:", conditionMessage(e))))
-    status <- if (is.list(r) && isTRUE(r$warn)) "WARN"
-              else if (is.list(r) && is.na(r$ok)) "SKIP"
-              else if (isTRUE(r$ok)) "PASS" else "FAIL"
-    res <- rbind(res, data.frame(group=tt$group, test=tt$name, status=status,
-                                 detail=ifelse(is.null(r$detail), "", r$detail),
-                                 stringsAsFactors = FALSE))
-  }
+  res <- t2_run_checks(tests)
 
-  if (verbose) {
-    cat(sprintf("\n==== SQL test suite: %s  (dataset '%s') ====\n", dbpath, ri$name))
-    mark <- c(PASS="  ok ", FAIL="FAIL ", SKIP="skip ", WARN="warn ")
-    for (i in seq_len(nrow(res)))
-      cat(sprintf("%s [%-11s] %-52s %s\n", mark[res$status[i]], res$group[i],
-                  res$test[i], res$detail[i]))
-    np <- sum(res$status=="PASS"); nf <- sum(res$status=="FAIL")
-    ns <- sum(res$status=="SKIP"); nw <- sum(res$status=="WARN")
-    cat(sprintf("---- %d PASS / %d FAIL / %d WARN / %d SKIP ----\n", np, nf, nw, ns))
-  }
+  ## ---- the dataset contract (dataset_contract_check.R): its checks count like any other ----
+  cc <- tryCatch(check_dataset_contract(con, ri$name, verbose = FALSE)$results,
+                 error = function(e) data.frame(group = "contract", test = "dataset contract check ran",
+                                                status = "FAIL", detail = paste("ERROR:", conditionMessage(e)), stringsAsFactors = FALSE))
+  res <- rbind(res, cc)
+
+  if (verbose) t2_print_results(res, sprintf("\n==== SQL test suite: %s  (dataset '%s') ====\n", dbpath, ri$name))
   invisible(list(results = res, ok = !any(res$status == "FAIL")))
 }
 

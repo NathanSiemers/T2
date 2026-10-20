@@ -1,6 +1,6 @@
 library(DBI)
 library(dplyr)
-gitrdb = 'tcga.db'
+gitrdb = 'datasets/TCGA.db'   # the canonical file is a dataset like the others (2026-10-19)
 if (!exists("t2_cache")) source('t2_util.R')              # %||%, t2_role(), t2_cache()
 if (!exists("t2_rules_mask")) source('t2_presets.R')      # the rule mask (the rules below)
 if (!exists("t2_api_on")) t2_api_on = function() FALSE    # t2_api_client.R replaces this when it is loaded

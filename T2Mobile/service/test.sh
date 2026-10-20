@@ -8,7 +8,7 @@
 ## 127.0.0.1:3860). For the standalone development copy:
 ##   T2API_NET=t2api-dev T2API_HOST=t2api-dev T2API_PORT=3861 ./test.sh
 ## gitr() comes from the deployed T2T code; T2_CODE=/scratch/nathan/R/T2 uses the working copy,
-## T2_DB=<dir with tcga.db and datasets/> other database files (default /scratch/shinyusb/T2).
+## T2_DB=<dir with datasets/ (TCGA.db among them)> other database files (default /scratch/shinyusb/T2).
 cd "$(dirname "$0")"
 what=${1:-all}
 NET=${T2API_NET:-shinypublic}; HOST=${T2API_HOST:-t2api}; PORT=${T2API_PORT:-3860}
@@ -17,7 +17,7 @@ T2=/scratch/shinyusb
 if [ "$what" = all ] || [ "$what" = equiv ]; then
     docker run --rm --network $NET -u 999:999 --read-only --tmpfs /tmp \
         -v ${T2_CODE:-$T2/T2T}:/srv/T2T:ro -v $T2/Thanos:/srv/Thanos:ro \
-        -v ${T2_DB:-$T2/T2}/tcga.db:/srv/T2/tcga.db:ro -v ${T2_DB:-$T2/T2}/datasets:/srv/T2/datasets:ro \
+        -v ${T2_DB:-$T2/T2}/datasets:/srv/T2/datasets:ro \
         -v "$PWD/test_equivalence.R:/test_equivalence.R:ro" -w /srv/T2T -e T2_THANOS=/nonexistent -e T2_DATASETS_DIR=/srv/T2/datasets \
         --entrypoint Rscript shinyt2t:2026.10 /test_equivalence.R http://$HOST:8080 ${N_PROBES:-60} 2>&1 |
         grep -v -E "rows returned|^Loading|tidyverse|^✔|^✖|^ℹ|Tk is not|Filter tab disabled|^──|^$"
@@ -28,7 +28,7 @@ if [ "$what" = shiny ]; then
         echo; echo "== $t over http://$HOST:8080 =="
         docker run --rm --network $NET -u 999:999 --read-only --tmpfs /tmp \
             -v ${T2_CODE:-$T2/T2T}:/srv/T2T:ro -v $T2/Thanos:/srv/Thanos:ro \
-            -v ${T2_DB:-$T2/T2}/tcga.db:/srv/T2/tcga.db:ro -v ${T2_DB:-$T2/T2}/datasets:/srv/T2/datasets:ro \
+            -v ${T2_DB:-$T2/T2}/datasets:/srv/T2/datasets:ro \
             -w /srv/T2T -e T2_API_URL=http://$HOST:8080 -e T2_DATASETS_DIR=/srv/T2/datasets \
             --entrypoint Rscript shinyt2t:2026.10 $t 2>&1 |
             grep -v -E "rows returned|probes from|^Loading|tidyverse|^✔|^✖|^ℹ|Tk is not|^──|^$|Attaching|masks|conflicts|deprecated|lifecycle|generated"

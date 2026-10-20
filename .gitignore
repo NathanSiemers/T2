@@ -1,4 +1,4 @@
-tcga.db
+tcga.db   # legacy name; the file is datasets/TCGA.db now
 restart.txt
 *.db.backup
 datasets/*.db

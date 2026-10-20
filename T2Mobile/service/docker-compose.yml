@@ -13,7 +13,7 @@ services:
     image: t2api:dev
     container_name: t2api-dev
     restart: unless-stopped
-    command: ["-addr", ":8080", "-tcga", "/data/tcga.db", "-datasets", "/data/datasets", "-cache-mb", "512"]
+    command: ["-addr", ":8080", "-datasets", "/data/datasets", "-cache-mb", "512"]
     user: "999:999"
     read_only: true
     security_opt:
@@ -32,7 +32,6 @@ services:
     ## DEVELOPMENT copies of the databases, /scratch/nathan/R/T2-devdata (its README; the published service mounts
     ## /scratch/shinyusb/T2-data-<date>/): a change to a dataset's metadata is tried here first
     volumes:
-      - /scratch/nathan/R/T2-devdata/tcga.db:/data/tcga.db:ro
       - /scratch/nathan/R/T2-devdata/datasets:/data/datasets:ro
 
 networks:

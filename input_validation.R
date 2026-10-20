@@ -10,13 +10,25 @@
 ## UI default.
 ## ============================================================================
 
-## plotter() arguments that may come from the browser (dbfile / roles /
-## dataset_label are injected by the server afterwards).
+## plotter() arguments that may come from the browser (the plot context --
+## dataset, roles, label, Filter-tab samples, sample rules -- is injected by the
+## server afterwards).
 T2_INPUT_ARGS = c('x', 'y', 'color', 'size', 'cohort', 'facet', 'condition',
                   'pcortype', 'multi_y', 'zscore_y', 'coordflip', 'waterfall',
                   'waterfall_flip', 'allComplete',
                   'smooth', 'scales', 'show_legend', T2_STYLE_ARGS,
                   'km_groups', 'surv_max_days')
+
+## The fixed menus of the Select / Appearance tabs, in ONE place: the UI (app.R)
+## builds its widgets from these and the sanitizer below checks the browser's
+## value against the same choices and default. id -> list(choices, default).
+T2_CONTROLS = list(
+    pcortype      = list(id = 'pcortype',      choices = c('none', 'x', 'y', 'both'),             default = 'none'),
+    scales        = list(id = 'scales',        choices = c("fixed", "free", "free_x", "free_y"),  default = "fixed"),
+    smooth        = list(id = 'smooth',        choices = c("TRUE", "FALSE"),                      default = "TRUE"),
+    km_groups     = list(id = 'km_groups',     choices = 2:6,                                     default = 3),
+    surv_max_days = list(id = 'surv_max_days', choices = seq(30, 365 * 30, by = 30),             default = 365 * 5)
+)
 
 ## character values that are in `allowed`, de-duplicated, at most max_n;
 ## NULL when nothing survives (matches an empty selectize)
@@ -47,30 +59,30 @@ T2_INPUT_ARGS = c('x', 'y', 'color', 'size', 'cohort', 'facet', 'condition',
 }
 
 ## input: shiny input (reactivevalues) or a plain list; b: dataset bundle
-sanitize_t2_input = function(input, b) {
+sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable list, cohorts and tte names)
     ## read only the named inputs below: converting all of `input` to a list
     ## makes an output depend on every input (e.g. DT table state) and re-render forever
     vars = b$mygenesplus
     c(list(
-        x         = .t2_pick(input$x, c(vars, names(T2_ENDPOINTS)), 20),
-        y         = .t2_pick(input$y, vars, 20),
+        x         = .t2_pick(input$x, c(vars, tte_names(b)), T2_LIMITS$x_vars),
+        y         = .t2_pick(input$y, vars, T2_LIMITS$y_vars),
         color     = .t2_one(input$color, c('probe', vars), ""),
         size      = .t2_one(input$size, vars, ""),
-        cohort    = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), 200),
-        facet     = .t2_pick(input$facet, vars, 3),
-        condition = .t2_pick(input$condition, vars, 10),
-        pcortype  = .t2_one(input$pcortype, c('none', 'x', 'y', 'both'), 'none'),
+        cohort    = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), T2_LIMITS$cohorts),
+        facet     = .t2_pick(input$facet, vars, T2_LIMITS$facet_vars),
+        condition = .t2_pick(input$condition, vars, T2_LIMITS$condition_vars),
+        pcortype  = .t2_one(input$pcortype, T2_CONTROLS$pcortype$choices, T2_CONTROLS$pcortype$default),
         multi_y        = .t2_flag(input$multi_y),
         zscore_y       = .t2_flag(input$zscore_y),
         coordflip      = .t2_flag(input$coordflip),
         waterfall      = .t2_flag(input$waterfall),
         waterfall_flip = .t2_flag(input$waterfall_flip),
         allComplete    = .t2_flag(input$allComplete, TRUE),
-        smooth        = .t2_one(input$smooth, c("TRUE", "FALSE"), "TRUE"),
-        scales        = .t2_one(input$scales, c("free", "fixed", "free_x", "free_y"), "fixed"),
+        smooth        = .t2_one(input$smooth, T2_CONTROLS$smooth$choices, T2_CONTROLS$smooth$default),
+        scales        = .t2_one(input$scales, T2_CONTROLS$scales$choices, T2_CONTROLS$scales$default),
         show_legend   = .t2_flag(input$show_legend, TRUE),
-        km_groups     = .t2_num(input$km_groups, 2:6, 3),
-        surv_max_days = .t2_num(input$surv_max_days, seq(30, 365 * 30, by = 30), 365 * 5)
+        km_groups     = .t2_num(input$km_groups, T2_CONTROLS$km_groups$choices, T2_CONTROLS$km_groups$default),
+        surv_max_days = .t2_num(input$surv_max_days, T2_CONTROLS$surv_max_days$choices, T2_CONTROLS$surv_max_days$default)
     ),
     ## the Appearance menus (plot_style.R): each value snaps to its own menu.
     ## plot_height is returned for the page; it is not a plotter argument.
@@ -79,7 +91,7 @@ sanitize_t2_input = function(input, b) {
 
 ## The sample choice of the Select tab: the data source (part of the bundle),
 ## the chosen group and the chosen exclusions, checked against what
-## t2_filter_choices() offers for this source and group (t2_presets.R). Returns
+## t2_filter_choices() offers for this source and group (t2_presets.R, from the rules in /meta). Returns
 ## list(group, exclusions, rules, label): `rules` is what reaches gitr() --
 ## built here, never taken from the browser.
 sanitize_t2_samples = function(input, b) {

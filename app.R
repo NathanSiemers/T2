@@ -7,7 +7,7 @@
 
 ## check all required packages before starting
 required_pkgs = c("shiny", "shinythemes", "shinycssloaders", "rmarkdown",
-                  "DBI", "RSQLite", "sqldf", "ggplot2", "ggthemes",
+                  "DBI", "RSQLite", "curl", "jsonlite", "sqldf", "ggplot2", "ggthemes",
                   "viridis", "tidyverse", "dplyr")
 missing = required_pkgs[!sapply(required_pkgs, requireNamespace, quietly = TRUE)]
 if (length(missing) > 0) {
@@ -19,11 +19,9 @@ library(shiny)
 library(shinythemes)
 library(shinycssloaders)
 library(rmarkdown)
-library(DBI)
 
 source('global.R')
-source('database_connection_shiny.R')
-source("lib.R")
+source("lib.R")                # stops with one message when T2_API_URL is not set
 source("input_validation.R")
 source("t2_thanos.R")     # Thanos loader + backend_t2 (the Filter tab)
 
@@ -158,6 +156,47 @@ publish_tab_ui = function() {
 ## holds one (hidden) Thanos panel set per source, shown for whichever is selected
 T2_SOURCES = list_sources()
 
+## the host of a link, for its label ("https://xenabrowser.net/datapages/" -> "xenabrowser.net")
+t2_url_host = function(url) {
+    h = sub("^[a-zA-Z][a-zA-Z0-9+.-]*://", "", url)
+    h = sub("[/?#].*$", "", h)
+    sub("^www\\.", "", h)
+}
+
+## The About note on time-to-event analysis, from the bundle's tte list
+## (/meta tte_variables): which variables switch X to a Kaplan-Meier plot, what
+## each one is, and the data set's citation. NULL when the data set has none.
+t2_survival_note = function(b) {
+    tte = b$tte
+    if (!length(tte)) return(NULL)
+    listed = lapply(seq_along(tte), function(i) {
+        t = tte[[i]]
+        tagList(if (i > 1) (if (i < length(tte)) ", " else " or "), tags$code(t$name),
+                if (nzchar(t$label) && !identical(t$label, t$name)) paste0(" (", t$label, ")"))
+    })
+    pairs = lapply(seq_along(tte), function(i) {
+        t = tte[[i]]
+        tagList(if (i > 1) ", ", tags$code(t$time_col))
+    })
+    descs = Filter(nzchar, vapply(tte, function(t) t$description, ""))
+    tags$div(
+        style = "margin-top: 16px; padding: 12px 16px; border-left: 4px solid #3B7DB4; background: #f6f8fa; font-size: 90%;",
+        tags$b("Time-to-event analysis (Kaplan\u2013Meier + Cox)"),
+        tags$p(style = "margin: 6px 0 4px",
+            "Select ", listed, " as the ", tags$b("Gene (X)"),
+            " variable to switch from a scatter plot to a ", tags$b("Kaplan\u2013Meier"),
+            " survival plot: the ", tags$b("Gene (Y)"),
+            " marker is split into groups (Low / Mid / High for three), with shaded confidence bands, ",
+            "median survival per group, and the ", tags$b("log-rank"), " p-value plus a ",
+            tags$b("Cox proportional-hazards"), " hazard ratio (per 1 SD, with 95% CI) embedded in the plot. ",
+            "Faceting via ", tags$b("\u201cGraph for each\u201d"), " produces a grid of per-group KM plots."),
+        tags$p(style = "margin: 2px 0 0; color: #666",
+            "Each one pairs an event indicator (1 = event, 0 = censored) with its time (",
+            tags$code(tte[[1]]$time_unit), "): ", pairs, ". ",
+            if (length(descs)) paste(unique(descs), collapse = " "),
+            if (nzchar(b$about$citation)) paste0(" Source: ", b$about$citation)))
+}
+
 ## the Filter tab: Thanos cross-filtering of the samples that get plotted
 filter_tab_ui = function() {
     if (!HAVE_THANOS) {
@@ -251,7 +290,7 @@ ui = fluidPage(
             inline(HTML(nbsp(5))),
             inline(
                 radioButtons('pcortype', 'Remove influence on:',
-                             choices = c('none', 'x', 'y', 'both'), selected = 'none', inline = TRUE  ) ),
+                             choices = T2_CONTROLS$pcortype$choices, selected = T2_CONTROLS$pcortype$default, inline = TRUE  ) ),
             actionButton("plot_btn", "Plot")
         ),
         ## ---- (b) the result; every Plot button lands here ----
@@ -281,18 +320,20 @@ ui = fluidPage(
             style_select('legend_size'),
             tags$br(),
             inline( selectInput('scales', gg_label('Multi-graph scales', 'facet_wrap(scales = )'),
-                                choices = c("fixed", "free", "free_x", "free_y"), selected = "fixed") ),
+                                choices = T2_CONTROLS$scales$choices, selected = T2_CONTROLS$scales$default) ),
             style_select('ncols'),
             inline( selectInput('smooth', gg_label('Fit line', 'geom_smooth(method = "lm")'),
-                                choices = c("TRUE", "FALSE"), selected = "TRUE") ),
+                                choices = T2_CONTROLS$smooth$choices, selected = T2_CONTROLS$smooth$default) ),
             style_select('plot_height'),
             tags$br(),
             inline(checkboxInput("show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
             inline(checkboxInput("allComplete", "Show only results with complete information", value = TRUE)),
             tags$br(),
-            ## survival (Kaplan-Meier) options — used when X is a time-to-event endpoint
-            inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = c(2, 3, 4, 5, 6), selected = 3) ),
-            inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = 365 * 5, min = 30, step = 30) ),
+            ## survival (Kaplan-Meier) options — used when X is a time-to-event variable of the data set
+            inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = T2_CONTROLS$km_groups$choices,
+                                   selected = T2_CONTROLS$km_groups$default) ),
+            inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = T2_CONTROLS$surv_max_days$default,
+                                 min = min(T2_CONTROLS$surv_max_days$choices), step = 30) ),
             h4('More ggplot settings'),
             helpText("Search every other ggplot setting: all theme elements (axis text angle, legend position, ",
                      "grid lines, backgrounds, spacing ...) and the drawing settings of points, boxplots and the fit line. ",
@@ -306,10 +347,11 @@ ui = fluidPage(
         ## ---- (f) what this is ----
         tabPanel("About", value = "about",
             h4(paste("About", T2_SITE)),
-            tags$p("T2 is a database and plotting tool for large tumor-profiling compendia: ",
-                   "the TCGA Pan-Cancer 2018 release and companion datasets. Every measurement ",
+            tags$p("T2 is a database and plotting tool for large tumor-profiling compendia. Every measurement ",
                    "(expression, mutation, copy number, signatures, clinical annotation, survival) ",
                    "is stored per sample, so any variable can be plotted against any other."),
+            ## the active data set's own words (from the service: /meta `about`)
+            uiOutput('about_dataset'),
             tags$ul(
                 tags$li(tags$b("Select"), ": choose the data set, the variables to plot (X, Y, color, size, ",
                         "one graph per category) and the cohort(s); then press Plot."),
@@ -344,12 +386,12 @@ ui = fluidPage(
 
 server = function(input, output, session) {
     ## ---- active source bundle (the single object that "knows" the data source) ----
-    init_bundle = load_source_bundle(default_dataset())
+    init_bundle = load_source_bundle(t2_default_dataset())
     bundle = reactiveVal(init_bundle)
 
     ## populate the data-source selector itself: every dataset and its parts
     updateSelectizeInput(session, 'dataset', choices = T2_SOURCES,
-                         selected = default_dataset(), server = TRUE)
+                         selected = t2_default_dataset(), server = TRUE)
 
     ## ---- the sample choice: one group at most, any number of exclusions ----
     ## What is offered comes from t2_filter_choices() (the same rule as the
@@ -405,7 +447,9 @@ server = function(input, output, session) {
     ## the part is never picked (nothing to colour or split by).
     apply_bundle_choices = function(b, keep = list()) {
         single = b$source$single_level_columns
-        mgp = setdiff(b$mygenesplus, single)
+        keepv = !(b$mygenesplus %in% single)
+        mgp = b$mygenesplus[keepv]
+        menu = t2_menu(mgp, lower = b$names_lower[keepv])   # ONE data object for the six variable selectors
         d   = b$defaults
         pick = function(id, choices, fallback = "", n = 1, default = d[[id]]) {
             for (sel in list(keep[[id]], default)) {
@@ -414,20 +458,20 @@ server = function(input, output, session) {
             }
             fallback
         }
-        sel = list(condition = pick('condition', mgp, n = 10),
-                   x = pick('x', mgp, if (length(mgp)) mgp[1] else "", n = 20),
-                   y = pick('y', mgp, if (length(b$mygenes)) b$mygenes[1] else "", n = 20),
+        sel = list(condition = pick('condition', mgp, n = T2_LIMITS$condition_vars),
+                   x = pick('x', mgp, if (length(mgp)) mgp[1] else "", n = T2_LIMITS$x_vars),
+                   y = pick('y', mgp, if (length(b$mygenes)) b$mygenes[1] else "", n = T2_LIMITS$y_vars),
                    color = pick('color', mgp), size = pick('size', mgp),
-                   facet = pick('facet', mgp, NULL, n = 3),
-                   cohort = pick('cohort', unname(b$mycohorts), NULL, n = 200, default = d$cohorts))
+                   facet = pick('facet', mgp, NULL, n = T2_LIMITS$facet_vars),
+                   cohort = pick('cohort', unname(b$mycohorts), NULL, n = T2_LIMITS$cohorts, default = d$cohorts))
         ## ranked search (t2_search.R): the exact name first, then names starting with the text
-        update_selectize_ranked(session, 'condition', mgp, sel$condition)
-        update_selectize_ranked(session, 'x', mgp, sel$x)
-        update_selectize_ranked(session, 'y', mgp, sel$y)
-        update_selectize_ranked(session, 'color', mgp, sel$color)
-        update_selectize_ranked(session, 'size', mgp, sel$size)
+        update_selectize_ranked(session, 'condition', menu, sel$condition)
+        update_selectize_ranked(session, 'x', menu, sel$x)
+        update_selectize_ranked(session, 'y', menu, sel$y)
+        update_selectize_ranked(session, 'color', menu, sel$color)
+        update_selectize_ranked(session, 'size', menu, sel$size)
         update_selectize_ranked(session, 'cohort', c('all', b$mycohorts), sel$cohort)
-        update_selectize_ranked(session, 'facet', mgp, sel$facet)
+        update_selectize_ranked(session, 'facet', menu, sel$facet)
         invisible(sel)       # what the selectors are being set to
     }
     apply_bundle_choices(init_bundle)
@@ -436,8 +480,8 @@ server = function(input, output, session) {
     ## pushed to the NEW dataset's Filter tab (see the selected_vars observer).
     stale_picks = NULL
 
-    ## switching datasets: rebuild the bundle (new connection + choice lists)
-    ## and repopulate all inputs from it.
+    ## switching datasets: take the bundle of the new data source (cached per
+    ## dataset version) and repopulate all inputs from it.
     observeEvent(input$dataset, {
         req(input$dataset)
         if (identical(input$dataset, bundle()$key)) return()
@@ -457,12 +501,13 @@ server = function(input, output, session) {
 
     ## when multi_y is toggled on, add "probe" to color choices and select it
     observeEvent(input$multi_y, {
-        mgp = bundle()$mygenesplus
-        stc = bundle()$roles$sampletype_col
+        b = bundle()
+        mgp = b$mygenesplus
+        stc = b$handles$name[b$handles$role == "sample_type"]     # the sample-type handle, if the data set has one
         if (input$multi_y) {
             update_selectize_ranked(session, 'color', c('probe', mgp), 'probe')
         } else {
-            update_selectize_ranked(session, 'color', mgp, if (!is.null(stc) && !is.na(stc)) stc else "")
+            update_selectize_ranked(session, 'color', t2_menu(mgp, lower = b$names_lower), if (length(stc)) stc[1] else "")
         }
     }, ignoreInit = TRUE)
 
@@ -481,7 +526,7 @@ server = function(input, output, session) {
         ## restriction, nothing to recompute) while another source is active
         base = reactive({
             if (!identical(bundle()$key, ds)) return(NULL)
-            be$base_mask(cohort = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), 200),
+            be$base_mask(cohort = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), T2_LIMITS$cohorts),
                          rules  = sanitize_t2_samples(input, b)$rules)
         })
         ## no extra debounce: server state then always equals what the browser
@@ -601,11 +646,11 @@ server = function(input, output, session) {
         samp = sanitize_t2_samples(input, b)
         gg = sanitize_t2_tweaks(input)
         note = paste0("Samples: ", samp$label, ".", if (!is.null(fs$note)) paste0(" ", fs$note) else "")
-        plot_snapshot <<- list(inp = inp, b = b, keep = fs$keep, rules = samp$rules, note = note, gg = gg)
+        ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules)
+        plot_snapshot <<- list(inp = inp, b = b, ctx = ctx, note = note, gg = gg)
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
-            fun_plot1(inp, reactive = FALSE, dbfile = b$path, roles = b$roles, dataset_label = b$label,
-                      keep_samples = fs$keep, rules = samp$rules, gg = gg)
+            fun_plot1(inp, reactive = FALSE, ctx = ctx, gg = gg)
         })
     })
     ## pressing Plot anywhere shows the result
@@ -675,13 +720,12 @@ server = function(input, output, session) {
         inp[names(st)] = st
         ## the preset's own defaults for unlisted settings, then the user's picks
         gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input, "pub_"))
-        list(b = b, inp = inp, keep = filter_state(b)$keep, rules = sanitize_t2_samples(input, b)$rules, gg = gg,
+        list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = filter_state(b)$keep, rules = sanitize_t2_samples(input, b)$rules), gg = gg,
              base_size = fig$base_size, family = fig$family, fig_width = fig$width,
              caption = if (fig$source_line) T2_CITATION else "")
     })
     pub_draw = function(s) {
-        fun_plot1(s$inp, reactive = FALSE, dbfile = s$b$path, roles = s$b$roles,
-                  dataset_label = s$b$label, keep_samples = s$keep, rules = s$rules, gg = s$gg,
+        fun_plot1(s$inp, reactive = FALSE, ctx = s$ctx, gg = s$gg,
                   base_size = s$base_size, base_family = s$family, caption = s$caption,
                   fig_width = s$fig_width)
     }
@@ -739,9 +783,11 @@ server = function(input, output, session) {
                 sub(pmid, paste0('<a href="', url, '" target="_blank">', pmid, '</a>'), ref, fixed = TRUE)
             } else ref
         })
-        ## make source_url clickable
+        ## make source_url clickable, labelled by the host of the link
         type_df$source_link = sapply(type_df$source_url, function(url) {
-            if (!is.na(url) && url != "") paste0('<a href="', url, '" target="_blank">Xena</a>')
+            if (!is.na(url) && url != "")
+                paste0('<a href="', htmltools::htmlEscape(url, attribute = TRUE), '" target="_blank">',
+                       htmltools::htmlEscape(t2_url_host(url)), '</a>')
             else ""
         })
         header = tags$tr(
@@ -759,32 +805,10 @@ server = function(input, output, session) {
                 tags$td(HTML(type_df$source_link[i]))
             )
         })
-        ## Survival endpoints are clinical columns (not `types` rows), so note
+        ## Time-to-event variables are clinical columns (not `types` rows), so note
         ## them explicitly: selecting one as X switches to time-to-event analysis.
-        survival_note <- tags$div(
-            style = "margin-top: 16px; padding: 12px 16px; border-left: 4px solid #3B7DB4; background: #f6f8fa; font-size: 90%;",
-            tags$b("Survival endpoints — time-to-event analysis (Kaplan–Meier + Cox)"),
-            tags$p(style = "margin: 6px 0 4px",
-                "Select ", tags$code("OS"), " (Overall Survival), ", tags$code("PFI"),
-                " (Progression-Free Interval), ", tags$code("DSS"),
-                " (Disease-Specific Survival), or ", tags$code("DFI"),
-                " (Disease-Free Interval) as the ", tags$b("Gene (X)"),
-                " variable to switch from a scatter plot to a ", tags$b("Kaplan–Meier"),
-                " survival plot: the ", tags$b("Gene (Y)"),
-                " marker is split into tertiles (Low / Mid / High), with shaded confidence bands, ",
-                "median survival per tertile, and the ", tags$b("log-rank"), " p-value plus a ",
-                tags$b("Cox proportional-hazards"), " hazard ratio (per 1 SD, with 95% CI) embedded in the plot. ",
-                "Faceting via ", tags$b("“Graph for each”"), " produces a grid of per-group KM plots."),
-            tags$p(style = "margin: 2px 0 0; color: #666",
-                "Each endpoint pairs an event indicator (1 = event, 0 = censored) with its time in days ",
-                "(", tags$code("OS.time"), ", ", tags$code("PFI.time"), ", ",
-                tags$code("DSS.time"), ", ", tags$code("DFI.time"), "). Source: Liu ",
-                tags$i("et al."), " 2018, ",
-                tags$i("An Integrated TCGA Pan-Cancer Clinical Data Resource"),
-                " (Cell 173:400–416, ",
-                tags$a(href = "https://pubmed.ncbi.nlm.nih.gov/29625055", target = "_blank", "PMID:29625055"),
-                ").")
-        )
+        ## Generated from the data set's own list (/meta tte_variables); nothing for a data set without one.
+        survival_note <- t2_survival_note(b)
         tagList(
             tags$table(
                 class = "table table-striped table-condensed",
@@ -795,6 +819,16 @@ server = function(input, output, session) {
             survival_note
         )
     })
+    ## the data set's own About prose (/meta about): description, citation, attribution, link
+    output$about_dataset = renderUI({
+        a = bundle()$about
+        if (!any(nzchar(unlist(a)))) return(NULL)
+        tagList(
+            if (nzchar(a$description)) tags$p(a$description),
+            if (nzchar(a$citation)) tags$p(tags$b("Citation: "), a$citation),
+            if (nzchar(a$attribution)) tags$p(tags$i(a$attribution)),
+            if (nzchar(a$url)) tags$p(tags$a(href = a$url, target = "_blank", t2_url_host(a$url))))
+    })
     ## the table behind the last plot (same dataset, variables and samples);
     ## before any plot, the table for the current selections
     output$downloadData = downloadHandler(
@@ -804,11 +838,10 @@ server = function(input, output, session) {
             if (is.null(snap)) {
                 b = bundle()
                 snap = list(inp = sanitize_t2_input(input, b), b = b,
-                            keep = isolate(filter_state(b))$keep,
-                            rules = isolate(sanitize_t2_samples(input, b))$rules)
+                            ctx = t2_plot_ctx(b, keep = isolate(filter_state(b))$keep,
+                                              rules = isolate(sanitize_t2_samples(input, b))$rules))
             }
-            write.csv(fun_table1(snap$inp, dbfile = snap$b$path, roles = snap$b$roles,
-                                 keep_samples = snap$keep, rules = snap$rules), file)
+            write.csv(fun_table1(snap$inp, ctx = snap$ctx), file)
         })
     output$print1 = renderPrint({
         print( str( reactiveValuesToList(input) ) )

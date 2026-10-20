@@ -2,13 +2,13 @@
 ## selecting that cohort directly: the median-z signature AND the group cut-points
 ## are computed WITHIN each facet group, not against the whole pull. Guards a
 ## fixed bug where pan-cancer tertiles were applied to each per-tumor panel.
-suppressMessages({ source("database_connection_shiny.R"); source("lib.R") })
-DB <- "tcga.db"; RO <- gitr_default_roles
-ok <- function(cond, msg) cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n")
+suppressMessages({ source("global.R"); source("lib.R") })     # the data layer is the service (T2_API_URL)
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
+ctx <- t2_plot_ctx(load_dataset_bundle("TCGA"))
 
 sig <- c("CXCR1", "CXCR2", "CSF3R", "PROK2", "IL1B", "IL1A")   # compound signature
-gf <- suppressWarnings(survival_km(sig, "OS", cohort = "all", facet = "tumtype", dbfile = DB, roles = RO))
-gc <- suppressWarnings(survival_km(sig, "OS", cohort = "HNSC", dbfile = DB, roles = RO))
+gf <- suppressWarnings(survival_km(sig, "OS", cohort = "all", facet = "tumtype", ctx = ctx))
+gc <- suppressWarnings(survival_km(sig, "OS", cohort = "HNSC", ctx = ctx))
 
 fd <- attr(gf, "km_data"); cd <- attr(gc, "km_data")
 fh <- setNames(as.character(fd$grp[fd$tumtype == "HNSC"]), fd$sample[fd$tumtype == "HNSC"])
@@ -21,4 +21,4 @@ ok(length(common) > 100 && agree > 0.99, "faceted HNSC panel grouping == cohort=
 
 ## also verify the compound signature was used (median-z of >1 probe)
 ok(length(attr(gc, "stats")$markers) == length(sig), "compound signature carried through")
-cat("== survival facet test done ==\n")
+finish("test_survival_facet")

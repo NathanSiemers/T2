@@ -2,28 +2,40 @@
 ## ============================================================================
 ## Kaplan-Meier survival view for T2.
 ##
-## When the user picks a time-to-event endpoint for X (OS / PFI / DSS / DFI) we
-## stratify the chosen y-marker into tertiles and draw a KM curve per tertile
+## When the user picks a time-to-event variable for X (the dataset's
+## `tte_variables`: OS, PFI, ... as /meta declares them) we stratify the chosen y-marker into tertiles and draw a KM curve per tertile
 ## with SHADED confidence bands, an ordered palette, the MEDIAN survival per
 ## tertile, and the log-rank p + Cox HR (per 1 SD) embedded in the plot. If a
 ## `facet` variable is given, draw a faceted grid of KM plots instead.
 ##
-## T2 clinical carries event + time for each endpoint:
-##   OS/OS.time  PFI/PFI.time  DSS/DSS.time  DFI/DFI.time   (event 1/0; days)
+## A time-to-event variable is a pair of clinical columns the dataset declares
+## (DATASET-CONTRACT.md): `event_col` (1 = event, 0 = censored), `time_col`
+## (> 0) in `time_unit`, with a `label`. survival_km() reads all four from the
+## entry of the plot context (ctx$tte) named by `endpoint`; nothing about OS,
+## PFI, DSS or DFI is known here.
 ##
-##   g <- survival_km('MKI67', endpoint='OS', dbfile='tcga.db', roles=gitr_default_roles)
+##   ctx <- t2_default_ctx()                    # lib.R: the plot context of a dataset
+##   g <- survival_km('MKI67', endpoint = 'OS', ctx = ctx)
 ##   print(g)                                   # curve + risk table
-##   g2 <- survival_km('CD8A','OS', cohort=c('BRCA','LUAD'), facet='tumtype', ...)
+##   g2 <- survival_km('CD8A', 'OS', cohort = c('BRCA','LUAD'), facet = 'cohort', ctx = ctx)
 ## ============================================================================
 
 suppressMessages({ library(survival); library(survminer); library(ggplot2) })
+if (!exists("t2_cache")) source("t2_util.R")
 if (!exists("gitr")) source("gitr.R")
 if (!exists("combine_markers_median_z")) source("marker_ops.R")
 
-T2_ENDPOINTS <- c(OS  = "Overall Survival",
-                  PFI = "Progression-Free Interval",
-                  DSS = "Disease-Specific Survival",
-                  DFI = "Disease-Free Interval")
+## the names of the time-to-event variables of a plot context (the X choices that mean survival)
+tte_names <- function(ctx) names(ctx$tte)
+
+## the unit of a time-to-event variable: the short form for medians ("1203d"), the
+## length of a year in that unit (the x axis ticks once a year); v1 of the contract has days only
+t2_tte_unit <- function(unit) {
+  short <- c(days = "d", months = "mo", years = "y")[unit]
+  per_year <- c(days = 365, months = 12, years = 1)[unit]
+  list(word = unit, short = if (is.na(short)) unit else unname(short),
+       per_year = if (is.na(per_year)) NULL else unname(per_year))
+}
 
 ## Ordered cool->warm palette (Low -> High). Chosen so the translucent CI bands
 ## read as a low/high gradient and stay distinguishable where they overlap.
@@ -59,16 +71,21 @@ fmtp <- function(p) {
 }
 
 survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
-                        dbfile = "tcga.db", roles = NULL, nonormal = TRUE,
+                        nonormal = TRUE,
                         facet = NULL, ci = TRUE, title = NULL,
                         max_time = 365 * 5, condition = NULL, pcortype = "none",
-                        noheme = FALSE, keep_samples = NULL, rules = list(),
-                        base_size = 12, base_family = "sans", multi_y = FALSE) {
+                        noheme = FALSE,
+                        base_size = 12, base_family = "sans", multi_y = FALSE,
+                        ctx = t2_default_ctx()) {
   ## every text / line size below follows base_size (12 = the on-screen look)
   k <- base_size / 12
   n_groups <- max(2L, as.integer(n_groups))
-  stopifnot(endpoint %in% names(T2_ENDPOINTS))
-  ev <- endpoint; tm <- paste0(endpoint, ".time")
+  tt <- ctx$tte[[endpoint]]
+  if (is.null(tt)) stop("'", endpoint, "' is not a time-to-event variable of ", ctx$label %||% ctx$name,
+                        if (length(ctx$tte)) paste0(" (it has ", paste(tte_names(ctx), collapse = ", "), ")") else " (it has none)")
+  ev <- tt$event_col; tm <- tt$time_col
+  unit <- t2_tte_unit(tt$time_unit)
+  elabel <- tt$label %||% endpoint
   y <- unique(y[!is.na(y) & nzchar(y)])
   if (!length(y)) stop("no Y marker selected")
   facet <- head(setdiff(facet[!is.na(facet) & nzchar(facet)], c(y, ev, tm)), 2)
@@ -78,9 +95,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
 
   ## pull marker probe(s) + covariates + clinical (gitr joins clinpheno)
   d <- suppressWarnings(gitr_memo(unique(c(y, facet, if (do_cond) condition)),
-                             cohort = cohort, nonormal = nonormal, noheme = noheme,
-                             dbfile = dbfile, roles = roles, keep_samples = keep_samples,
-                             rules = rules))
+                             cohort = cohort, nonormal = nonormal, noheme = noheme, ctx = ctx))
   miss <- setdiff(c(y, ev, tm, facet, if (do_cond) condition), names(d))
   if (length(miss)) stop("column(s) not found: ", paste(miss, collapse = ", "))
   ## a graph for each value needs a categorical variable (as in plotter())
@@ -110,7 +125,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
 
   ## restrict follow-up: administratively censor at max_time (trim long/unreliable
   ## late TTE by capping every subject's follow-up rather than dropping subjects)
-  capped <- !is.null(max_time) && is.finite(max_time) && max_time > 0
+  capped <- !is.null(max_time) && is.finite(max_time) && max_time > 0   # max_time is in the unit of the variable (days)
   if (capped) { past <- df$time > max_time; df$event[past] <- 0; df$time[past] <- max_time }
   xmax <- if (capped) max_time else max(df$time)
   cond_note <- if (do_cond && length(cond_cols)) sprintf("  •  adj: %s", paste(cond_cols, collapse = ", ")) else ""
@@ -175,17 +190,17 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                           conf.int = ci, conf.int.alpha = 0.15, pval = TRUE, pval.size = 3.2 * k,
                           size = k,
                           censor = FALSE, short.panel.labs = TRUE, nrow = NULL,
-                          xlim = c(0, xmax), break.time.by = 365,
+                          xlim = c(0, xmax), break.time.by = unit$per_year,
                           legend.title = paste(ylab, "group"),
-                          xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
+                          xlab = sprintf("Time (%s)", unit$word), ylab = sprintf("%s probability", endpoint),
                           ggtheme = theme_minimal(base_size = 11 * k, base_family = base_family)) +
       ggtitle(title %||% sprintf("%s by %s %s-groups (within panel) — faceted by %s",
-                                 T2_ENDPOINTS[[endpoint]], ylab, n_groups, paste(facet, collapse = " × ")))
+                                 elabel, ylab, n_groups, paste(facet, collapse = " × ")))
     g <- .km_strip_ci_border(g)                      # no outline on CI bands
     attr(g, "t2summary") <- sprintf(
       "Faceted KM: %s by %s %d-groups computed WITHIN each %s panel (n=%d%s%s%s). Per-panel log-rank p shown.",
       endpoint, ylab, n_groups, paste(facet, collapse = " x "), nrow(df),
-      if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "", cond_note,
+      if (capped) sprintf(", ≤%d%s", as.integer(max_time), unit$short) else "", cond_note,
       if (dropped) sprintf(", %d small panel(s) dropped", dropped) else "")
     attr(g, "t2summary") <- paste0(attr(g, "t2summary"), if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
     attr(g, "km_data") <- df                          # sample, grp, facet — for tests
@@ -213,30 +228,30 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   medv  <- if (is.matrix(tb)) tb[, "median"] else tb["median"]
   gname <- sub("^grp=", "", if (is.matrix(tb)) rownames(tb) else names(fit$strata))
   medv  <- setNames(medv, gname)[levels(df$grp)]
-  medlab <- ifelse(is.na(medv), "NR", paste0(round(medv), "d"))
+  medlab <- ifelse(is.na(medv), "NR", paste0(round(medv), unit$short))
   leglabs <- sprintf("%s  (med %s)", levels(df$grp), medlab)
   med_txt <- paste(sprintf("%s %s", levels(df$grp), medlab), collapse = "  |  ")
 
   grp_desc <- switch(as.character(n_groups), "2" = "halves", "3" = "tertiles",
                      "4" = "quartiles", "5" = "quintiles", sprintf("%d groups", n_groups))
   if (any(grepl("^= ", levels(df$grp)))) grp_desc <- "values"      # grouped by value, not by quantile
-  cap_txt <- if (capped) sprintf("  •  follow-up ≤ %dd", as.integer(max_time)) else ""
+  cap_txt <- if (capped) sprintf("  •  follow-up ≤ %d%s", as.integer(max_time), unit$short) else ""
 
   stat_txt <- sprintf("Log-rank p = %s\nCox HR/SD = %.2f (%.2f–%.2f), p = %s",
                       fmtp(lp), hr, lo, hi, fmtp(cp))
-  ttl <- title %||% sprintf("%s by %s %s%s", T2_ENDPOINTS[[endpoint]], ylab, grp_desc,
+  ttl <- title %||% sprintf("%s by %s %s%s", elabel, ylab, grp_desc,
            if (!identical(cohort, "all")) paste0("  [", paste(cohort, collapse = ","), "]") else "  [pan-cancer]")
 
   g <- ggsurvplot(fit, data = df, pval = stat_txt, pval.size = 4.2 * k, size = k,
                   fontsize = 4.5 * k, font.family = base_family,
                   pval.coord = c(0.02 * xmax, 0.07),
                   conf.int = ci, conf.int.alpha = 0.16,
-                  xlim = c(0, xmax), break.time.by = 365,
+                  xlim = c(0, xmax), break.time.by = unit$per_year,
                   risk.table = TRUE, risk.table.height = 0.26, tables.y.text = FALSE,
                   tables.theme = theme_cleantable(base_size = 12 * k, base_family = base_family),
                   censor.size = 2 * k, palette = pal,
                   legend.title = paste(ylab, "group"), legend.labs = leglabs,
-                  xlab = "Time (days)", ylab = sprintf("%s probability", endpoint),
+                  xlab = sprintf("Time (%s)", unit$word), ylab = sprintf("%s probability", endpoint),
                   title = ttl,
                   subtitle = sprintf("n = %d    median %s:  %s%s%s", nrow(df), endpoint, med_txt, cap_txt, cond_note),
                   ggtheme = theme_minimal(base_size = 12 * k, base_family = base_family))
@@ -261,40 +276,15 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                            markers = y, adjusted_for = if (do_cond) cond_cols else NULL)
   attr(g, "t2summary") <- sprintf(
     "%s ~ %s %s (n=%d%s%s).  Median %s: %s.  Log-rank p=%s.  Cox HR/SD=%.2f (%.2f-%.2f), p=%s.",
-    endpoint, ylab, grp_desc, nrow(df), if (capped) sprintf(", ≤%dd", as.integer(max_time)) else "",
+    endpoint, ylab, grp_desc, nrow(df), if (capped) sprintf(", ≤%d%s", as.integer(max_time), unit$short) else "",
     cond_note, endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
   attr(g, "t2summary") <- paste0(attr(g, "t2summary"), if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
   attr(g, "km_data") <- df                            # sample, grp — for tests
   g
 }
-`%||%` <- function(a, b) if (is.null(a)) b else a
 
 ## save a ggsurvplot (curve + risk table) or faceted plot to a file
 save_km <- function(g, file, width = 950, height = 840, res = 110) {
   grDevices::png(file, width = width, height = height, res = res); print(g); grDevices::dev.off()
   invisible(file)
-}
-
-## ---- demo when run directly -----------------------------------------------
-.invoked <- function() {
-  fa <- grep("^--file=", commandArgs(FALSE), value = TRUE)
-  length(fa) && identical(basename(sub("^--file=", "", fa[1])), "survival_prototype.R")
-}
-if (.invoked()) {
-  a  <- commandArgs(trailingOnly = TRUE)
-  DB <- if (length(a) >= 1) a[1] else if (file.exists("tcga.db.pre_rebuild")) "tcga.db.pre_rebuild" else "tcga.db"
-  demo <- function(mark, end, coh = "all", facet = NULL, tag = NULL) {
-    g <- survival_km(mark, endpoint = end, cohort = coh, facet = facet,
-                     dbfile = DB, roles = gitr_default_roles)
-    out <- sprintf("survival_demo_%s.png", tag %||% paste(mark, end, sep = "_"))
-    save_km(g, out, height = if (length(facet)) 620 else 840)
-    st <- attr(g, "stats")
-    if (!is.null(st)) cat(sprintf("  %s: n=%d log-rank p=%.2g HR/SD=%.2f cox p=%.2g medians=%s\n",
-        out, st$n, st$logrank_p, st$HR_per_SD, st$cox_p,
-        paste(ifelse(is.na(st$medians), "NR", round(st$medians)), collapse = "/")))
-    else cat(sprintf("  %s (faceted)\n", out))
-  }
-  demo("MKI67", "OS", "all")
-  demo("CD8A",  "OS", "SKCM")
-  demo("MKI67", "OS", c("BRCA", "LUAD", "KIRC"), facet = "tumtype", tag = "MKI67_OS_facet")
 }

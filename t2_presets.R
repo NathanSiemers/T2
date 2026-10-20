@@ -1,20 +1,14 @@
 ## t2_presets.R
 ## ============================================================================
-## Ready-made sample subsets ("presets") and the parts of a collection offered
-## as data sources of their own ("GTEx", "TARGET" within TCGA-TARGET-GTEx).
+## What the app does with the ready-made sample subsets ("presets") and the
+## parts of a collection ("sources", e.g. GTEx within TCGA-TARGET-GTEx) that the
+## service delivers in /meta: apply their rules to the clinical frame, and decide
+## which groups / exclusions to offer for a source at this moment.
 ##
-## This is the R mirror of the t2api service (T2Mobile/service/cmd/t2api:
-## loadPresets / derivePresets / ensureHemePreset in dataset.go, sources.go),
-## for the SQLite path of the app and for RStudio work. THE SERVICE IS THE
-## REFERENCE: T2Mobile/service/test_equivalence.R checks that the two produce
-## the same presets and sources on every dataset. Change both or neither.
-##
-## Where the definitions live: in each database. The `default_filters` table
-## (written by default_filters.R at build time) holds the presets; dataset_meta
-## holds the parts (source_col, sources, source_labels, source_descriptions).
-## A database built before the table existed gets the two classic choices
-## derived from its role map (exclude non-tumor, exclude heme), so nothing
-## is ever hard-coded per dataset here.
+## The DERIVATIONS (reading default_filters, deriving the classic choices, the
+## sources with their cohorts / groups / exclusions) are the service's alone
+## (T2Mobile/service/cmd/t2api: loadPresets, sources.go); the R mirror of them
+## was deleted with the file mode of the app (DATASET-CONTRACT.md, 2026-10-19).
 ##
 ## Vocabulary (shared with the iPhone app):
 ##   preset     label + rules; a sample is in it when EVERY rule holds; a rule
@@ -42,112 +36,6 @@ t2_is_exclusion = function(p) length(p$rules) > 0 && all(vapply(p$rules, functio
 
 ## does the preset keep some, but not all, of base?
 .t2_narrows = function(pm, base) { kept = sum(pm & base); kept > 0 && kept < sum(base) }
-
-## the categorical clinical columns and their levels, as the service sees them:
-## text columns; the sample-type column has the dataset's declared levels
-t2_clin_levels = function(clin, roles) {
-  out = list()
-  for (n in setdiff(colnames(clin), "sample")) {
-    x = clin[[n]]
-    if (!is.character(x) && !is.factor(x)) next
-    lv = if (identical(n, roles$sampletype_col) && length(roles$sampletype_levels) > 0)
-           roles$sampletype_levels else unique(as.character(x[!is.na(x)]))
-    if (length(lv)) out[[n]] = lv          # a column with no values is not categorical (sources.go: no levels)
-  }
-  out
-}
-
-## the presets of a database: its default_filters table, or the derived pair.
-## `clin` is the raw clinpheno with the virtual columns (t2_add_virtual_cols).
-t2_read_presets = function(con, roles, clin) {
-  levels = t2_clin_levels(clin, roles)
-  presets = list()
-  tab = tryCatch(DBI::dbGetQuery(con, "SELECT preset, description, column_name, op, value, on_by_default
-                                        FROM default_filters ORDER BY sort_order, rowid"),
-                 error = function(e) NULL)
-  known = function(col, vals) vals[vals %in% levels[[col]]]
-  if (is.null(tab)) {
-    ## derived: the classic choices from the role map
-    st = roles$sampletype_col
-    if (!is.null(st) && !is.na(st) && nzchar(st)) {
-      v = known(st, roles$normal_label[!is.na(roles$normal_label)])
-      if (length(v))
-        presets[[length(presets) + 1]] = list(label = "Exclude non-tumor", description = "Tumor samples only",
-                                              default = FALSE, source = "derived",
-                                              rules = list(list(column = st, op = "not in", values = v)))
-    }
-  } else {
-    for (i in seq_len(nrow(tab))) {
-      col = tab$column_name[i]; op = tolower(trimws(tab$op[i])); val = tab$value[i]; label = tab$preset[i]
-      if (is.null(levels[[col]]) || !(op %in% c("in", "not in")) || !(val %in% levels[[col]])) {
-        message(sprintf("default_filters row ignored (preset '%s': %s %s '%s')", label, col, op, val)); next
-      }
-      j = match(label, vapply(presets, `[[`, "", "label"))
-      if (is.na(j)) {
-        presets[[length(presets) + 1]] = list(label = label, description = if (is.na(tab$description[i])) "" else tab$description[i],
-                                              default = FALSE, source = "database", rules = list())
-        j = length(presets)
-      }
-      presets[[j]]$default = presets[[j]]$default || (!is.na(tab$on_by_default[i]) && tab$on_by_default[i] != 0)
-      k = which(vapply(presets[[j]]$rules, function(r) r$column == col && r$op == op, NA))
-      if (length(k)) presets[[j]]$rules[[k[1]]]$values = c(presets[[j]]$rules[[k[1]]]$values, val)
-      else presets[[j]]$rules[[length(presets[[j]]$rules) + 1]] = list(column = col, op = op, values = val)
-    }
-  }
-  ## the heme exclusion belongs to every collection with blood or lymphoid cohorts
-  drops_cohorts = any(vapply(presets, function(p) any(vapply(p$rules, function(r) r$column == "cohort" && r$op == "not in", NA)), NA))
-  if (!isTRUE(drops_cohorts)) {
-    v = known("cohort", roles$heme_values)
-    if (length(v))
-      presets[[length(presets) + 1]] = list(label = "Exclude tumors of heme origin", description = "Drop blood and lymphoid cohorts",
-                                            default = FALSE, source = "derived",
-                                            rules = list(list(column = "cohort", op = "not in", values = v)))
-  }
-  for (j in seq_along(presets)) presets[[j]]$n_samples = sum(t2_rules_mask(clin, presets[[j]]$rules))
-  presets
-}
-
-## the data sources of a dataset: the whole collection first, then each part
-## declared in dataset_meta. `cohort_order`: the cohort values in menu order
-## (the cohorts table). Each source: label, description, rules, n_samples,
-## cohorts, groups, exclusions, single_level_columns -- as /meta `sources`.
-t2_sources = function(clin, roles, presets, cohort_order = character(0), label = "") {
-  levels = t2_clin_levels(clin, roles)
-  masks = lapply(presets, function(p) t2_rules_mask(clin, p$rules))
-  names(masks) = vapply(presets, `[[`, "", "label")
-  describe = function(lab, desc, rules) {
-    base = t2_rules_mask(clin, rules)
-    cohorts = character(0)
-    if ("cohort" %in% colnames(clin)) {
-      present = unique(as.character(clin$cohort[base & !is.na(clin$cohort)]))
-      cohorts = c(cohort_order[cohort_order %in% present], setdiff(levels[["cohort"]][levels[["cohort"]] %in% present], cohort_order))
-    }
-    excl = names(masks)[vapply(seq_along(presets), function(i) t2_is_exclusion(presets[[i]]) && .t2_narrows(masks[[i]], base), NA)]
-    groups = character(0)
-    for (i in seq_along(presets)) {
-      p = presets[[i]]
-      if (t2_is_exclusion(p) || !.t2_narrows(masks[[i]], base)) next
-      dup = any(vapply(excl, function(e) all((masks[[i]] == masks[[e]])[base]), NA))
-      if (!isTRUE(dup)) groups = c(groups, p$label)
-    }
-    single = names(levels)[vapply(names(levels), function(n) {
-      x = clin[[n]][base]; length(unique(as.character(x[!is.na(x)]))) <= 1 }, NA)]
-    list(label = lab, description = desc, rules = rules, n_samples = sum(base),
-         cohorts = cohorts, groups = groups, exclusions = excl, single_level_columns = single)
-  }
-  out = list(describe(label, "", list()))
-  sc = roles$source_col
-  if (is.null(sc) || is.na(sc) || !nzchar(sc)) return(out)
-  if (is.null(levels[[sc]])) { message("source_col '", sc, "' is not a categorical clinical column; no parts offered"); return(out) }
-  for (i in seq_along(roles$sources)) {
-    lv = roles$sources[i]
-    if (!(lv %in% levels[[sc]])) { message("source '", lv, "' is not a value of ", sc, "; skipped"); next }
-    lab = if (i <= length(roles$source_labels) && nzchar(roles$source_labels[i])) roles$source_labels[i] else lv
-    desc = if (i <= length(roles$source_descriptions)) roles$source_descriptions[i] else ""
-    out[[length(out) + 1]] = describe(lab, desc, list(list(column = sc, op = "in", values = lv)))
-  }
-  out
-}
 
 ## pick_appropriate_filter(): what the Select tab offers for a data source at
 ## this moment -- the ONE place that decides which ready-made subsets make

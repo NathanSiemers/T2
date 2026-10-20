@@ -1,7 +1,9 @@
 library(DBI)
 library(dplyr)
 gitrdb = 'tcga.db'
-if (!exists("t2_rules_mask")) source('t2_presets.R')   # presets / data sources (the rules below)
+if (!exists("t2_cache")) source('t2_util.R')              # %||%, t2_role(), t2_cache()
+if (!exists("t2_rules_mask")) source('t2_presets.R')      # the rule mask (the rules below)
+if (!exists("t2_api_on")) t2_api_on = function() FALSE    # t2_api_client.R replaces this when it is loaded
 
 ## ---------------------------------------------------------------------------
 ## T2_LIMITS: how much ONE request may ask for. All of T2's limits, in one place.
@@ -47,37 +49,27 @@ T2_LIMITS = list(
   loess_points   = 5000   # points above which a loess fit line is drawn as lm
 )
 
-## Default (TCGA) role map. Any dataset can pass its own `roles` list to make
-## gitr dataset-agnostic; the keys below name which clinpheno columns play the
+## The role map (`roles`) of a dataset names which clinpheno columns play the
 ## roles of cohort / subtype / sample-type and how the nonormal/noheme filters
-## should behave. A NULL/NA role column simply disables the corresponding
-## synthetic column or filter for that dataset.
-gitr_default_roles = list(
-  cohort_col        = "tumtype",
-  subtype_col       = "Subtype_Selected",
-  sampletype_col    = "sample_type",
-  normal_label      = "Solid Tissue Normal",
-  heme_values       = c("LAML", "THYM", "DLBC"),
-  sampletype_levels = c("Primary Tumor", "Recurrent Tumor", "Metastatic",
-                        "Additional - New Primary", "Additional Metastatic",
-                        "Primary Blood Derived Cancer - Peripheral Blood",
-                        "Solid Tissue Normal")
-)
+## behave; a NULL/NA role column simply disables the corresponding synthetic
+## column or filter. There is NO default map: gitr() over a database file reads
+## the roles verbatim from that file's dataset_meta (dataset_roles() in
+## dataset_registry.R); over the service they come from /meta (t2_api_resolve).
+## The object below stays only so that older scripts that mention it fail soft
+## (NULL = "look the roles up in the file").
+gitr_default_roles = NULL
 
 ## Synthesise the virtual columns (subtype / cohort / lcohort) on a clinpheno
 ## frame from the dataset's role map, guarded by column presence so datasets
 ## that lack a role simply don't get the corresponding virtual column.
 ## Shared by gitr() and the Thanos backend (t2_thanos.R).
-t2_add_virtual_cols = function(clin, roles = gitr_default_roles) {
-  role_has = function(key) {
-    v = roles[[key]]
-    !is.null(v) && length(v) == 1 && !is.na(v) && nzchar(v)
-  }
-  if (role_has('subtype_col') && roles$subtype_col %in% colnames(clin))
-    clin$subtype = clin[[roles$subtype_col]]
-  if (role_has('cohort_col') && roles$cohort_col %in% colnames(clin)) {
+t2_add_virtual_cols = function(clin, roles) {
+  sub_col = t2_role(roles, 'subtype_col'); coh_col = t2_role(roles, 'cohort_col')
+  if (!is.null(sub_col) && sub_col %in% colnames(clin))
+    clin$subtype = clin[[sub_col]]
+  if (!is.null(coh_col) && coh_col %in% colnames(clin)) {
     if ('cohort' %in% colnames(clin)) clin$lcohort = clin$cohort
-    clin$cohort = clin[[roles$cohort_col]]
+    clin$cohort = clin[[coh_col]]
   }
   clin
 }
@@ -92,24 +84,20 @@ t2_add_virtual_cols = function(clin, roles = gitr_default_roles) {
 ## a no-op when its role column is absent for this dataset. gitr() and the
 ## Thanos base mask both call this, so what the Filter tab shows and what gets
 ## plotted can never disagree.
-t2_sample_keep = function(df, roles = gitr_default_roles, cohort = 'all',
+t2_sample_keep = function(df, roles, cohort = 'all',
                           nonormal = FALSE, noheme = FALSE, rules = list()) {
-  role_has = function(key) {
-    v = roles[[key]]
-    !is.null(v) && length(v) == 1 && !is.na(v) && nzchar(v)
-  }
   keep = rep(TRUE, nrow(df))
-  stc = roles$sampletype_col
-  ccol = roles$cohort_col
+  stc = t2_role(roles, 'sampletype_col')
+  ccol = t2_role(roles, 'cohort_col')
   ## normal_label may name ONE or SEVERAL "non-tumor" sample-type values
   ## (e.g. TCGA-TARGET-GTEX has Solid Tissue Normal + Normal Tissue + Cell
   ## Line). Use %in% so a single string and a vector both work.
   nl = roles$normal_label
   nl = nl[!is.na(nl)]
-  if (isTRUE(nonormal) && role_has('sampletype_col') && stc %in% colnames(df) &&
+  if (isTRUE(nonormal) && !is.null(stc) && stc %in% colnames(df) &&
       length(nl) > 0)
     keep = keep & !(df[[stc]] %in% nl)
-  if (isTRUE(noheme) && role_has('cohort_col') && ccol %in% colnames(df) &&
+  if (isTRUE(noheme) && !is.null(ccol) && ccol %in% colnames(df) &&
       length(roles$heme_values) > 0)
     keep = keep & !(df[[ccol]] %in% roles$heme_values)
   if (!is.null(cohort) && any(cohort != "all") && 'cohort' %in% colnames(df))
@@ -126,7 +114,7 @@ t2_sample_keep = function(df, roles = gitr_default_roles, cohort = 'all',
 ## Uses datatypes table to determine R class for each probe column.
 ##
 ## `dbfile` selects which dataset db to query; `roles` provides the dataset's
-## clinical role map (see gitr_default_roles). Together they make gitr work
+## clinical role map (see dataset_roles). Together they make gitr work
 ## against any T2-shaped dataset, not just TCGA.
 ##
 ## `keep_samples`: NULL = no restriction; otherwise a character vector of
@@ -138,23 +126,20 @@ t2_sample_keep = function(df, roles = gitr_default_roles, cohort = 'all',
 ## one-probe call. Keyed by path + size + modification time, so a replaced file
 ## is read again; a handful of entries at most (one per dataset file). The cached
 ## data frame cannot be altered by callers (R copies on modification).
-.gitr_clin = new.env(parent = emptyenv())
+.gitr_clin = t2_cache(8)
 gitr_clinpheno = function(conn, dbfile) {
   fi = file.info(dbfile)
   key = paste(normalizePath(dbfile, mustWork = FALSE), fi$size, as.numeric(fi$mtime))
-  hit = .gitr_clin[[key]]
+  hit = .gitr_clin$get(key)
   if (!is.null(hit)) return(hit)
-  out = collect(tbl(conn, 'clinpheno'))
-  if (length(ls(.gitr_clin)) >= 8) rm(list = ls(.gitr_clin), envir = .gitr_clin)
-  .gitr_clin[[key]] = out
-  out
+  .gitr_clin$put(key, collect(tbl(conn, 'clinpheno')))
 }
 
 gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 cohort = 'all', conn = con,
                 makefactors = TRUE,
                 dbfile = gitrdb,
-                roles = gitr_default_roles,
+                roles = NULL,
                 db = 'tcga',
                 dbcat = 'tcgacat',
                 keep_samples = NULL,
@@ -164,10 +149,9 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     return(gitr_api(probes, phenos = phenos, nonormal = nonormal, noheme = noheme, cohort = cohort,
                     makefactors = makefactors, dbfile = dbfile, roles = roles,
                     keep_samples = keep_samples, rules = rules))
-  if (is.null(roles)) roles = gitr_default_roles
-  role_has = function(key) {
-    v = roles[[key]]
-    !is.null(v) && length(v) == 1 && !is.na(v) && nzchar(v)
+  if (is.null(roles)) {          # the file's own dataset_meta, verbatim (dataset_registry.R: the file library)
+    if (!exists("dataset_roles")) source('dataset_registry.R')
+    roles = dataset_roles(dbfile)
   }
 
   gitrconn = RSQLite::dbConnect(RSQLite::SQLite(), dbname = dbfile, flags = RSQLite::SQLITE_RO )
@@ -259,14 +243,14 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   }
 
   ## filters — each is a no-op when its role column is absent for this dataset
-  stc = roles$sampletype_col
+  stc = t2_role(roles, 'sampletype_col')
   keep = t2_sample_keep(out, roles, cohort = cohort, nonormal = nonormal,
                         noheme = noheme, rules = rules)
   if (!is.null(keep_samples)) keep = keep & (out$sample %in% keep_samples)
   if (!all(keep)) out = out[keep, , drop = FALSE]
 
   ## factor levels for the sample-type role column (if present + declared)
-  if (phenos && role_has('sampletype_col') && stc %in% colnames(out) &&
+  if (phenos && !is.null(stc) && stc %in% colnames(out) &&
       !is.null(roles$sampletype_levels)) {
     out[[stc]] = factor(out[[stc]], levels = roles$sampletype_levels)
   }
@@ -340,27 +324,21 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
 
 ## gitr() with a small memory of recent results, for callers that redraw the
-## same data with different styling (the Publish tab's live preview). The
-## served databases are read-only, so a result stays valid; the key still
-## includes the file's size and modification time. Shared by all sessions of
-## this R process; the most recent few results are kept.
-.gitr_memo = new.env(parent = emptyenv())
-.gitr_memo$keys = character(0)
-gitr_memo = function(probes, ..., dbfile = gitrdb, max_entries = 6) {
-  fi = if (t2_api_on()) list(size = t2_api_version(dbfile), mtime = 0) else file.info(dbfile)
-  key = rlang::hash(list(probes, list(...), normalizePath(dbfile, mustWork = FALSE),
-                         fi$size, fi$mtime))
-  hit = .gitr_memo[[key]]
+## same data with different styling (the Publish tab's live preview). `ctx` is
+## the plot context (t2_plot_ctx in lib.R): the dataset (path = its name over the
+## service), its roles, the Filter tab's surviving samples (keep) and the sample
+## rules. The served data are read-only, so a result stays valid; the key
+## includes the dataset version. Shared by all sessions of this R process; the
+## most recent few results are kept.
+.gitr_memo = t2_cache(6)
+gitr_memo = function(probes, ..., ctx) {
+  ver = ctx$version %||% if (t2_api_on()) t2_api_version(ctx$path) else {
+    fi = file.info(ctx$path); paste(fi$size, as.numeric(fi$mtime)) }
+  key = rlang::hash(list(probes, list(...), ctx$path, ver, ctx$roles, ctx$keep, ctx$rules))
+  hit = .gitr_memo$get(key)
   if (!is.null(hit)) return(hit)
-  out = gitr(probes, ..., dbfile = dbfile)
-  .gitr_memo[[key]] = out
-  .gitr_memo$keys = c(.gitr_memo$keys, key)
-  if (length(.gitr_memo$keys) > max_entries) {
-    drop = head(.gitr_memo$keys, length(.gitr_memo$keys) - max_entries)
-    rm(list = drop, envir = .gitr_memo)
-    .gitr_memo$keys = setdiff(.gitr_memo$keys, drop)
-  }
-  out
+  .gitr_memo$put(key, gitr(probes, ..., dbfile = ctx$path, roles = ctx$roles,
+                           keep_samples = ctx$keep, rules = ctx$rules))
 }
 
 test_gitr = function(n, phenos = TRUE){

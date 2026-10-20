@@ -1,116 +1,48 @@
 #' # tidy tcga database
 #' ## Nathan Siemers
 
+source('t2_util.R')              # %||%, t2_role(), t2_cache(), t2_as_rules(): sourced first
 library(sqldf)
 library(ggplot2); library(ggthemes)
 library(viridis)
 library(tidyverse)
-source('gitr.R')
-source('dataset_registry.R')
+source('gitr.R')                 # gitr(), T2_LIMITS, t2_sample_keep(); the file path is the oracle of the tests
+source('t2_api_client.R')        # the data layer of the app: the t2api service
 source('marker_ops.R')           # shared: combine_markers_median_z, residualize_on
-source('survival_prototype.R')   # Kaplan-Meier survival mode (T2_ENDPOINTS, survival_km)
+source('survival_prototype.R')   # Kaplan-Meier survival mode (survival_km, tte_names)
 source('plot_style.R')           # Appearance settings, themes, the ggplot tweak registry
 source('figure_export.R')        # Publish tab: figure presets, validation, rendering
 source('t2_search.R')            # ranked search in the variable menus
 source('t2_descriptions.R')      # what the clinical columns mean
 source('t2_contact.R')           # the contact form (About tab)
+t2_api_require()                 # no T2_API_URL, no app: one clear message
 ################################################################
-## Multi-dataset bundle
+## Dataset bundle
 ##
-## load_dataset_bundle(name) opens the chosen dataset's db (read-only) and
-## computes every dataset-anchored object the app needs: the probe/gene choice
-## lists, the cohort list, the clinical role map, the db path, default
-## selections, and a display title. The app calls this once at startup and
-## again on every dataset switch, then repopulates all selectize inputs from
-## the returned bundle. This is the single point that "understands" which
-## dataset is active — analogous to LimmaViewer's load_namespace_bundle().
+## load_dataset_bundle(name) is the dataset as the t2api service declares it
+## (t2_api_bundle in t2_api_client.R): the variable lists, the handles, the
+## time-to-event variables, the type labels, the About prose, the cohort list,
+## the presets and sources. The app calls it at startup and again on every
+## dataset switch, then repopulates all selectize inputs from the bundle. It
+## is the single point that "understands" which dataset is active -- and it
+## understands only what /meta and /probes say (DATASET-CONTRACT.md): the app
+## never opens a database and derives nothing.
 ################################################################
 
-## Cached per process and per version of the database file (path + size +
-## modification time): every session and every dataset switch asks for the same
-## lists (135,000 names for TCGA), and reading them from the database took
-## 0.3-0.8 s of each page open. A replaced file is read again.
-.bundle_cache = new.env(parent = emptyenv())
+## Cached per process and per version of the dataset (the service's version
+## string): every session and every dataset switch asks for the same lists
+## (135,000 names for TCGA). A new version is read again.
+.bundle_cache = t2_cache(8)
 load_dataset_bundle = function(name) {
-  info = dataset_info(name)
-  key = if (t2_api_on()) paste(info$name, "api", t2_api_version(name)) else {
-    fi = file.info(info$path)
-    paste(info$name, normalizePath(info$path, mustWork = FALSE), fi$size, as.numeric(fi$mtime))
-  }
-  hit = .bundle_cache[[key]]
+  key = paste(name, t2_api_version(name))
+  hit = .bundle_cache$get(key)
   if (!is.null(hit)) return(hit)
-  out = if (t2_api_on()) t2_api_bundle(info) else .read_dataset_bundle(info)
-  if (length(ls(.bundle_cache)) >= 8) rm(list = ls(.bundle_cache), envir = .bundle_cache)
-  .bundle_cache[[key]] = out
-  out
-}
-
-.read_dataset_bundle = function(info) {
-  roles = info$roles
-  con_ds = open_dataset_con(info$path)
-  on.exit(DBI::dbDisconnect(con_ds), add = TRUE)   # choice lists are collected; don't leak a handle per switch
-
-  mygenes = pull( tbl(con_ds, 'allprobes'), probe )
-  probes  = pull( tbl(con_ds, 'probes'),    probe )
-  samples = pull( tbl(con_ds, 'samples'),   sample )
-  mutationsamples = tryCatch(pull(tbl(con_ds, 'mutationsamples'), sample),
-                             error = function(e) character(0))
-
-  ## cohort choices: prefer the cohorts table (with pretty names); otherwise
-  ## derive from the distinct values of the dataset's cohort role column.
-  mycohorts = tryCatch({
-    co = collect(tbl(con_ds, 'cohorts'))
-    v = co$cohort
-    if (!is.null(co$cohortstring)) names(v) = co$cohortstring
-    v
-  }, error = function(e) {
-    cc = roles$cohort_col
-    if (!is.null(cc) && !is.na(cc)) {
-      vals = tryCatch(
-        sort(unique(DBI::dbGetQuery(con_ds,
-          sprintf('SELECT DISTINCT "%s" AS v FROM clinpheno', cc))$v)),
-        error = function(e2) character(0))
-      stats::setNames(vals, vals)
-    } else character(0)
-  })
-
-  ## the clinical table with the virtual columns, the presets and the data
-  ## sources (t2_presets.R): what the Select tab offers to choose samples with
-  clin = t2_add_virtual_cols(as.data.frame(DBI::dbReadTable(con_ds, 'clinpheno', check.names = FALSE),
-                                           check.names = FALSE), roles)
-  presets = t2_read_presets(con_ds, roles, clin)
-  cohort_order = tryCatch(DBI::dbGetQuery(con_ds, "SELECT cohort FROM cohorts")$cohort,
-                          error = function(e) character(0))
-  sources = t2_sources(clin, roles, presets, cohort_order, info$label)
-  ## the data types (About tab); the description columns are optional
-  types = tryCatch(DBI::dbGetQuery(con_ds, "SELECT type, description, example, reference, source_file, source_url FROM types ORDER BY type"),
-                   error = function(e) { t = DBI::dbGetQuery(con_ds, "SELECT type FROM types ORDER BY type")
-                                         for (k in c("description", "example", "reference", "source_file", "source_url")) t[[k]] = ""; t })
-
-  ## Selectable variable list: virtual handles (subtype, cohort) + all probes +
-  ## the sample-type role column when the dataset has one. Preserves the exact
-  ## TCGA ordering: subtype, cohort, <genes>, sample_type. A dataset without a
-  ## subtype role (CPTAC) gets no `subtype` handle, as over the service.
-  has_subtype   = !is.null(roles$subtype_col) && !is.na(roles$subtype_col) && nzchar(roles$subtype_col)
-  pheno_handles = c(if (has_subtype) 'subtype', 'cohort')
-  tail_handle   = if (!is.null(roles$sampletype_col) && !is.na(roles$sampletype_col))
-                    roles$sampletype_col else character(0)
-  mygenesplus = c(pheno_handles, mygenes, tail_handle)
-
-  list(
-    name = info$name, path = info$path, title = info$title,
-    label = info$label, roles = roles, defaults = info$defaults,
-    mygenes = mygenes, probes = probes, samples = samples,
-    mutationsamples = mutationsamples, mycohorts = mycohorts,
-    mygenesplus = mygenesplus,
-    clin = clin, presets = presets, sources = sources, types = types,
-    descriptions = t2_descriptions(info$name, setdiff(colnames(clin), 'sample'))
-  )
+  .bundle_cache$put(key, t2_api_bundle(name))
 }
 
 ## A SOURCE bundle: the dataset bundle plus the chosen part of it. `key` is
 ## "<dataset>" (the whole collection) or "<dataset>|<source label>". The app's
-## active bundle is one of these: $source is the t2_sources() entry (rules,
+## active bundle is one of these: $source is the /meta `sources` entry (rules,
 ## cohorts present, groups and exclusions offered, single-level columns), and
 ## $mycohorts holds only the cohorts present in the part.
 load_source_bundle = function(key) {
@@ -128,43 +60,65 @@ load_source_bundle = function(key) {
 }
 
 ## every data source of every dataset, for the "Data set" menu: a named
-## vector, display name -> key (the whole collection first, then its parts)
+## vector, display name -> key (the whole collection first, then its parts).
+## From /v1/datasets alone: no bundle is loaded until its dataset is opened.
 list_sources = function() {
   out = character(0)
-  for (ds in list_datasets()) {
-    b = load_dataset_bundle(ds)
-    for (i in seq_along(b$sources)) {
-      s = b$sources[[i]]
-      key = if (i == 1) ds else paste0(ds, "|", s$label)
-      out[if (i == 1) b$label else paste0(b$label, ": ", s$label)] = key
+  for (d in t2_api_datasets()) {
+    srcs = t2_api_need(d, "sources", "/v1/datasets")
+    for (i in seq_along(srcs)) {
+      key = if (i == 1) d$name else paste0(d$name, "|", srcs[[i]]$label)
+      out[if (i == 1) d$label else paste0(d$label, ": ", srcs[[i]]$label)] = key
     }
   }
   out
 }
 
+## The plot context: the active data source and the samples chosen from it,
+## ONE object for fun_plot1 / plotter / fun_table1 / survival_km / gitr_memo /
+## backend_t2 instead of a growing list of arguments.
+##   path/name  the dataset (its name, over the service)   version  its version
+##   roles      cohort / subtype / sample-type columns, normal and heme values
+##   label      the display name for captions
+##   handles    data.frame(name, role): the virtual columns, from /meta `handles`
+##   tte        the time-to-event variables, from /meta `tte_variables`
+##   type_labels  the title word of each data type; menu  the typed variable list
+##   keep       the Filter tab's surviving sample ids (NULL = no restriction)
+##   rules      the sample choice (source, group, exclusions) as preset rules
+t2_plot_ctx = function(bundle, keep = NULL, rules = list()) {
+  list(name = bundle$name, path = bundle$path, version = bundle$version, label = bundle$label,
+       roles = bundle$roles, handles = bundle$handles, tte = bundle$tte,
+       type_labels = bundle$type_labels, menu = bundle$menu, keep = keep, rules = rules)
+}
+## the context of the default dataset, for scripts and tests that plot without a bundle
+t2_default_ctx = function() t2_plot_ctx(load_dataset_bundle(t2_default_dataset()))
+
+## the names of the handles of one role (cohort | subcohort | sample_type)
+t2_handle_names = function(ctx, roles) ctx$handles$name[ctx$handles$role %in% roles]
+
+## the word of a variable's data type for a plot title: "TP53.mut" -> "TP53 mutation".
+## The type is the variable's entry in the typed variable list; a type whose label
+## is empty or equal to its name (a bare RNA name, a file without labels) adds nothing.
+t2_title_name = function(v, ctx) {
+  vapply(v, function(one) {
+    i = match(one, ctx$menu$name)
+    ty = if (is.na(i)) NA_character_ else ctx$menu$type[i]
+    word = if (is.na(ty)) "" else unname(ctx$type_labels[ty]) %||% ""
+    suffix = paste0(".", ty)
+    if (!is.na(ty) && nzchar(word) && !identical(word, ty) && endsWith(one, suffix))
+      paste0(substr(one, 1, nchar(one) - nchar(suffix)), " ", word) else one
+  }, "", USE.NAMES = FALSE)
+}
+
 ################################################################
-## database connections and convenience lists (DEFAULT dataset, for startup /
-## backward compatibility — the app overrides these per selected dataset).
+## convenience lists of the DEFAULT dataset (for scripts and tests; the app
+## takes everything from the active bundle)
 
-.default_bundle = load_dataset_bundle(default_dataset())
-
+.default_bundle = load_dataset_bundle(t2_default_dataset())
 samples = .default_bundle$samples
-mutationsamples = .default_bundle$mutationsamples
 mygenes = .default_bundle$mygenes
-probes = .default_bundle$probes
 mycohorts = .default_bundle$mycohorts
 mygenesplus = .default_bundle$mygenesplus
-if (!t2_api_on()) {     # table handles on the default file, for scripts (none in the app's path)
-tcga = tbl(con, 'tcga')
-tcgacat = tbl(con, 'tcgacat')
-types = tbl(con, 'types')
-cohorts = tbl(con, 'cohorts')
-tcgas = tbl(con, 'tcgas')
-tcgai = tbl(con, 'tcgai')
-tcgacati = tbl(con, 'tcgacati')
-tcgacats = tbl(con, 'tcgacats')
-clin = tbl(con, 'clinpheno')
-}
 
 ################################################################
 ## requests T2 does not draw (see T2_LIMITS in gitr.R)
@@ -254,9 +208,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     coordflip = FALSE, evaluate_vars = FALSE,
     condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
     multi_y = FALSE, zscore_y = FALSE,
-    dbfile = gitrdb, roles = gitr_default_roles,
-    dataset_label = "TCGA Pan-Cancer 2018",
-    keep_samples = NULL, rules = list(), ...
+    ctx = t2_default_ctx(), ...
                    ) {
     ################################################################
     ## THEMES and ggplot geom defaults
@@ -297,9 +249,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             too_many = sprintf("%d variables were chosen for %s; the limit is %d.", length(lim[[1]]), lim[[3]], lim[[2]])
     }
     if (!is.null(too_many)) return(t2_message_plot(too_many, fig_width = fig_width, title_size = title_size))
-    ## keep_samples: the Filter tab's surviving sample ids (NULL = no restriction)
-    data = gitr_memo(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme,
-                     dbfile = dbfile, roles = roles, keep_samples = keep_samples, rules = rules)
+    ## ctx$keep: the Filter tab's surviving sample ids (NULL = no restriction); ctx$rules: the sample choice
+    data = gitr_memo(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme, ctx = ctx)
 
     ## build data summary before any transformations
     summary_lines = c()
@@ -438,12 +389,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
     if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
     if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
+    x_title = x; y_title = y     # the variables as the title names them (before they are combined)
     if(length(x) > 1) {
         newvar = paste(x, sep = '.', collapse = '.')
-        data[ , newvar]  = data %>%
-            select( x ) %>%
-                scale %>%
-                    apply( 1, median, na.rm = TRUE )
+        ## the median over the X probes of their z-scores, per sample (NA-aware)
+        data[ , newvar]  = t2_row_medians(scale(as.matrix(data[, x, drop = FALSE])))
         x = newvar
         ##x = paste(x, sep = '.', collapse = '.')
     }
@@ -483,13 +433,14 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
     if( allComplete ) {
-        ## only require completeness on columns that actually exist for this
-        ## dataset (sample_type / cohort may be absent in non-TCGA datasets)
-        complete_cols = intersect(c("sample", "cohort", "sample_type", x, y, color, size, c(facet)),
+        ## only require completeness on the cohort and sample-type handles the
+        ## dataset has (/meta `handles`), and on columns that exist in the data
+        complete_cols = intersect(c("sample", t2_handle_names(ctx, c("cohort", "sample_type")), x, y, color, size, c(facet)),
                                   colnames(data))
         data = data[ complete.cases( data[ , complete_cols, drop = FALSE] ), ]
     }
-    data = droplevels(data)
+    ## the levels of the columns the plot uses (the rest of the frame is not drawn)
+    data = t2_droplevels_cols(data, unique(c(x, y, color, shape, size, facet, condition, "probe")))
     if ( nrow(data) == 0 | is.null(data[,x]) | is.null(data[, y]) ) {
         return( list(
             plot = ggplot() + ggtitle("Sorry, there seems to be no data associated with your query",
@@ -550,11 +501,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     ################################################################
     ## convert mutations to factors
-    ## if( halfmutants ) {
-    ##     mutantlevels = c( 0, 0.5, 1 )
-    ## } else {
-    ## SETTING FACTORS ALSO NEEDS TO BE DEALT WITH GENERALLY
-    ## below is just for .mut
+    ## A factor type with numeric levels (.mut 0/1) is plotted with its FULL level
+    ## set, so an absent level still shows as an empty group (DATASET-CONTRACT.md
+    ## s.3 rule 6). The full set of a type is not in /meta, so for now the rule is
+    ## keyed on the naming convention of the one such type, mut (0/1); a general
+    ## rule needs `datatypes.levels` in the contract (REVIEW-2026-10-19-generalization.md 5).
 
     mutantlevels = c( 0, 1 )
     lapply(list.of.markersxy, function(xx) {
@@ -607,13 +558,10 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
     aesxy = modifyList( aesx,aesy )
     psub = paste0(psub, " Data points: ", nrow(data), '.' )
-    psub = paste(psub, paste0(dataset_label, "."))
-    pstring = paste( "Relationship of", x, "and", y, "across", dataset_label )
-    pstring = gsub( '\\.mut', ' mutation', pstring )
-    pstring = gsub( '\\.fmut', ' mutation', pstring )
-    pstring = gsub( '\\.cnv', ' CNA', pstring )
-    pstring = gsub( '\\.prot', ' protein', pstring )
-    pstring = gsub( '\\.phospho', ' phosphosite', pstring )
+    psub = paste(psub, paste0(ctx$label, "."))
+    ## the title words of the data types come from /meta `type_labels` (t2_title_name)
+    pstring = paste( "Relationship of", paste(t2_title_name(x_title, ctx), collapse = "."), "and",
+                     paste(t2_title_name(y_title, ctx), collapse = "."), "across", ctx$label )
     if( !is.null(cohort[1]) ) {
         if( length(cohort) < 6) {
             pstring2 = paste( "Cohorts:",
@@ -787,9 +735,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
 
 ## Download table: the same samples the plot shows -- the Select tab's cohort /
-## non-tumor / heme choices plus the Filter tab's survivors (keep_samples).
-fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles,
-                       keep_samples = NULL, rules = list() ) {
+## non-tumor / heme choices plus the Filter tab's survivors (ctx$keep).
+fun_table1 = function ( input, ctx = t2_default_ctx() ) {
     ##    my.input = paste ('~', paste(input$x, input$y, input$color,
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
     my.input = c( input$x, input$y, input$color, input$size, input$facet )
@@ -797,14 +744,13 @@ fun_table1 = function ( input, dbfile = gitrdb, roles = gitr_default_roles,
     gitr( my.input,
           cohort = if (length(input$cohort)) input$cohort else 'all',
           nonormal = isTRUE(input$nonormal), noheme = isTRUE(input$noheme),
-          dbfile = dbfile, roles = roles, keep_samples = keep_samples, rules = rules )
+          dbfile = ctx$path, roles = ctx$roles, keep_samples = ctx$keep, rules = ctx$rules )
 }
 
 
-fun_plot1 = function(input, reactive = TRUE,
-                     dbfile = gitrdb, roles = gitr_default_roles,
-                     dataset_label = "TCGA Pan-Cancer 2018",
-                     keep_samples = NULL, rules = list(), gg = list(),
+## input: the browser's choices, already validated (sanitize_t2_input); ctx: the
+## plot context (t2_plot_ctx) -- the active data source and the samples chosen
+fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list(),
                      base_size = 12, base_family = "sans", caption = NULL, fig_width = NULL) {
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
@@ -823,22 +769,17 @@ fun_plot1 = function(input, reactive = TRUE,
     numeric_vars = T2_STYLE_ARGS
     input[ which(names(input) %in% numeric_vars) ] = as.numeric( input[ names(input) %in% numeric_vars ] )
     ## drop the dataset selector itself (not a plotter argument) and inject the
-    ## active dataset's db path + role map AFTER the scalar-cleaning filters
-    ## above (roles is a list and must not hit `input != ''`).
+    ## plot context (the active data source, its roles, the chosen samples) AFTER
+    ## the scalar-cleaning filters above (ctx is a list and must not hit `input != ''`).
+    ## It is server-side only: never a browser input, so not in T2_INPUT_ARGS.
     input[['dataset']] = NULL
-    input$dbfile = dbfile
-    input$roles = roles
-    input$dataset_label = dataset_label
+    input['ctx'] = list(ctx)
     ## the classic flags are not browser inputs any more: the sample choice
     ## arrives as `rules` (the survival branch below still forces nonormal)
     input$nonormal = FALSE
     input$noheme = FALSE
-    ## the Filter tab's surviving sample ids: server-side only (never a browser
-    ## input, so not in T2_INPUT_ARGS). list() wrapper keeps a NULL out of the
-    ## argument list and lets character(0) ("nothing survives") through.
-    if (!is.null(keep_samples)) input['keep_samples'] = list(keep_samples)
-    ## the sample choice (data source, group, exclusions) as rules: server-side too
-    if (length(rules)) input['rules'] = list(rules)
+    ## (the Filter tab's surviving sample ids are ctx$keep and the sample choice
+    ## -- data source, group, exclusions -- is ctx$rules)
     ## extra ggplot settings: validated against the tweak registry here, whatever
     ## the caller did, so nothing unlisted or out of range can reach ggplot
     gg = t2_validate_tweaks(gg)
@@ -850,9 +791,10 @@ fun_plot1 = function(input, reactive = TRUE,
     if (!is.null(caption)) input$caption = caption
     if (!is.null(fig_width)) input$fig_width = fig_width
 
-    ## Survival mode: if X is a time-to-event endpoint (OS/PFI/DSS/DFI), draw a
-    ## Kaplan-Meier plot of the Y marker's tertiles instead of a scatter.
-    if (length(input$x) && input$x[1] %in% names(T2_ENDPOINTS)) {
+    ## Survival mode: if X is one of the dataset's time-to-event variables (/meta
+    ## `tte_variables`), draw a Kaplan-Meier plot of the Y marker's tertiles
+    ## instead of a scatter.
+    if (length(input$x) && input$x[1] %in% tte_names(ctx)) {
         if (!length(input$y) || !nzchar(input$y[1]))
             return(list(warning = "Survival plot: pick a Y marker to stratify into groups."))
         ## Appearance settings laid over the survival plot: fonts, legend, theme
@@ -871,9 +813,8 @@ fun_plot1 = function(input, reactive = TRUE,
                         ## value, so normals are excluded whatever the checkbox says
                         nonormal = TRUE,
                         noheme = if (!is.null(input$noheme)) as.logical(input$noheme)[1] else FALSE,
-                        keep_samples = keep_samples, rules = rules,
                         base_size = base_size, base_family = base_family,
-                        dbfile = dbfile, roles = roles),
+                        ctx = ctx),
             style = km_style, gg = gg, caption = caption, fig_width = fig_width),
             error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))
     }

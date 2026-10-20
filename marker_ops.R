@@ -6,6 +6,8 @@
 ## one place instead of being duplicated.
 ## ============================================================================
 
+if (!exists("t2_row_medians")) source("t2_util.R")
+
 ## z-score a numeric vector (NA-safe; a constant vector is only centred).
 .zscore_vec <- function(v) {
   v <- as.numeric(v)
@@ -22,10 +24,11 @@ combine_markers_median_z <- function(mat) {
   storage.mode(mat) <- "double"
   if (ncol(mat) <= 1) return(as.numeric(mat))
   if (nrow(mat) == 0) return(numeric(0))
-  ## vapply + matrix(): apply() would return a plain vector for a single row
+  ## vapply + matrix(): a single row must stay a matrix
   z <- vapply(seq_len(ncol(mat)), function(j) .zscore_vec(mat[, j]), numeric(nrow(mat)))
   z <- matrix(z, nrow = nrow(mat))
-  apply(z, 1, stats::median, na.rm = TRUE)
+  ## row medians ignoring NA (an all-NA row is NA); fast when matrixStats is installed (t2_util.R)
+  t2_row_medians(z)
 }
 
 ## Remove the influence of covariates from a numeric response: return

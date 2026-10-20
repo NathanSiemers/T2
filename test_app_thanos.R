@@ -9,8 +9,7 @@
 ##   Rscript test_app_thanos.R        (from the app directory)
 suppressMessages(library(shiny))
 
-ok <- function(cond, msg) cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n")
-quiet <- function(expr) { utils::capture.output(v <- expr); v }
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
 same_set <- function(a, b) setequal(as.character(a), as.character(b))
 
 base_inputs <- list(
@@ -198,7 +197,7 @@ testServer(shiny::shinyAppDir("."), {
   session$setInputs(color = "TP53.mut")
   session$setInputs(dataset = "tcgatargetgtex")
   ht <- th_for(bundle())
-  fetched <- function() environment(ht$backend$prefetch)$fetched   # probes the backend has fetched
+  fetched <- function() ht$backend$fetched()   # probes the backend has fetched
   session$elapse(600)
   ok(bundle()$name == "tcgatargetgtex" && !any(c("CD8A", "FOXP3", "TP53.mut") %in% fetched()),
      "right after a switch the inputs still hold the old picks: nothing is pushed yet")
@@ -211,4 +210,4 @@ testServer(shiny::shinyAppDir("."), {
   session$elapse(600)
   ok("MKI67" %in% fetched(), "the first real change of the selectors is pushed as before")
 })
-cat("== app thanos test done ==\n")
+finish("test_app_thanos")

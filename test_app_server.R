@@ -3,7 +3,7 @@
 ## bundle and a plot builds against the synthetic dataset too.
 suppressMessages(library(shiny))
 
-ok <- function(cond, msg) cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n")
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
 
 ## NB: unselected `multiple` selectize inputs arrive as NULL in real Shiny
 ## (and fun_plot1 strips NULLs), so facet/condition are intentionally absent.
@@ -39,4 +39,4 @@ testServer(shiny::shinyAppDir("."), {
   session$setInputs(dataset = "TCGA")
   ok(bundle()$name == "TCGA", "bundle switched back to TCGA")
 })
-cat("== app server test done ==\n")
+finish("test_app_server")

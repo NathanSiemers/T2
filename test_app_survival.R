@@ -3,7 +3,7 @@
 ## a time-to-event endpoint for X. Also confirms scatter plots are unaffected.
 suppressMessages(library(shiny))
 
-ok <- function(cond, msg) cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n")
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
 
 base_inputs <- list(
   size = "", cohort = "all", pcortype = "none", nonormal = FALSE, noheme = FALSE,
@@ -51,5 +51,23 @@ testServer(shiny::shinyAppDir("."), {
   session$setInputs(x = "CD8A", y = "MKI67", plot_btn = 6)
   r6 <- plot_result()
   ok(is.list(r6) && !is.null(r6$plot), "normal scatter still builds")
+
+  ## ---- the time-to-event variables are the data set's own (/meta tte_variables) ----
+  session$setInputs(dataset = "tcgatargetgtex")
+  b <- bundle()
+  ok(length(b$tte) == 0 && is.null(sanitize_t2_input(list(x = "OS", y = "CD8A"), b)$x),
+     "a data set without time-to-event variables does not accept OS as X")
+  session$setInputs(dataset = "cptac")
+  b <- bundle()
+  ok(identical(tte_names(b), c("OS", "PFI")) && identical(sanitize_t2_input(list(x = "PFI", y = "CD8A"), b)$x, "PFI") &&
+     is.null(sanitize_t2_input(list(x = "DSS", y = "CD8A"), b)$x),
+     "cptac offers OS and PFI as X, not TCGA's DSS")
+  session$setInputs(x = "OS", y = "CD8A", color = "", cohort = "all", facet = "", condition = "", plot_btn = 20)
+  rc <- plot_result()
+  ok(inherits(rc, "ggsurvplot") && grepl("^OS", attr(rc, "t2summary")), "cptac: OS ~ CD8A -> Kaplan-Meier from the dataset's own OS / OS.time")
+  ok(grepl("Time (days)", rc$plot$labels$x, fixed = TRUE), "the time axis is labelled with the declared unit")
+  session$setInputs(dataset = "DEMO", x = "OS", y = "GENE01", plot_btn = 21)
+  rd <- plot_result()
+  ok(inherits(rd, "ggsurvplot") && grepl("Overall Survival", rd$plot$labels$title), "DEMO: the label of its tte entry titles the plot (Overall Survival)")
 })
-cat("== survival app-server test done ==\n")
+finish("test_app_survival")

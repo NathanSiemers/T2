@@ -3,12 +3,11 @@
 ## error, and nothing but validated values may get through.
 ##   Rscript test_plot_style.R        (from the app directory)
 suppressMessages({
-  source("global.R"); source("database_connection_shiny.R")
+  source("global.R")
   source("lib.R"); source("input_validation.R")
 })
 grDevices::pdf(NULL)     # building grobs needs a device; never write Rplots.pdf
-ok <- function(cond, msg) cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n")
-quiet <- function(expr) { utils::capture.output(v <- suppressWarnings(suppressMessages(expr))); v }
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
 builds <- function(p) {            # the plot can actually be drawn
   tryCatch({ quiet(ggplot2::ggplotGrob(p)); TRUE }, error = function(e) conditionMessage(e))
 }
@@ -73,7 +72,7 @@ b <- load_dataset_bundle("DEMO")
 genes <- head(b$mygenes, 2)
 run <- function(x, gg = list(), ...) {
   quiet(plotter(x = x, y = genes[2], color = "subtype", cohort = "all", nonormal = FALSE,
-                smooth = "TRUE", dbfile = b$path, roles = b$roles, gg = gg, ...))
+                smooth = "TRUE", ctx = t2_plot_ctx(b), gg = gg, ...))
 }
 layer_ids <- setdiff(names(T2_TWEAKS), theme_ids)
 for (xv in list(scatter = genes[1], boxplot = "cohort")) {
@@ -147,7 +146,7 @@ ok(length(t2_validate_tweaks(list(`theme|no.such.element|size` = 5, `theme(axis.
                                   `point.shape` = "99", `theme|plot.title|size` = "12; q()"))) == 0,
    "unknown setting ids and bad values are dropped")
 ## fun_plot1 re-validates whatever it is handed
-r <- quiet(fun_plot1(list(x = genes[1], y = genes[2]), reactive = FALSE, dbfile = b$path, roles = b$roles,
+r <- quiet(fun_plot1(list(x = genes[1], y = genes[2]), reactive = FALSE, ctx = t2_plot_ctx(b),
                      gg = list(`theme|plot.title|size` = "30", `theme|evil` = "x", point.shape = "system('id')",
                                labs.x = "Custom X")))
 ok(calc_element("plot.title", r$plot$theme)$size == 30 && identical(r$plot$labels$x, "Custom X") &&
@@ -163,16 +162,16 @@ ok(identical(sg, list(`theme|legend.position` = "bottom", point.shape = "4")),
 cat("\n== survival plots take fonts, legend and theme settings ==\n")
 bt <- load_dataset_bundle("TCGA")
 km <- quiet(fun_plot1(list(x = "OS", y = "MKI67", cohort = "LUAD", title_size = 22, show_legend = FALSE),
-                      reactive = FALSE, dbfile = bt$path, roles = bt$roles,
+                      reactive = FALSE, ctx = t2_plot_ctx(bt),
                       gg = list(`theme|axis.text.x|angle` = 45, labs.title = "KM title")))
 ok(inherits(km, "ggsurvplot") && calc_element("plot.title", km$plot$theme)$size == 22 &&
    identical(km$plot$theme$legend.position, "none") && calc_element("axis.text.x", km$plot$theme)$angle == 45 &&
    identical(km$plot$labels$title, "KM title") && !is.null(attr(km, "km_data")),
    "Kaplan-Meier plot: title size, hidden legend, a theme tweak and a custom title")
 kf <- quiet(fun_plot1(list(x = "OS", y = "MKI67", cohort = c("LUAD", "LUSC"), facet = "cohort", strip_size = 18),
-                      reactive = FALSE, dbfile = bt$path, roles = bt$roles))
+                      reactive = FALSE, ctx = t2_plot_ctx(bt)))
 ok(inherits(kf, "ggplot") && calc_element("strip.text", kf$theme)$size == 18 && !is.null(attr(kf, "km_data")) &&
    !is.null(attr(kf, "t2summary")),
    "faceted Kaplan-Meier plot keeps its summary and takes the strip size")
 
-cat("== plot style test done ==\n")
+finish("test_plot_style")

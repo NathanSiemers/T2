@@ -6,8 +6,7 @@
 ## from the pictures.
 ##
 ##   CHROMOTE_CHROME=<chrome-headless-shell> Rscript test_browser_suite.R [screenshot_dir]
-##   (T2_DATASETS_DIR for other database copies; T2_API_URL to run the app over the
-##   service; T2_CONTACT_URL to show the contact form — it is never submitted here)
+##   (T2_API_URL names the service the app reads from (required: no file mode); T2_CONTACT_URL to show the contact form — it is never submitted here)
 ## Against a RUNNING site instead of the local code:  T2_SITE_URL=https://www.fiveprime.org/T2T/
 ## (then inputs are set but server values are read from the page only).
 suppressMessages({ library(shiny); library(shinytest2) })

@@ -2,19 +2,18 @@
 ## predicate it shares with gitr(). No Shiny session needed.
 ##   Rscript test_t2_backend.R        (from the app directory)
 suppressMessages({
-  source("global.R"); source("database_connection_shiny.R")
+  source("global.R")
   source("lib.R"); source("input_validation.R"); source("t2_thanos.R")
 })
 
-ok <- function(cond, msg) cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n")
-quiet <- function(expr) { utils::capture.output(v <- expr); v }
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
 
 ok(HAVE_THANOS, "Thanos loaded, with base_mask support")
 
 ## the value Thanos should see for a gitr column: factors as character
 as_thanos <- function(x) if (is.factor(x) || is.logical(x)) as.character(x) else as.numeric(x)
 
-for (ds in list_datasets()) {
+for (ds in t2_datasets()) {
   cat("\n==", ds, "==\n")
   b  <- load_dataset_bundle(ds)
   be <- quiet(backend_t2(b))
@@ -112,4 +111,4 @@ ok(length(d) == 4 && any(grepl("CD8A in \\[5, 9.123\\]", d)) && any(grepl("FOXP3
    any(grepl("MKI67 >= 2", d)) && any(grepl("gender: FEMALE", d)),
    "active filters described; no-op filters (full range / all levels) omitted")
 
-cat("== t2 backend test done ==\n")
+finish("test_t2_backend")

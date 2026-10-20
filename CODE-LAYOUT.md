@@ -3,7 +3,7 @@
 An index for whoever opens this repository cold (Nathan in RStudio, or Claude with a context
 budget): one line per file, the main functions, and at the end an assessment of how the
 code should be cut up (Nathan's question of 2026-10-09). Load order is app.R → global.R →
-database_connection_shiny.R → lib.R (which sources the rest) → input_validation.R → t2_thanos.R.
+lib.R (which sources the rest, t2_api_client.R among them; stops without T2_API_URL) → input_validation.R → t2_thanos.R.
 
 ## The Shiny app (R, repository root)
 
@@ -14,7 +14,7 @@ database_connection_shiny.R → lib.R (which sources the rest) → input_validat
 | `gitr.R` | 380 | `gitr()`: the data retriever (probes + clinical, filters, factor typing) and `t2_sample_keep()`, the one sample predicate; `T2_LIMITS`; `gitr_memo()` |
 | `t2_api_client.R` | 230 | the same data layer over the t2api service (`T2_API_URL`): `gitr_api()`, `t2_api_bundle()`, caches |
 | `dataset_registry.R` | 200 | which datasets exist, their roles (cohort / subtype / sample-type columns, heme values, parts), defaults; `dataset_meta` reader |
-| `t2_presets.R` | 180 | ready-made sample subsets and data sources: `t2_read_presets()`, `t2_sources()`, `t2_filter_choices()` (what to offer), `t2_presets_mask()`; the R mirror of the service |
+| `t2_presets.R` | 180 | ready-made sample subsets and data sources: `t2_read_presets()`, `t2_sources()`, `t2_filter_choices()` (what to offer), `t2_presets_mask()`; the rule mask and what to offer (the derivations are the service's) |
 | `t2_thanos.R` | 215 | the Filter tab's bridge to Thanos: `backend_t2()` (columns served from gitr, per data source), `t2_describe_filters()` |
 | `input_validation.R` | 120 | `sanitize_t2_input()` / `sanitize_t2_samples()` / style and tweak whitelists: nothing from the browser reaches SQL or ggplot unchecked |
 | `plot_style.R` | 480 | the Appearance settings: `T2_STYLE` menus, the ggplot tweak registry (`T2_TWEAKS`), themes, fonts |
@@ -24,7 +24,8 @@ database_connection_shiny.R → lib.R (which sources the rest) → input_validat
 | `t2_search.R` | 55 | ranked search for the variable menus (`update_selectize_ranked()`) |
 | `t2_descriptions.R` | 35 | what the clinical columns mean (from the service's TSV or `/meta`) |
 | `t2_contact.R` | 65 | the contact form on About (POST to the service) |
-| `global.R`, `database_connection_shiny.R` | 60 | site constants; the default SQLite connection (none in service mode) |
+| `t2_util.R` | 60 | `%||%`, `t2_role()`, `t2_cache()`, `t2_as_rules()`, `t2_row_medians()`; sourced first |
+| `global.R`, `database_connection_shiny.R` | 15 | site constants; the latter is a stub (the app opens no database) |
 
 ## Databases and tools
 

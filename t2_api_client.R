@@ -1,42 +1,63 @@
 ## t2_api_client.R
 ## ============================================================================
-## The T2 data layer over the t2api service (T2Mobile/docs/API.md) -- the
-## second implementation of what gitr() and the dataset bundle read from the
-## SQLite files. Switched on by the environment variable
+## The T2 data layer over the t2api service (T2Mobile/docs/API.md): the ONLY
+## data layer of the Shiny app. The environment variable
 ##
 ##     T2_API_URL=http://t2api:8080            (the service's Docker network)
 ##     T2_API_URL=https://www.fiveprime.org/api/t2   (from anywhere)
 ##
-## With it set, the app needs no database files at all: discover_datasets(),
-## dataset_info(), the bundle and gitr() all go to the service. Without it
-## (the default, RStudio work, the tests) nothing here is used. test_gitr_api.R
-## checks that both paths return the same frames, value for value.
+## names the service; global.R stops the app with one message when it is unset
+## (t2_api_require()). The app opens no database: datasets, bundles and gitr()
+## all go to the service. The SQLite path (gitr() over a file, dataset_registry.R)
+## stays in the repository as the builders' library and as the equivalence
+## ORACLE of the tests: test_gitr_api.R and T2Mobile/service/test_equivalence.R
+## hold this layer to it, value for value.
 ##
-## What the service gives us is exactly what gitr() computes (the service's
-## own equivalence test, T2Mobile/service/test_equivalence.R, holds it to
-## that), so the work here is only transport, caching and R typing:
-##   - /clinical once per dataset version (every clinical + virtual column);
-##   - /values for probes, at most 100 names per request, kept in a small
+## The client DERIVES NOTHING (DATASET-CONTRACT.md s.2-3): handles, time-to-event
+## variables, type labels, About prose, default cohorts and the typed variable
+## list are read from /meta and /probes; a service that lacks one of them is an
+## old service and the client says so (t2_api_need), it never falls back to a
+## rule of its own.
+##
+## What is done here is transport, caching and R typing:
+##   - /clinical once per dataset version, factored once (per version) the way
+##     gitr() makes factors; each call applies its row filters on top;
+##   - /values for probes, at most 100 names per request, kept in a bounded
 ##     per-process cache keyed by dataset version and name;
-##   - categorical columns become factors the way gitr() makes them
-##     (as.factor on the text: the same level order).
+##   - JSON parsed to vectors (simplifyVector) for the big answers.
 ## ============================================================================
+if (!exists("t2_cache")) source("t2_util.R")
 T2_API_URL = sub("/+$", "", Sys.getenv("T2_API_URL", ""))
 t2_api_on = function() nzchar(T2_API_URL)
 
-.t2_api = new.env(parent = emptyenv())
-.t2_api$values = new.env(parent = emptyenv())   # "<ds>|<version>|<probe>" -> column
-.t2_api$values_keys = character(0)
-T2_API_VALUES_CACHE = 400                       # probe columns kept per process
+## The app's one start-up check: the data layer is the service, so no service, no app.
+t2_api_require = function() {
+  if (!t2_api_on())
+    stop("T2_API_URL is not set. The T2 app reads all its data from the T2 query service: set T2_API_URL ",
+         "(for example http://t2api:8080 in the service's Docker network, or http://127.0.0.1:3861 for the ",
+         "development service) in the environment or the site's Renviron, and start the app again.", call. = FALSE)
+  invisible(TRUE)
+}
 
-## GET a path of the service, parsed JSON (lists, not simplified). `retry`:
-## the service answers 503 for a few seconds while a database file is
-## replaced, and a transient network error is retried once. A 409 means the
-## dataset version in the URL is no longer the one served (a database was
-## deployed; the service restarts with a new version): the datasets list is
-## forgotten so the next t2_api_version() re-reads it, and the condition
-## `t2_api_version_changed` is signalled for t2_api_versioned() to retry.
-t2_api_get = function(path, retry = 2) {
+.t2_api = new.env(parent = emptyenv())
+T2_API_VALUES_CACHE = 400                       # probe columns kept per process
+.t2_api$values = t2_cache(T2_API_VALUES_CACHE)  # "<ds>|<version>|<probe>" -> column (or "missing")
+.t2_api$meta   = t2_cache(8)                    # "<ds>|<version>" -> /meta
+.t2_api$clin   = t2_cache(8)                    # "<ds>|<version>" -> the clinical frame (character / numeric)
+.t2_api$frames = t2_cache(8)                    # "<ds>|<version>|<roles>" -> list(raw, fac): the frame and its factored twin
+.t2_api$menu   = t2_cache(8)                    # "<ds>|<version>" -> the typed variable list
+
+## GET a path of the service, parsed JSON. `simplify = FALSE` gives lists (for
+## /meta, which is small and nested); TRUE gives vectors for the big answers
+## (/values, /probes, /clinical: arrays of numbers / strings become atomic
+## vectors, null becomes NA; callers pin the types). `retry`: the service
+## answers 503 for a few seconds while a database file is replaced, and a
+## transient network error is retried once. A 409 means the dataset version in
+## the URL is no longer the one served (a database was deployed; the service
+## restarts with a new version): the datasets list is forgotten so the next
+## t2_api_version() re-reads it, and the condition `t2_api_version_changed` is
+## signalled for t2_api_versioned() to retry.
+t2_api_get = function(path, retry = 2, simplify = FALSE) {
   url = paste0(T2_API_URL, path)
   h = curl::new_handle(accept_encoding = "gzip", followlocation = TRUE, connecttimeout = 10, timeout = 120)
   curl::handle_setheaders(h, "User-Agent" = "T2-shiny (gitr over t2api)")
@@ -51,7 +72,8 @@ t2_api_get = function(path, retry = 2) {
     }
     if (r$status_code != 200)
       stop("t2api: HTTP ", r$status_code, " for ", path, ": ", substr(rawToChar(r$content), 1, 200))
-    return(jsonlite::fromJSON(rawToChar(r$content), simplifyVector = FALSE))
+    return(jsonlite::fromJSON(rawToChar(r$content), simplifyVector = simplify,
+                              simplifyDataFrame = FALSE, simplifyMatrix = FALSE))
   }
 }
 
@@ -68,28 +90,46 @@ t2_api_version = function(ds) {
 ## a request whose URL names the dataset version: built by make_path(version);
 ## asked again with the fresh version when the served version has changed
 ## (a database deploy), so a long-running app never sticks on 409
-t2_api_versioned = function(ds, make_path) {
+t2_api_versioned = function(ds, make_path, simplify = FALSE) {
   for (attempt in 1:2) {
     v = t2_api_version(ds)
-    r = tryCatch(t2_api_get(make_path(v)), t2_api_version_changed = function(e) NULL)
+    r = tryCatch(t2_api_get(make_path(v), simplify = simplify), t2_api_version_changed = function(e) NULL)
     if (!is.null(r)) return(list(result = r, version = v))
   }
   stop("t2api: the dataset version of ", ds, " keeps changing")
 }
-t2_api_meta = function(ds) {
-  key = paste(ds, t2_api_version(ds))
-  if (is.null(.t2_api[[paste0("meta|", key)]])) .t2_api[[paste0("meta|", key)]] = t2_api_get(sprintf("/v1/%s/meta", ds))
-  .t2_api[[paste0("meta|", key)]]
+
+## A required member of an answer of the service: its absence means the service
+## is older than this app (the contract's fields are never absent). No fallback.
+t2_api_need = function(x, field, what) {
+  if (is.null(x[[field]]))
+    stop("The T2 query service at ", T2_API_URL, " is older than this app: ", what, " has no '", field,
+         "' (DATASET-CONTRACT.md). Deploy the service (ops/deploy.sh service) before the app.", call. = FALSE)
+  x[[field]]
 }
 
-## an API column object -> an R vector: numbers with NA, or character with NA
+t2_api_meta = function(ds) {
+  key = paste(ds, t2_api_version(ds))
+  hit = .t2_api$meta$get(key)
+  if (!is.null(hit)) return(hit)
+  m = t2_api_get(sprintf("/v1/%s/meta", ds))
+  what = sprintf("/v1/%s/meta", ds)
+  for (f in c("handles", "tte_variables", "type_labels", "about", "default_cohorts", "survival_endpoints"))
+    t2_api_need(m, f, what)
+  .t2_api$meta$put(key, m)
+}
+
+## an API column object -> an R vector: numbers with NA, or character with NA.
+## Works on both parsings (lists and simplified vectors); the types are pinned.
 t2_api_vector = function(col) {
   if (identical(col$kind, "num")) {
-    vapply(col$values, function(v) if (is.null(v)) NA_real_ else as.numeric(v), 0)
+    v = col$values
+    if (is.list(v)) vapply(v, function(z) if (is.null(z)) NA_real_ else as.numeric(z), 0) else as.numeric(v)
   } else {
-    codes = unlist(col$codes); lv = unlist(col$levels)
+    codes = as.integer(unlist(col$codes)); lv = as.character(unlist(col$levels))
     out = rep(NA_character_, length(codes))
-    out[codes >= 0] = lv[codes[codes >= 0] + 1]
+    i = codes >= 0L
+    out[i] = lv[codes[i] + 1L]
     out
   }
 }
@@ -98,15 +138,33 @@ t2_api_vector = function(col) {
 ## every clinical and virtual column, in the service's order (untyped:
 ## character / numeric, as DBI::dbReadTable would give it). Once per version.
 t2_api_clinical = function(ds) {
-  key = paste0("clin|", ds, "|", t2_api_version(ds))
-  hit = .t2_api[[key]]
+  key = paste(ds, t2_api_version(ds))
+  hit = .t2_api$clin$get(key)
   if (!is.null(hit)) return(hit)
-  got = t2_api_versioned(ds, function(v) sprintf("/v1/%s/clinical?v=%s", ds, v))
+  got = t2_api_versioned(ds, function(v) sprintf("/v1/%s/clinical?v=%s", ds, v), simplify = TRUE)
   cl = got$result
   out = data.frame(sample = as.character(unlist(cl$samples)), stringsAsFactors = FALSE, check.names = FALSE)
   for (col in cl$columns) out[[col$name]] = t2_api_vector(col)
-  .t2_api[[paste0("clin|", ds, "|", got$version)]] = out
-  out
+  .t2_api$clin$put(paste(ds, got$version), out)
+}
+
+## The clinical frame as gitr() types it, ONCE per (dataset, version, roles):
+## list(raw = the frame, fac = every text column a factor (as.factor on the text:
+## the same level order as gitr()), the sample-type column with the dataset's
+## declared level order). Row filters are evaluated on `raw` (before the
+## sample-type column is re-levelled: a value outside the declared levels must
+## stay visible to a rule) and applied to `fac`.
+t2_api_frames = function(ds, roles) {
+  stc = t2_role(roles, "sampletype_col")
+  key = paste(ds, t2_api_version(ds), stc %||% "", paste(roles$sampletype_levels, collapse = "|"), sep = "|")
+  hit = .t2_api$frames$get(key)
+  if (!is.null(hit)) return(hit)
+  raw = t2_api_clinical(ds)
+  fac = raw
+  for (n in colnames(fac)) if (is.character(fac[[n]])) fac[[n]] = as.factor(fac[[n]])
+  if (!is.null(stc) && stc %in% colnames(raw) && !is.null(roles$sampletype_levels))
+    fac[[stc]] = factor(raw[[stc]], levels = roles$sampletype_levels)
+  .t2_api$frames$put(key, list(raw = raw, fac = fac))
 }
 
 ## the values of probes (not clinical columns): a named list of vectors in
@@ -119,43 +177,49 @@ t2_api_values = function(ds, probes) {
   out = list()
   todo = character(0)
   for (p in unique(probes)) {
-    hit = .t2_api$values[[key(p)]]
+    hit = .t2_api$values$get(key(p))
     if (is.null(hit)) todo = c(todo, p)
     else if (!identical(hit, "missing")) out[[p]] = hit
   }
-  remember = function(p, value) {
-    .t2_api$values[[key(p)]] = value
-    .t2_api$values_keys = c(.t2_api$values_keys, key(p))
-  }
   for (chunk in split(todo, ceiling(seq_along(todo) / 100))) {
     got = t2_api_versioned(ds, function(vv) sprintf("/v1/%s/values?v=%s&probes=%s", ds, vv,
-                                                    utils::URLencode(paste(chunk, collapse = ","), reserved = TRUE)))
+                                                    utils::URLencode(paste(chunk, collapse = ","), reserved = TRUE)),
+                           simplify = TRUE)
     res = got$result
-    if (!identical(got$version, v)) { v = got$version; key = function(p) paste0(ds, "|", v, "|", p) }
+    if (!identical(got$version, v)) { v = got$version }
     for (col in res$columns) {
       out[[col$name]] = structure(t2_api_vector(col), t2type = col$type)
-      remember(col$name, out[[col$name]])
+      .t2_api$values$put(key(col$name), out[[col$name]])
     }
-    for (p in as.character(unlist(res$missing))) remember(p, "missing")
-  }
-  if (length(.t2_api$values_keys) > T2_API_VALUES_CACHE) {
-    drop = head(.t2_api$values_keys, length(.t2_api$values_keys) - T2_API_VALUES_CACHE)
-    rm(list = intersect(drop, ls(.t2_api$values)), envir = .t2_api$values)
-    .t2_api$values_keys = setdiff(.t2_api$values_keys, drop)
+    for (p in as.character(unlist(res$missing))) .t2_api$values$put(key(p), "missing")
   }
   out
 }
 
-## gitr() over the service: the same arguments and the same frame. `dbfile`
-## is the dataset NAME here (the bundle's $path in API mode).
+## drop the unused levels of the factor columns `cols` of a frame; only a column
+## that has an empty level is touched (tabulate is a single pass in C)
+t2_droplevels_cols = function(df, cols) {
+  for (n in intersect(cols, colnames(df))) {
+    x = df[[n]]
+    if (is.factor(x) && any(tabulate(x, nlevels(x)) == 0L)) df[[n]] = droplevels(x)
+  }
+  df
+}
+
+## gitr() over the service: the same arguments and the same frame (the tests hold
+## it to the oracle). `dbfile` is the dataset NAME here (the bundle's $path).
+## Levels are dropped for the columns that were ASKED for (and `sample`, the
+## sample-type column); a clinical column nobody asked for may keep levels that
+## the filters emptied.
 gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                     cohort = 'all', makefactors = TRUE, dbfile = "TCGA",
-                    roles = gitr_default_roles, keep_samples = NULL, rules = list(), ...) {
+                    roles = NULL, keep_samples = NULL, rules = list(), ...) {
   ds = dbfile
-  if (is.null(roles)) roles = gitr_default_roles
-  role_has = function(key) { v = roles[[key]]; !is.null(v) && length(v) == 1 && !is.na(v) && nzchar(v) }
+  if (is.null(roles)) roles = t2_api_resolve(ds)$roles
+  stc = t2_role(roles, 'sampletype_col')
   probes = unique(probes); probes = probes[!is.na(probes) & nzchar(probes)]
-  clin = t2_api_clinical(ds)
+  fr = t2_api_frames(ds, roles)
+  clin = fr$raw
   ## the virtual columns exist only in the phenos frame (gitr() synthesises
   ## them there); a name asked for without phenos is a clinical column or a probe
   virtual_cols = c('subtype', 'cohort', 'lcohort')
@@ -163,28 +227,37 @@ gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   is_virtual = probes %in% virtual_cols
   db_probes = probes[!is_clin & !is_virtual]
   vals = if (length(db_probes)) t2_api_values(ds, db_probes) else list()
-  if (phenos) out = clin
-  else out = clin[, unique(c('sample', probes[is_clin])), drop = FALSE]
+  base = if (makefactors) fr$fac else {
+    ## no factors, except the sample-type column's declared level order (as gitr())
+    b = clin
+    if (phenos && !is.null(stc) && stc %in% colnames(b) && !is.null(roles$sampletype_levels))
+      b[[stc]] = fr$fac[[stc]]
+    b
+  }
+  if (phenos) out = base
+  else {
+    cols = unique(c('sample', probes[is_clin]))
+    out = base[, cols, drop = FALSE]
+    if (makefactors && !is.null(stc) && stc %in% cols) out[[stc]] = as.factor(clin[[stc]])   # no re-levelling without phenos
+  }
   ## probe columns in gitr()'s order: the numeric ones sorted (tidyr::spread),
   ## then the categorical ones sorted, then the unknown names (all NA)
   numeric = vapply(vals, is.numeric, NA)
   for (p in c(sort(names(vals)[numeric]), sort(names(vals)[!numeric]), setdiff(db_probes, names(vals))))
     out[[p]] = if (!is.null(vals[[p]])) as.vector(vals[[p]]) else rep(NA, nrow(out))   # plain vector: the t2type attribute stays on the cached copy
   ## a name the service does not know is an all-NA column; gitr() still makes it
-  ## a factor when its suffix names a factor data type (.mut, .cnc ...)
-  if (makefactors) {
-    dt = t2_api_meta(ds)$datatypes
+  ## a factor when its suffix names a factor data type (.mut, .cnc ...): the
+  ## builders' naming convention, kept only for names without data
+  dt = if (makefactors) t2_api_meta(ds)$datatypes else NULL
+  if (makefactors)
     for (p in setdiff(db_probes, names(vals)))
       if (identical(dt[[sub(".*\\.", "", p)]], "factor")) out[[p]] = as.factor(out[[p]])
-  }
   cat(sprintf("%d probes from %s\n", length(db_probes), T2_API_URL))   # as gitr() prints its row counts
   ## filters, on the raw values, as gitr()
-  keep = t2_sample_keep(out, roles, cohort = cohort, nonormal = nonormal, noheme = noheme, rules = rules)
-  if (!is.null(keep_samples)) keep = keep & (out$sample %in% keep_samples)
+  fframe = if (phenos) clin else out
+  keep = t2_sample_keep(fframe, roles, cohort = cohort, nonormal = nonormal, noheme = noheme, rules = rules)
+  if (!is.null(keep_samples)) keep = keep & (fframe$sample %in% keep_samples)
   if (!all(keep)) out = out[keep, , drop = FALSE]
-  stc = roles$sampletype_col
-  if (phenos && role_has('sampletype_col') && stc %in% colnames(out) && !is.null(roles$sampletype_levels))
-    out[[stc]] = factor(out[[stc]], levels = roles$sampletype_levels)
   ## a probe the service reports as categorical with numbers for levels is a
   ## numeric probe declared "factor" (.mut, .cnc): gitr() holds its numbers and
   ## makes the factor from them (levels in numeric order), so do the same
@@ -192,25 +265,17 @@ gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   for (p in db_probes) if (is.character(out[[p]]) && numlike(out[[p]])) out[[p]] = as.numeric(out[[p]])
   if (makefactors) {
     ## a probe column becomes a factor only when its data type is declared
-    ## "factor" in the datatypes table (gitr()'s rule; every text type is, today);
-    ## every clinical text column becomes a factor
-    dt = t2_api_meta(ds)$datatypes
+    ## "factor" in the datatypes table (gitr()'s rule; every text type is, today)
     is_factor_type = function(p) identical(dt[[attr(vals[[p]], "t2type") %||% ""]], "factor")
-    for (p in intersect(db_probes, names(vals))) {
+    for (p in intersect(db_probes, names(vals)))
       if (is.character(vals[[p]]) && is_factor_type(p)) out[[p]] = as.factor(out[[p]])
-    }
-    for (n in setdiff(colnames(out), db_probes)) if (is.character(out[[n]])) out[[n]] = as.factor(out[[n]])
   }
-  out = droplevels(out)
+  out = t2_droplevels_cols(out, c('sample', stc, probes))
   rownames(out) = NULL
-  data.frame(out, check.names = FALSE, stringsAsFactors = FALSE)
+  out
 }
 
-## attributes travel with a vector only until it is modified; keep the type
-## lookup robust to that
-`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || (length(a) == 1 && is.na(a))) b else a
-
-## the dataset descriptor (dataset_registry.R's .resolve_roles) from /meta
+## the dataset descriptor (what the bundle and the plot context carry) from /meta
 t2_api_resolve = function(ds) {
   m = t2_api_meta(ds)
   chr = function(x) as.character(unlist(x))
@@ -223,20 +288,43 @@ t2_api_resolve = function(ds) {
   if (length(roles$normal_label) == 0) roles$normal_label = NA_character_
   if (length(roles$sampletype_levels) == 0) roles$sampletype_levels = NULL
   d = m$defaults
+  ## the opening cohorts are the array `default_cohorts`; defaults$cohorts is the comma
+  ## string kept for the shipped iPhone 1.0 and is never read here
   defaults = list(x = d$x %||% "cohort", y = d$y %||% "", color = d$color %||% "", size = d$size %||% "",
-                  condition = d$condition %||% "", cohorts = .split_meta(d$cohorts))
+                  condition = d$condition %||% "", cohorts = chr(m$default_cohorts))
   list(roles = roles, defaults = defaults, title = m$title %||% ds, label = m$label %||% m$title %||% ds)
 }
 
-## the bundle (lib.R's .read_dataset_bundle) from the service
-t2_api_bundle = function(info) {
-  ds = info$name; roles = info$roles
+## The typed variable list of a dataset (/probes?all=1): list(name, section, type, kind) of
+## parallel vectors -- section "handle" | "probe" | "clinical", type a types name, kind "num" | "cat"
+t2_api_menu = function(ds) {
+  key = paste(ds, t2_api_version(ds))
+  hit = .t2_api$menu$get(key)
+  if (!is.null(hit)) return(hit)
+  got = t2_api_versioned(ds, function(v) sprintf("/v1/%s/probes?all=1&v=%s", ds, v), simplify = TRUE)
+  pl = got$result; what = sprintf("/v1/%s/probes?all=1", ds)
+  for (f in c("probes", "section", "type", "kind", "types")) t2_api_need(pl, f, what)
+  types = as.character(unlist(pl$types))
+  .t2_api$menu$put(paste(ds, got$version), list(
+    name = as.character(unlist(pl$probes)),
+    section = c("handle", "probe", "clinical")[as.integer(unlist(pl$section)) + 1L],
+    type = types[as.integer(unlist(pl$type)) + 1L],
+    kind = c("num", "cat")[as.integer(unlist(pl$kind)) + 1L]))
+}
+
+## the bundle (lib.R's load_dataset_bundle) from the service: everything the app knows
+## of a dataset, as the service declares it
+t2_api_bundle = function(ds) {
+  info = t2_api_resolve(ds)
   m = t2_api_meta(ds)
   chr = function(x) as.character(unlist(x))
-  menu = chr(t2_api_versioned(ds, function(v) sprintf("/v1/%s/probes?all=1&v=%s", ds, v))$result$probes)
+  menu = t2_api_menu(ds)
   clin = t2_api_clinical(ds)
-  handles = c('subtype', 'cohort', if (!is.na(roles$sampletype_col %||% NA)) roles$sampletype_col)
-  mygenes = setdiff(menu, handles)
+  handles = data.frame(name = chr(lapply(m$handles, `[[`, "name")), role = chr(lapply(m$handles, `[[`, "role")),
+                       stringsAsFactors = FALSE)
+  mygenes = menu$name[menu$section == "probe"]
+  clin_vars = menu$name[menu$section == "clinical"]
+  mygenesplus = unique(c(handles$name, mygenes, clin_vars))
   co = m$cohorts
   mycohorts = if (length(co)) {
     v = chr(lapply(co, `[[`, "cohort"))
@@ -245,22 +333,34 @@ t2_api_bundle = function(info) {
   } else character(0)
   presets = lapply(m$presets, function(p) list(
     label = p$label, description = p$description %||% "", default = isTRUE(p$default), source = p$source %||% "",
-    rules = lapply(p$rules, function(r) list(column = r$column, op = r$op, values = chr(r$values))),
-    n_samples = as.integer(p$n_samples)))
-  sources = if (length(m$sources)) lapply(m$sources, function(s) list(
-    label = s$label, description = s$description %||% "",
-    rules = lapply(s$rules, function(r) list(column = r$column, op = r$op, values = chr(r$values))),
+    rules = t2_as_rules(p$rules), n_samples = as.integer(p$n_samples)))
+  sources = lapply(t2_api_need(m, "sources", sprintf("/v1/%s/meta", ds)), function(s) list(
+    label = s$label, description = s$description %||% "", rules = t2_as_rules(s$rules),
     n_samples = as.integer(s$n_samples), cohorts = chr(s$cohorts), groups = chr(s$groups),
     exclusions = chr(s$exclusions), single_level_columns = chr(s$single_level_columns)))
-  else t2_sources(clin, roles, presets, unname(mycohorts), info$label)   # a service older than /meta sources
   types = if (length(m$types)) do.call(rbind, lapply(m$types, function(t) as.data.frame(
     lapply(c(type = "type", description = "description", example = "example", reference = "reference",
-             source_file = "source_file", source_url = "source_url"), function(k) t[[k]] %||% ""),
+             source_file = "source_file", source_url = "source_url", label = "label"), function(k) t[[k]] %||% ""),
     stringsAsFactors = FALSE))) else data.frame(type = character(0))
-  list(name = ds, path = ds, title = info$title, label = info$label, roles = roles, defaults = info$defaults,
-       mygenes = mygenes, probes = mygenes, samples = clin$sample, mutationsamples = character(0),
-       mycohorts = mycohorts, mygenesplus = menu, clin = clin, presets = presets, sources = sources,
-       types = types, version = t2_api_version(ds),
+  tte = stats::setNames(lapply(m$tte_variables, function(t) list(
+    name = t$name, label = t$label %||% t$name, event_col = t$event_col, time_col = t$time_col,
+    time_unit = t$time_unit %||% "days", description = t$description %||% "")),
+    chr(lapply(m$tte_variables, `[[`, "name")))
+  about = lapply(m$about[c("description", "citation", "attribution", "url")], function(x) x %||% "")
+  list(name = ds, path = ds, title = info$title, label = info$label, roles = info$roles, defaults = info$defaults,
+       handles = handles, mygenes = mygenes, clin_vars = clin_vars, mygenesplus = mygenesplus,
+       menu = menu, names_lower = tolower(mygenesplus),
+       samples = clin$sample, mycohorts = mycohorts, presets = presets, sources = sources,
+       types = types, tte = tte, type_labels = unlist(m$type_labels) %||% character(0), about = about,
+       default_cohorts = chr(m$default_cohorts), datatypes = unlist(m$datatypes) %||% character(0),
+       version = t2_api_version(ds), clin = clin,
        descriptions = stats::setNames(chr(lapply(m$clinical_descriptions, `[[`, "description")),
                                       chr(lapply(m$clinical_descriptions, `[[`, "column"))))
+}
+
+## the datasets the service serves, and the one opened first (TCGA when present)
+t2_datasets = function() vapply(t2_api_datasets(), `[[`, "", "name")
+t2_default_dataset = function() {
+  d = t2_datasets()
+  if ("TCGA" %in% d) "TCGA" else if (length(d)) d[1] else stop("t2api: the service serves no dataset")
 }

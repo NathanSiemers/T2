@@ -3,12 +3,11 @@
 ## the limits hold, and the bundled fonts are really used.
 ##   Rscript test_figure_export.R        (from the app directory)
 suppressMessages({
-  source("global.R"); source("database_connection_shiny.R")
+  source("global.R")
   source("lib.R"); source("input_validation.R")
 })
 grDevices::pdf(NULL)
-ok <- function(cond, msg) cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n")
-quiet <- function(expr) { utils::capture.output(v <- suppressWarnings(suppressMessages(expr))); v }
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
 tmp <- function(ext) tempfile(fileext = paste0(".", ext))
 
 ## minimal readers, so the checks do not depend on the code under test
@@ -79,7 +78,7 @@ draw <- function(inp, preset = "half_third", family = "Liberation Sans", source 
   pr <- T2_FIG_PRESETS[[preset]]
   inp <- utils::modifyList(c(list(cohort = "all", nonormal = FALSE, allComplete = TRUE, smooth = "TRUE",
                                   show_legend = TRUE), pr$style), inp)
-  r <- quiet(fun_plot1(inp, reactive = FALSE, dbfile = b$path, roles = b$roles, dataset_label = b$label,
+  r <- quiet(fun_plot1(inp, reactive = FALSE, ctx = t2_plot_ctx(b),
                        gg = utils::modifyList(pr$gg, extra_gg), base_size = pr$base_size, base_family = family,
                        caption = if (source) T2_CITATION else "",
                        fig_width = .t2_to_in(pr$width, pr$units)))
@@ -202,4 +201,4 @@ ok(all(vapply(T2_FIG_PRESETS, function(pr) {
 ok(T2_FIG_PRESETS$nature1$width == 89 && T2_FIG_PRESETS$nature2$width == 183 &&
    T2_FIG_PRESETS$nature2$height <= 170, "Nature presets: 89 and 183 mm wide, no taller than 170 mm")
 ok(!file.exists("Rplots.pdf"), "no stray Rplots.pdf")
-cat("== figure export test done ==\n")
+finish("test_figure_export")

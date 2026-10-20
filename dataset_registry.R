@@ -1,52 +1,25 @@
 ## dataset_registry.R
 ## ============================================================================
-## Multi-dataset support for T2.
+## The datasets as FILES: discovery, and their roles read VERBATIM from each
+## file's dataset_meta table. This is the builders' library and the
+## equivalence ORACLE of the tests (gitr() over a file, test_equivalence.R,
+## test_gitr_api.R); the Shiny app never uses it: the app is an api client
+## (t2_api_client.R) and reads everything from the service
+## (DATASET-CONTRACT.md, decision 2026-10-19).
 ##
 ## DESIGN (see MULTIDATASET.md): each dataset is a SEPARATE SQLite file with the
-## SAME schema shape (samples / probes / types / tcgai / tcgacati / tested /
-## clinpheno / cohorts / datatypes + the tcgas/tcgacats/tcga/tcgacat views).
-## The dataset boundary is a PHYSICAL partition, not a row-level `project`
-## column — because the datasets are not numerically comparable, their clinical
-## tables have different column sets, and the existing fact table is 577M rows
-## (a column-migration would be a multi-hour, high-risk rewrite for a
-## cross-dataset JOIN capability that is semantically meaningless here).
-##
-## A dataset is SELF-DESCRIBING: each non-canonical db carries a small
-## `dataset_meta(key,value)` table that names which clinical column plays the
-## role of cohort / subtype / sample-type, plus sensible default selections.
-## The canonical TCGA db predates this convention, so its role map is supplied
-## as a hard-coded fallback below.
+## SAME schema shape. Its name is its file name: datasets/<name>.db (TCGA.db,
+## cptac.db, ...); the legacy top-level tcga.db is also "TCGA". A dataset is
+## SELF-DESCRIBING: dataset_meta(key, value) names the clinical column of each
+## role (cohort / subtype / sample type) and the default picks. Nothing here
+## derives or guesses: a file without dataset_meta is an error, not a fallback.
 ## ============================================================================
 
-`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || (length(a) == 1 && is.na(a))) b else a
+if (!exists("t2_cache")) source("t2_util.R")
 
 ## Directory holding additional dataset files (one <name>.db per dataset).
 ## T2_DATASETS_DIR points a test or a trial at other copies of the files.
 DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
-
-## ---------------------------------------------------------------------------
-## Canonical TCGA role map (the original hard-coded behaviour of gitr/lib/app).
-## ---------------------------------------------------------------------------
-.TCGA_ROLES <- list(
-  cohort_col        = "tumtype",
-  subtype_col       = "Subtype_Selected",
-  sampletype_col    = "sample_type",
-  normal_label      = "Solid Tissue Normal",
-  heme_values       = c("LAML", "THYM", "DLBC"),
-  sampletype_levels = c("Primary Tumor", "Recurrent Tumor", "Metastatic",
-                        "Additional - New Primary", "Additional Metastatic",
-                        "Primary Blood Derived Cancer - Peripheral Blood",
-                        "Solid Tissue Normal")
-)
-.TCGA_DEFAULTS <- list(
-  x = "cohort", y = "CD8A", color = "sample_type", size = "",
-  condition = "StromalScore.estimate",
-  ## the cohorts shown first: 33 boxes make the opening plot too busy to read
-  ## (the same nine as the t2api service and the iPhone app)
-  cohorts = c("COAD", "ESCA", "HNSC", "KIRC", "LUAD", "LUSC", "PAAD", "SKCM", "STAD")
-)
-.TCGA_TITLE <- "T2: TCGA 2018 Pan-Cancer Database"
-.TCGA_LABEL <- "TCGA Pan-Cancer 2018"   # short label used in plot captions
 
 ## ---------------------------------------------------------------------------
 ## Low-level helpers
@@ -72,14 +45,6 @@ DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
   setNames(as.list(m$value), m$key)
 }
 
-## clinpheno column names for a db (used for generic role introspection).
-.clin_cols <- function(path) {
-  con <- tryCatch(.ds_ro(path), error = function(e) NULL)
-  if (is.null(con)) return(character(0))
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-  tryCatch(DBI::dbListFields(con, "clinpheno"), error = function(e) character(0))
-}
-
 ## comma-separated meta value -> character vector (empty string -> character(0))
 ## A list stored in dataset_meta. Values can contain commas ("Acute Myeloid
 ## Leukemia, Induction Failure Subproject"), so builders separate with "|"; a
@@ -92,94 +57,71 @@ DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
 }
 
 ## ---------------------------------------------------------------------------
-## Build a role map for a dataset, in priority order:
-##   1. canonical TCGA fallback (name == "TCGA")
-##   2. self-describing dataset_meta table
-##   3. generic introspection of clinpheno column names
+## The role map of a dataset FILE: dataset_meta, verbatim (contract s.1).
 ## ---------------------------------------------------------------------------
 .resolve_roles <- function(name, path) {
-  if (t2_api_on()) return(t2_api_resolve(name))
-  if (identical(name, "TCGA")) {
-    return(list(roles = .TCGA_ROLES, defaults = .TCGA_DEFAULTS,
-                title = .TCGA_TITLE, label = .TCGA_LABEL))
-  }
-
   meta <- .read_dataset_meta(path)
-  if (!is.null(meta)) {
-    roles <- list(
-      cohort_col        = meta$cohort_col     %||% NA_character_,
-      subtype_col       = meta$subtype_col    %||% NA_character_,
-      sampletype_col    = (meta$sampletype_col %||% "") ,
-      ## normal_label may be a comma-separated LIST of non-tumor sample types
-      normal_label      = .split_meta(meta$normal_label),
-      heme_values       = .split_meta(meta$heme_values),
-      sampletype_levels = .split_meta(meta$sampletype_levels)
-    )
-    ## normalise empty strings to NA for the role columns (a dataset without a
-    ## subtype stores subtype_col = ""; the t2api client does the same, so the
-    ## variable menu is identical over files and over the service)
-    for (k in c("cohort_col", "subtype_col", "sampletype_col"))
-      if (!nzchar(roles[[k]] %||% "")) roles[[k]] <- NA_character_
-    if (length(roles$normal_label) == 0)       roles$normal_label   <- NA_character_
-    if (length(roles$sampletype_levels) == 0)  roles$sampletype_levels <- NULL
-    ## the parts of the collection offered as data sources (see t2_presets.R)
-    roles$source_col          <- meta$source_col %||% NA_character_
-    roles$sources             <- .split_meta(meta$sources)
-    roles$source_labels       <- .split_meta(meta$source_labels)
-    roles$source_descriptions <- .split_meta(meta$source_descriptions)
-    defaults <- list(
-      x         = meta$default_x         %||% "cohort",
-      y         = meta$default_y         %||% "",
-      color     = meta$default_color     %||% "",
-      size      = meta$default_size      %||% "",
-      condition = meta$default_condition %||% "",
-      cohorts   = .split_meta(meta$default_cohorts)
-    )
-    title <- meta$title %||% name
-    label <- meta$label %||% title
-    return(list(roles = roles, defaults = defaults, title = title, label = label))
-  }
-
-  ## generic introspection fallback
-  cc <- .clin_cols(path)
-  pick <- function(cands) { hit <- cands[cands %in% cc]; if (length(hit)) hit[1] else NA_character_ }
+  if (is.null(meta))
+    stop("dataset '", name, "' (", path, ") has no dataset_meta table: build it with the builder of its dataset ",
+         "(DATASET-CONTRACT.md) or `Rscript dataset_meta.R set ", path, " cohort_col=...`")
   roles <- list(
-    cohort_col        = pick(c("tumtype", "cohort", "group", "dataset")),
-    subtype_col       = pick(c("Subtype_Selected", "subtype")),
-    sampletype_col    = pick(c("sample_type", "sampletype")),
-    normal_label      = NA_character_,
-    heme_values       = character(0),
-    sampletype_levels = NULL
+    cohort_col        = meta$cohort_col     %||% NA_character_,
+    subtype_col       = meta$subtype_col    %||% NA_character_,
+    sampletype_col    = (meta$sampletype_col %||% ""),
+    ## normal_label may be a LIST of non-tumor sample types
+    normal_label      = .split_meta(meta$normal_label),
+    heme_values       = .split_meta(meta$heme_values),
+    sampletype_levels = .split_meta(meta$sampletype_levels)
   )
-  defaults <- list(x = "cohort", y = "", color = "", size = "", condition = "", cohorts = character(0))
-  list(roles = roles, defaults = defaults, title = name, label = name)
+  ## an unset role is NA (a dataset without a subtype stores subtype_col = "")
+  for (k in c("cohort_col", "subtype_col", "sampletype_col"))
+    if (!nzchar(roles[[k]] %||% "")) roles[[k]] <- NA_character_
+  if (length(roles$normal_label) == 0)       roles$normal_label   <- NA_character_
+  if (length(roles$sampletype_levels) == 0)  roles$sampletype_levels <- NULL
+  roles$source_col          <- meta$source_col %||% NA_character_
+  roles$sources             <- .split_meta(meta$sources)
+  roles$source_labels       <- .split_meta(meta$source_labels)
+  roles$source_descriptions <- .split_meta(meta$source_descriptions)
+  defaults <- list(
+    x         = meta$default_x         %||% "cohort",
+    y         = meta$default_y         %||% "",
+    color     = meta$default_color     %||% "",
+    size      = meta$default_size      %||% "",
+    condition = meta$default_condition %||% "",
+    cohorts   = .split_meta(meta$default_cohorts)
+  )
+  title <- meta$title %||% name
+  label <- meta$label %||% title
+  list(roles = roles, defaults = defaults, title = title, label = label, order = suppressWarnings(as.numeric(meta$order %||% NA)))
 }
 
 ## ---------------------------------------------------------------------------
-## Public API
+## Public API (files)
 ## ---------------------------------------------------------------------------
+
+## The dataset name of a file: its base name; tcga.db / TCGA.db (any case) is "TCGA".
+.dataset_name_of <- function(path) {
+  nm <- sub("\\.db$", "", basename(path))
+  if (identical(tolower(nm), "tcga")) "TCGA" else nm
+}
 
 ## Discover available datasets. Returns a named list keyed by dataset name;
-## each element is list(name, path). TCGA (root tcga.db) is always first.
+## each element is list(name, path), in the order of the dataset_meta key
+## `order` (missing = after the ordered ones), then alphabetically. Every *.db
+## of DATASETS_DIR is a dataset; the legacy top-level tcga.db is TCGA when
+## the directory holds no TCGA.db.
 discover_datasets <- function() {
+  paths <- if (dir.exists(DATASETS_DIR)) sort(list.files(DATASETS_DIR, pattern = "\\.db$", full.names = TRUE)) else character(0)
   out <- list()
-  if (t2_api_on()) {
-    for (d in t2_api_datasets()) out[[d$name]] <- list(name = d$name, path = d$name)
-    return(out)
-  }
-  if (file.exists("tcga.db")) out[["TCGA"]] <- list(name = "TCGA", path = "tcga.db")
-  if (dir.exists(DATASETS_DIR)) {
-    dbs <- list.files(DATASETS_DIR, pattern = "\\.db$", full.names = TRUE)
-    for (p in sort(dbs)) {
-      nm <- sub("\\.db$", "", basename(p))
-      if (identical(nm, "TCGA")) next   # never shadow the canonical entry
-      out[[nm]] <- list(name = nm, path = p)
-    }
-  }
-  out
+  for (p in paths) { nm <- .dataset_name_of(p); out[[nm]] <- list(name = nm, path = p) }
+  if (is.null(out[["TCGA"]]) && file.exists("tcga.db")) out[["TCGA"]] <- list(name = "TCGA", path = "tcga.db")
+  ord <- vapply(out, function(d) {
+    m <- .read_dataset_meta(d$path); o <- suppressWarnings(as.numeric(m$order %||% NA)); if (is.na(o)) Inf else o
+  }, 0)
+  out[order(ord, names(out))]
 }
 
-## Names of available datasets (for the UI dropdown).
+## Names of available datasets.
 list_datasets <- function() names(discover_datasets())
 
 ## The default dataset name (TCGA if present, else the first discovered).
@@ -188,7 +130,7 @@ default_dataset <- function() {
   if ("TCGA" %in% d) "TCGA" else if (length(d)) d[1] else stop("No datasets found")
 }
 
-## Full descriptor for one dataset: name, path, roles, defaults, title.
+## Full descriptor for one dataset file: name, path, roles, defaults, title.
 dataset_info <- function(name) {
   d <- discover_datasets()
   if (!name %in% names(d)) stop("Unknown dataset: ", name)
@@ -200,3 +142,6 @@ dataset_info <- function(name) {
 
 ## Convenience: db path for a dataset name.
 dataset_db_path <- function(name) dataset_info(name)$path
+
+## The roles of a database FILE (what gitr(roles = NULL) uses): dataset_meta, verbatim.
+dataset_roles <- function(path) .resolve_roles(.dataset_name_of(path), path)$roles

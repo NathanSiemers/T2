@@ -1,48 +1,5 @@
-mysql = FALSE
-mysqldb = 'prod'
-## T2_API_URL set: the data layer is the t2api service, no database files (t2_api_client.R)
-source('t2_api_client.R')
-
-library(DBI)
-
-## Open a read-only connection to a specific dataset db file.
-## (Multi-dataset support: the app opens one of these per selected dataset.)
-## The dbs are built elsewhere and copied in as single files in rollback-journal
-## mode (set at the end of the build), so read-only containers need no
-## -wal/-shm sidecars. The served copies are never written to.
-open_dataset_con = function(dbfile = 'tcga.db') {
-    RSQLite::dbConnect(RSQLite::SQLite(), dbname = dbfile,
-                       flags = RSQLite::SQLITE_RO)
-}
-
-if (t2_api_on()) {
-    ## the service is the data layer: no file to open (lib.R skips its legacy
-    ## table handles too)
-    con = NULL
-} else if( ! mysql ) {
-    ## Default connection points at the canonical TCGA db so that sourcing
-    ## lib.R at startup (which builds the default choice-lists) still works
-    ## unchanged. The app re-points to the selected dataset via the bundle.
-    db = 'tcga.db'
-    con = open_dataset_con(db)
-} else {
-    if ( ! require( 'RMySQL' ) ) {  install.packages('RMySQL')  }
-    library(RMySQL)
-    if( mysqldb == 'dev') {
-        con = RMySQL::dbConnect (
-            drv       = RMySQL::MySQL(),
-            dbname    = "pancan2018dev",
-            host      = Sys.getenv("MYSQL_HOST", "localhost"),
-            port      = 3306,
-            username  = Sys.getenv("MYSQL_READER_USER", "reader"),
-            password  = Sys.getenv("MYSQL_READER_PASSWORD"))
-    } else {
-        con = RMySQL::dbConnect (
-            drv       = RMySQL::MySQL(),
-            dbname    = "pancan2018",
-            host      = Sys.getenv("MYSQL_HOST", "localhost"),
-            port      = 3306,
-            username  = Sys.getenv("MYSQL_READER_USER", "reader"),
-            password  = Sys.getenv("MYSQL_READER_PASSWORD"))
-    }
-}
+## database_connection_shiny.R
+## The Shiny app opens no database: its data layer is the t2api service (t2_api_client.R,
+## T2_API_URL). This file stays only so that scripts which still source it keep working.
+if (!exists("t2_cache")) source("t2_util.R")
+source("t2_api_client.R")

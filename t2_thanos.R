@@ -10,8 +10,8 @@
 ##      without the Filter tab when it didn't)
 ##   2. backend_t2(bundle): the Thanos "backend" for a T2 dataset. Rows are the
 ##      dataset's samples; columns are every variable T2 can plot. Columns are
-##      fetched lazily through gitr(), so the Filter tab sees exactly the
-##      values (types, sparse zeros, NAs) the plot sees.
+##      fetched lazily through gitr() (over the service), so the Filter tab sees
+##      exactly the values (types, sparse zeros, NAs) the plot sees.
 ##
 ## Row <-> sample mapping: Thanos speaks row numbers, T2 speaks sample ids.
 ## backend$samples[i] is the sample id of row i (clinpheno order).
@@ -63,6 +63,7 @@ T2_BACKEND_MAX_COLS = 300
 ## plus T2's own extras:
 ##   $samples                      sample id per row
 ##   $prefetch(cols)               fetch several probes in ONE query
+##   $fetched()                    the probe columns fetched so far
 ##   $base_mask(cohort, rules)     logical per row: the Select tab's sample choice
 ##                                 (cohort; group and exclusions as rules)
 ## `bundle` is a SOURCE bundle (load_source_bundle): a part of a collection
@@ -70,8 +71,9 @@ T2_BACKEND_MAX_COLS = 300
 ## clinical column with one value in the part is not offered, and a
 ## categorical column lists only the levels present in the part.
 backend_t2 = function(bundle) {
-    dbfile = bundle$path
-    roles  = bundle$roles
+    ctx    = t2_plot_ctx(bundle)      # no Filter-tab survivors, no rules: the whole dataset
+    dbfile = ctx$path
+    roles  = ctx$roles
     source = bundle$source %||% list(rules = list(), single_level_columns = character(0))
 
     ## typed: clinical + virtual columns exactly as gitr() hands them to the
@@ -95,9 +97,10 @@ backend_t2 = function(bundle) {
     ## (some builds list clinical columns in allprobes too, hence after the union)
     columns = setdiff(columns[!is.na(columns) & nzchar(columns)], c('sample', source$single_level_columns))
 
-    ## name -> list(col = <vector in row order>, info = <Thanos column info>)
-    store = new.env(parent = emptyenv())
-    fetched = character(0)   # probe columns in fetch order, for eviction
+    ## name -> list(col = <vector in row order>, info = <Thanos column info>);
+    ## probe columns are kept up to T2_BACKEND_MAX_COLS, the oldest dropped first
+    ## (clinical columns are served from `typed` and are never fetched)
+    store = t2_cache(length(clin_cols) + T2_BACKEND_MAX_COLS)
 
     ## coerce + describe one column through Thanos' own in-memory backend, so
     ## type handling (factor -> character, integer -> double, ...) and the
@@ -117,12 +120,12 @@ backend_t2 = function(bundle) {
             present = unique(as.character(x[in_source & !is.na(x)]))
             info$levels = info$levels[info$levels %in% present]
         }
-        store[[v]] = list(col = be$get_column(v), info = info)
+        store$put(v, list(col = be$get_column(v), info = info))
     }
 
     fetch = function(vs) {
         vs = unique(vs[vs %in% columns])
-        vs = vs[!vapply(vs, exists, NA, envir = store, inherits = FALSE)]
+        vs = vs[!vapply(vs, store$has, NA)]
         if (length(vs) == 0) return(invisible())
         clin = intersect(vs, clin_cols)
         for (v in clin) put(v, typed[[v]])
@@ -130,7 +133,9 @@ backend_t2 = function(bundle) {
         if (length(probes) == 0) return(invisible())
         ## a failed query must not take the session down: the column shows up
         ## as all-NA instead (and is not cached, so a later attempt retries)
-        d = tryCatch(gitr(probes, dbfile = dbfile, roles = roles),
+        ## the probes alone, not the clinical frame again (phenos = FALSE): the clinical
+        ## columns come from `typed`, and each fetch used to copy and re-type all of them
+        d = tryCatch(gitr(probes, phenos = FALSE, dbfile = dbfile, roles = roles),
                      error = function(e) {
                          warning("backend_t2: fetching ", paste(probes, collapse = ", "),
                                  " failed: ", conditionMessage(e), call. = FALSE)
@@ -141,18 +146,12 @@ backend_t2 = function(bundle) {
         for (p in probes) {
             put(p, if (p %in% colnames(d)) d[[p]][idx] else rep(NA_character_, n))
         }
-        fetched <<- c(fetched, probes)
-        if (length(fetched) > T2_BACKEND_MAX_COLS) {
-            drop = head(fetched, length(fetched) - T2_BACKEND_MAX_COLS)
-            rm(list = intersect(drop, ls(store)), envir = store)
-            fetched <<- setdiff(fetched, drop)
-        }
         invisible()
     }
 
     entry = function(v) {
         fetch(v)
-        e = store[[v]]
+        e = store$get(v)
         if (is.null(e)) {      # unknown name or failed fetch: an all-NA column
             x = rep(NA_character_, n)
             e = list(col = x,
@@ -169,6 +168,7 @@ backend_t2 = function(bundle) {
         get_column_info = function(name) entry(name)$info,
         samples         = samples,
         prefetch        = fetch,
+        fetched         = function() setdiff(store$keys(), clin_cols),   # the probe columns held so far
         base_mask       = function(cohort = 'all', rules = list(), nonormal = FALSE, noheme = FALSE) {
             t2_sample_keep(raw, roles, cohort = cohort, nonormal = nonormal,
                            noheme = noheme, rules = c(source$rules, rules))
@@ -176,8 +176,8 @@ backend_t2 = function(bundle) {
     )
 }
 
-## Backends are shared by every session of this R process, one per dataset
-## file: the served databases are read-only, so the cached clinical frame and
+## Backends are shared by every session of this R process, one per data source:
+## the served databases are read-only, so the cached clinical frame and
 ## fetched columns are the same for everyone and a new session starts without
 ## re-reading them.
 .t2_backends = new.env(parent = emptyenv())

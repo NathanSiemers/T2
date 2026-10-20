@@ -14,11 +14,10 @@
 ##
 ## Complements test_shiny_fuzz's API sibling (service/fuzz.sh). Needs shinytest2 + Chrome.
 ##   CHROMOTE_CHROME=<chrome> Rscript test_shiny_fuzz.R
-##   (T2_DATASETS_DIR for other db copies; file mode — no T2_API_URL — exercises gitr/SQL)
+##   (T2_API_URL names the service the app reads from; the app has no file mode)
 suppressMessages({ library(shiny); library(shinytest2) })
-ok <- function(cond, msg) { cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n"); if (!isTRUE(cond)) FAILS <<- FAILS + 1 }
-FAILS <- 0
-`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || (length(a)==1 && is.na(a))) b else a
+source("t2_util.R")               # the one %||%
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero
 if (is.null(tryCatch(chromote::find_chrome(), error = function(e) NULL))) {
   cat("SKIP: no Chrome/Chromium found (set CHROMOTE_CHROME)\n"); quit(status = 0)
 }
@@ -156,5 +155,4 @@ app$click("plot_btn"); settle(5000)
 ok(isTRUE(app$get_js("(function(){var i=document.querySelector('#main_plot img'); return !!i && i.naturalWidth>50;})()")),
    "after the storm a normal plot still draws")
 
-cat(sprintf("\n== shiny fuzz done: %s ==\n", if (FAILS == 0) "ALL PASS" else paste(FAILS, "FAILED")))
-quit(status = if (FAILS == 0) 0 else 1)
+finish("shiny fuzz")

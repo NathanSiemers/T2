@@ -1,23 +1,23 @@
-## test_multidataset.R — smoke test for multi-dataset support.
-## Exercises registry discovery, both dataset bundles, and gitr() against both
-## the real TCGA db and the synthetic DEMO db (incl. graceful filter no-ops).
+## test_multidataset.R — multi-dataset support through the service (T2_API_URL).
+## Exercises the datasets the service lists, every dataset's bundle (handles, time-to-event
+## variables, type labels, About prose, default cohorts: what /meta declares, DATASET-CONTRACT.md),
+## and gitr() against TCGA, the synthetic DEMO and CPTAC (incl. graceful filter no-ops).
 suppressMessages({
-  library(DBI)
-  source("dataset_registry.R")
-  source("database_connection_shiny.R")  # opens default `con` to tcga.db
-  source("gitr.R")
-  source("lib.R")                          # builds default bundle + globals
+  source("global.R")
+  source("lib.R")                          # builds the default bundle + globals; stops without T2_API_URL
 })
 
-ok <- function(cond, msg) cat(if (cond) "  PASS " else "  FAIL ", msg, "\n")
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
 
-cat("== Registry ==\n")
-ds <- list_datasets()
+cat("== Datasets (from /v1/datasets) ==\n")
+ds <- t2_datasets()
 cat("  datasets:", paste(ds, collapse = ", "), "\n")
-ok(all(c("TCGA", "DEMO") %in% ds), "TCGA and DEMO both discovered")
-ok(default_dataset() == "TCGA", "default dataset is TCGA")
+ok(all(c("TCGA", "DEMO") %in% ds), "TCGA and DEMO both listed")
+ok(t2_default_dataset() == "TCGA", "default dataset is TCGA")
+srcs <- list_sources()
+ok(all(ds %in% sub("\\|.*", "", srcs)), "the Data set menu is built from /v1/datasets and covers every dataset")
 
-cat("\n== Bundles ==\n")
+cat("\n== Bundles: what the service declares ==\n")
 bt <- load_dataset_bundle("TCGA")
 bd <- load_dataset_bundle("DEMO")
 cat("  TCGA: title =", bt$title, "| label =", bt$label, "\n")
@@ -35,6 +35,47 @@ cat("        cohorts:", paste(bd$mycohorts, collapse = ", "), "\n")
 ok(is.na(bd$roles$sampletype_col), "DEMO has no sample-type role (as designed)")
 ok(!"sample_type" %in% bd$mygenesplus, "DEMO choice list omits sample_type")
 ok("growth_media" == bd$roles$subtype_col, "DEMO subtype role = growth_media")
+
+cat("\n== Handles, time-to-event variables, type labels, About, default cohorts (the contract) ==\n")
+roles_of <- function(b) stats::setNames(b$handles$role, b$handles$name)
+want_handles <- list(TCGA = c(subtype = "subcohort", cohort = "cohort", sample_type = "sample_type"),
+                     cptac = c(cohort = "cohort", sample_type = "sample_type"),
+                     tcgatargetgtex = c(subtype = "subcohort", cohort = "cohort", sample_type = "sample_type"),
+                     DEMO = c(subtype = "subcohort", cohort = "cohort"))
+want_tte <- list(TCGA = c("OS", "PFI", "DSS", "DFI"), cptac = c("OS", "PFI"), tcgatargetgtex = character(0))
+for (d in intersect(ds, names(want_handles))) {
+  b <- load_dataset_bundle(d)
+  ok(identical(roles_of(b), want_handles[[d]]), sprintf("%s handles: %s", d, paste(sprintf("%s (%s)", b$handles$name, b$handles$role), collapse = ", ")))
+  ok(all(b$handles$name %in% b$mygenesplus) && identical(head(b$mygenesplus, nrow(b$handles)), b$handles$name),
+     sprintf("%s: the handles lead the variable menu", d))
+  ok(!any(b$handles$name %in% b$mygenes), sprintf("%s: no handle among the probes", d))
+  m <- t2_api_meta(d)
+  served <- as.character(unlist(m$survival_endpoints))
+  ok(identical(tte_names(b), served), sprintf("%s time-to-event variables = /meta survival_endpoints: %s", d,
+                                                 if (length(served)) paste(served, collapse = ", ") else "(none)"))
+  if (!is.null(want_tte[[d]])) ok(identical(tte_names(b), want_tte[[d]]), sprintf("%s declares %d time-to-event variable(s)", d, length(want_tte[[d]])))
+  for (t in b$tte) ok(all(c(t$event_col, t$time_col) %in% colnames(b$clin)) && identical(t$time_unit, "days"),
+                      sprintf("%s tte %s: event / time columns exist, unit days", d, t$name))
+  ok(setequal(names(b$type_labels), b$types$type), sprintf("%s type_labels cover every data type (%d)", d, length(b$type_labels)))
+  ok(is.character(b$about$description) && is.character(b$about$citation) && is.character(b$about$attribution) && is.character(b$about$url),
+     sprintf("%s About has description / citation / attribution / url", d))
+  ok(identical(b$default_cohorts, as.character(unlist(m$default_cohorts))) && all(b$default_cohorts %in% b$mycohorts),
+     sprintf("%s default cohorts (%d) are cohorts of the dataset", d, length(b$default_cohorts)))
+}
+ok("OS" %in% tte_names(bd), "DEMO declares its synthetic OS")
+ok(bt$type_labels[["mut"]] == "mutation" && bt$type_labels[["cnv"]] == "CNA", "TCGA type labels: mut -> mutation, cnv -> CNA")
+ok(nzchar(bt$about$citation) && nzchar(bt$about$attribution), "TCGA About: citation and attribution")
+ok(identical(bt$default_cohorts, c("COAD", "ESCA", "HNSC", "KIRC", "LUAD", "LUSC", "PAAD", "SKCM", "STAD")), "TCGA opens on its nine cohorts")
+ok(bd$type_labels[["driver"]] == "mutation" && bd$type_labels[["expr"]] == "", "DEMO type labels: driver -> mutation, expr -> (none)")
+if ("cptac" %in% ds) {
+  bc0 <- load_dataset_bundle("cptac")
+  cat("  cptac type labels:", paste(sprintf("%s=\"%s\"", names(bc0$type_labels), bc0$type_labels), collapse = " "), "\n")
+  if (!nzchar(bc0$about$attribution)) cat("  NOTE: the cptac file served here has no About / attribution yet (the data layer fills it); not counted\n")
+  else ok(grepl("National Cancer Institute|NCI|CPTAC", bc0$about$attribution), "cptac About carries the data provider's attribution")
+}
+## the title words come from the labels
+bw <- list(menu = bt$menu, type_labels = bt$type_labels)
+ok(identical(t2_title_name(c("TP53.mut", "CD8A", "TP53.cnv"), bw), c("TP53 mutation", "CD8A", "TP53 CNA")), "title words from type_labels (TP53.mut -> 'TP53 mutation', bare RNA unchanged)")
 
 cat("\n== gitr against TCGA ==\n")
 dt <- gitr(c("CD8A", "cohort", "sample_type"),
@@ -66,7 +107,7 @@ ok(is.numeric(dd$GENE01) && median(dd$GENE01) > 5 && median(dd$GENE01) < 11,
    "DEMO GENE01 numeric on log2-TPM scale (~8, not TCGA scale)")
 ok(is.factor(dd$TP53_DRIVER), "DEMO categorical driver is a factor")
 
-cat("\n== gitr against CPTAC (skipped when datasets/cptac.db is absent) ==\n")
+cat("\n== gitr against CPTAC (skipped when the service does not serve cptac) ==\n")
 if (!"cptac" %in% ds) {
   cat("  (no cptac dataset discovered)\n")
 } else {
@@ -92,4 +133,4 @@ if (!"cptac" %in% ds) {
   ok(is.numeric(dc$OS.time) && all(dc$OS %in% c(0, 1, NA)), "survival columns OS / OS.time")
 }
 
-cat("\n== Done ==\n")
+finish("test_multidataset")

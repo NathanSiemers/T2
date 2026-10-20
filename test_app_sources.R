@@ -5,8 +5,7 @@
 ## sets are computed independently from the raw clinical table.
 ##   T2_DATASETS_DIR=<dir with a tcgatargetgtex.db that declares its parts> Rscript test_app_sources.R
 suppressMessages(library(shiny))
-ok <- function(cond, msg) cat(if (isTRUE(cond)) "  PASS " else "  FAIL ", msg, "\n")
-quiet <- function(expr) { utils::capture.output(v <- expr); v }
+source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
 same_set <- function(a, b) setequal(as.character(a), as.character(b))
 
 base_inputs <- list(size = "", cohort = "all", pcortype = "none", preset_group = "", multi_y = FALSE,
@@ -113,3 +112,4 @@ testServer(shiny::shinyAppDir("."), {
   sel <- apply_bundle_choices(b, keep = list(cohort = c("BRCA", "nonsense")))
   ok(identical(sel$cohort, "BRCA"), "a carried cohort choice is kept where it exists")
 })
+finish("test_app_sources")

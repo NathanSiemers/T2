@@ -42,10 +42,10 @@ missing. `codes`: index into `levels` from 0, `-1` = missing. `type`: the data t
 |---|---|
 | `GET /healthz` | `ok` |
 | `GET /v1/datasets` | every dataset: `name`, `title`, `label`, `n_samples`, `n_probes`, `version`, `roles`, `defaults`, `sources` (the same list as `/meta`'s, so a client can build its data-source menu from this one answer) |
-| `GET /v1/{ds}/meta` | one dataset in full: the above plus `presets`, `sources`, `clinical_columns`, `clinical_descriptions` (what each clinical column means and where it comes from: `column`, `description`, `source`; from `cmd/t2api/clinical_descriptions.tsv`), `survival_endpoints`, `cohorts` (display names), `types` (data-type descriptions), `datatypes` |
+| `GET /v1/{ds}/meta` | one dataset in full: the above plus `presets`, `sources`, `clinical_columns`, `clinical_descriptions` (what each clinical column means and where it comes from: `column`, `description`, `source`; from `cmd/t2api/clinical_descriptions.tsv`), `survival_endpoints`, `tte_variables`, `handles`, `type_labels`, `about`, `default_cohorts` (array form of `defaults.cohorts`; cohort names can contain commas), `cohorts` (display names), `types` (data-type descriptions, with `label`), `datatypes`. The rules are in [DATASET-CONTRACT.md](DATASET-CONTRACT.md). |
 | `GET /v1/{ds}/clinical` | `samples` (ids, in order) and `columns`: every clinical and virtual column. About 2.7 MB for TCGA (0.5 MB gzipped); fetch once per dataset version and keep it. |
 | `GET /v1/{ds}/probes?q=cd8&limit=50` | names of selectable variables containing `q` (case-insensitive; the exact name first, then names starting with `q`, then the rest; shorter first); `total_matches` |
-| `GET /v1/{ds}/probes?all=1` | every selectable name, in menu order (`subtype`, `cohort`, the probes, the sample-type column): `n`, `probes`. 1.7 MB for TCGA (0.6 MB gzipped); cacheable by version (`&v=`). For a client that fills its own menus (the R app's selectize). |
+| `GET /v1/{ds}/probes?all=1` | every selectable name, in menu order (`subtype`, `cohort`, the probes, the sample-type column): `n`, `probes`. 1.7 MB for TCGA (0.6 MB gzipped); cacheable by version (`&v=`). For a client that fills its own menus (the R app's selectize). The body also carries parallel integer arrays, one entry per name: `section` (0 handle, 1 probe, 2 clinical), `type` (index into `types`, the list of type names used; clinical columns are type `clinical`, the virtual `cohort` / `subtype` `virtual`, a probe with no type row `unknown`), `kind` (0 numeric, 1 categorical). Search (`?q=`) adds `hits_typed`: `[{name, section, type, kind}]` with words instead of codes (`handle`/`probe`/`clinical`, `num`/`cat`); `probes` is unchanged. |
 | `GET /v1/{ds}/values?probes=CD8A,TP53.mut,gender` | `columns` for those names (probes, clinical columns or `cohort` / `subtype`), `missing`: names the dataset does not have. At most 100 names per request. The body also carries the dataset `version`. |
 | `GET /statz` | request and cache counters |
 
@@ -54,8 +54,18 @@ that mean "not tumor" (`normal_label`), the cohort values of heme origin (`heme_
 `defaults`: the variables to show first (`x`, `y`, `color`, `size`, `condition`) and, where
 the dataset has one, `cohorts`: the comma-separated cohort values the opening plot is limited
 to (TCGA: nine of its 33 cohorts; a plot of all 33 is too busy to read). The app applies it
-as the starting cohort filter; the user changes it like any other. For a dataset other than
-TCGA the values come from `dataset_meta` (`default_x`, …, `default_cohorts`).
+as the starting cohort filter; the user changes it like any other. The values come from
+`dataset_meta` (`default_x`, …, `default_cohorts`). The file stores `default_cohorts` as a `|` list
+(older files: commas); the api always serves `defaults.cohorts` comma-separated.
+
+`handles`: ordered `[{name, role}]`, role `subcohort` (`subtype`, only if the dataset has one),
+`cohort` (`cohort`, always present: a dataset that declares no cohort column gets a virtual one
+whose single level is its `label`), `sample_type` (the real column, if declared). `tte_variables`:
+`[{name,label,event_col,time_col,time_unit,description}]`, the declared list (entries whose columns
+are missing or not numeric are dropped), else every numeric clinical `X` with a numeric `X.time`;
+always an array. `survival_endpoints` is the list of their names. `type_labels`: `{type: label}`
+from `types.label`, the type name where there is none. `about`: `{description, citation,
+attribution, url}`, empty strings when absent. See [DATASET-CONTRACT.md](DATASET-CONTRACT.md).
 
 ### Presets (default filters)
 

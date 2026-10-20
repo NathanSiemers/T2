@@ -16,6 +16,17 @@ rule needs code, it is written once, in Go.
 
 ## 1. The file
 
+Every dataset is a file `datasets/<NAME>.db`; the file name is the dataset's name (`TCGA.db`,
+`cptac.db`, `tcgatargetgtex.db`, `DEMO.db`). There is no canonical file beside the directory
+(decision 2026-10-19; `tcga.db` at the top level is the legacy layout, accepted by the service
+during the transition). Datasets are listed by the optional `dataset_meta` key `order` (ascending,
+missing = after the ordered ones), then alphabetically.
+
+Numeric fact values are stored rounded to 6 decimals (`round(x, 6)` in the builder, after every
+transform), so float noise never reaches the file, the api or the apps (rule of 2026-10-19; applies
+from each dataset's next rebuild). Future builds store `tcgai` WITHOUT ROWID with primary key
+`(probekey, type, samplekey)` and no separate heap (the covering index is the table).
+
 Tables (the names are historical; every dataset uses them): `samples(key, sample)`,
 `probes(key, probe)`, `allprobes(probe)` (= probes + the clinical column names offered as
 variables), `types(key, type, description, example, reference, source_url, source_file, label)`,
@@ -40,6 +51,7 @@ check (`dataset_contract_check.R`) requires the ones marked **req** of every fil
 
 | key | meaning |
 |---|---|
+| `order` | listing position (integer; TCGA = 1) |
 | `title` **req**, `label` **req** | display strings (`"T2: CPTAC Pan-Cancer …"`, `"CPTAC Pan-Cancer"`) |
 | `cohort_col` **req** | clinical column that becomes the virtual `cohort` |
 | `subtype_col` | clinical column that becomes the virtual `subtype` (the sub-cohort handle); empty = none |
@@ -72,7 +84,8 @@ Nothing that exists today is removed or retyped (the shipped iPhone app requires
 | `survival_endpoints` | the names of `tte_variables` (never null; `[]` when none) |
 | `type_labels` | `{type: label}` from `types.label`, falling back to the type name |
 | `about` | `{description, citation, attribution, url}` |
-| `defaults.cohorts` | comma-separated |
+| `default_cohorts` | the list as a JSON array (lists are always arrays on the wire; cohort names may contain commas) |
+| `defaults.cohorts` | the same list comma-joined, kept only for the shipped iPhone 1.0 |
 | `roles`, `defaults`, `presets`, `sources`, `cohorts`, `types`, `datatypes`, `clinical_columns`, `clinical_descriptions`, `version`, `n_samples`, `n_probes` | as today |
 
 The virtual `cohort` column always exists: from `cohort_col`, or a single level equal to `label`
@@ -87,6 +100,9 @@ column is renamed `lcohort`.
 three fields with `typed=1`. The apps build their menus from these fields, not from the order of
 the list or from literal names.
 
+Clients never derive what the api derives and never fall back to a rule of their own when a field is
+absent: an api without the field is an old api, and the client says so.
+
 ## 3. What the tools may assume (and nothing else)
 
 1. The variable list tells them what to offer and what each name is (section, type, kind).
@@ -97,6 +113,9 @@ the list or from literal names.
    are all `not in` is an exclusion.
 6. A factor type with numeric levels (`.mut` 0/1) is plotted with its full level set, so an
    absent level still shows as an empty group.
+
+The Shiny app is an api client only (decision 2026-10-19): the SQL reader `gitr()` and `sql_tests.R`
+remain as the builders' library and as the equivalence oracle for values, not as a second app mode.
 
 Analysis policy that is NOT dataset knowledge and stays in the tools: Kaplan–Meier excludes
 normal samples; follow-up caps and group counts; z-scores and residualization require numeric

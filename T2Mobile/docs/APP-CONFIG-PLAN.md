@@ -109,13 +109,25 @@ block; round 1 = api + Shiny + builders + iOS code (no iOS upload while 1.0 is i
 (declared, else derived pairs); `types.label` → `type_labels`; `about`; `defaults.cohorts`
 normalized; typed variable list; `/datasets` gains `handles`; `contract_test.go`; `API.md`.
 
-### Shiny app (≈ 0.5 day)
-`dataset_registry.R` reads the new keys verbatim (jsonlite for the JSON key) and drops the TCGA
-block; `t2_api_client.R` takes `handles`, `tte_variables`, `type_labels`, `about` and the typed
-list from the service; `lib.R` builds handles and title words from them, complete-cases columns
-from the handles, passes `tte`/`type_labels` into `fun_plot1`; `survival_prototype.R` reads
-event/time columns, label and unit from the tte entry; `input_validation.R` whitelists the
-bundle's tte names; `app.R` About from `about`/`tte`, source links by host; `sql_tests.R:76`.
+### Shiny app (≈ 1 day; decision 2026-10-19: api-only)
+The review (REVIEW-2026-10-19-generalization.md §1) showed that file mode cannot be a pass-through:
+handles, presets, sources, tte and the typed list are derived by the api. Nathan: the app becomes an
+api client only; `gitr()` and `sql_tests.R` stay as the builders' library and the equivalence oracle
+for values. Work: `lib.R` bundle = `t2_api_bundle` only (the SQLite bundle reader, `t2_presets.R`'s
+derivations and `dataset_registry.R`'s role resolution leave the app; `dataset_registry.R` keeps
+only dataset discovery for the oracle/tests); `t2_api_client.R` takes `handles`, `tte_variables`,
+`type_labels`, `about`, `default_cohorts` and the typed list from the service (no fallbacks);
+`lib.R` builds handles and title words from them, complete-cases columns from the handles, and
+passes one plot context (`t2_plot_ctx(bundle, keep, rules)`: path, roles, label, handles, tte,
+type_labels, keep, rules) into `fun_plot1`/`plotter`/`survival_km`/`fun_table1` instead of a
+growing argument list; `survival_prototype.R` reads event/time columns, label and unit from the tte
+entry; `input_validation.R` whitelists the bundle's tte names and uses `T2_LIMITS`/`T2_CONTROLS`
+shared with the UI; `app.R` About from `about`/`tte`, source links by host; quick wins from the
+reviews: one `%||%` (NA-aware) and one `t2_cache()` in `t2_util.R`, `matrixStats::rowMedians` for
+the multi-X/Y medians, the search lowercased once per bundle, the pre-factored clinical frame cached
+per (dataset, version), Thanos fetch without phenos, `simplifyVector=TRUE` for values/probes/clinical,
+`t2_as_rules()`; `sql_tests.R` derives the name from the file name (`TCGA.db`), fixes `defaults$y`.
+`test_gitr_api.R` keeps comparing api values with the oracle.
 
 ### iPhone app (≈ 0.5–1 day, code only)
 Optional `handles`, `tteVariables`, `typeLabels`, `about` on `DatasetMeta` (snake_case decoding
@@ -143,6 +155,28 @@ Release order (`ops/RELEASE.md`): data layer tested on the dev service (`ops/tes
 tcgatargetgtex.db` (extend `data-stage` to accept `tcga.db` from `$REPO/tcga.db`; 40 GB copy
 ≈ 10–20 min) → `data` → `code` → `status` → `check`. Notes in `T2Mobile/NOTES.md`.
 
-## 6. Status
-- 2026-10-19: contract written (`DATASET-CONTRACT.md`); api agent started; data-layer agent next;
-  `cmp` of the dev `tcga.db` against the served copy running.
+## 6. Decisions and review items folded in (2026-10-19, after the two reviews)
+- **Api-only Shiny app** (above). **TCGA.db**: the canonical file moves to `datasets/TCGA.db` in this
+  release; the service's `-tcga` flag is transitional; `deploy.sh data-stage` learns to place it and
+  `data` to drop the top-level mount; R and `sql_tests.R` lose the `tcga.db` branch.
+- **Data layout for future rebuilds**: numeric values rounded to 6 decimals at build (CPTAC and DEMO
+  now, Toil/TCGA at their next rebuild); `tcgai` WITHOUT ROWID keyed (probekey, type, samplekey), cptac
+  first, with the full equiv/gitr checks.
+- **Data layer**: shared `t2_build_lib.R` (`t2_write_meta`, `t2_write_types`, `t2_ensure_columns`,
+  `t2_finalize_dataset`; later `t2_write_dims/tested/cohorts`, atomic open/close for every builder);
+  lists `|`-only; `probe_types` and the has-data set recorded during insert; timings in finalize;
+  `default_filters` in every file so derived presets can go.
+- **Api**: lists as arrays (`default_cohorts`), one probes blob, one summary struct, precompressed
+  static blobs and gzip members per cached column, sorted search order at load, fan-out and
+  `[]int32` row map for `/values`, `choices` per source (so clients stop computing groups/exclusions),
+  `limits.values_per_request`.
+- **iOS**: scene/choices/mask cached by revision, leave-one-out masks in O(F·n), parallel value chunks,
+  `levelsPresent`/`numericOnly` helpers, typed-list rows, no client fallbacks.
+- Deferred: plotter stage split (CODE-LAYOUT item 3), schema JSON, app-content.json, TCGA pipeline
+  cleanups (at the next TCGA rebuild).
+
+## 7. Status
+- 2026-10-19: contract written; api and data-layer agents running (with the review adjustments);
+  dev `tcga.db` verified identical to the served copy; two reviews saved with verdicts
+  (`REVIEW-2026-10-19-generalization.md`, `REVIEW-2026-10-19-performance.md`). Next: Shiny api-only
+  step, iOS step, release (service → data-stage with `TCGA.db` → data → code → check).

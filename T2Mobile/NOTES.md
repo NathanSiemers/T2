@@ -149,6 +149,13 @@ is far down; put a one-line hint near the top of About (and perhaps on the Selec
 naming the variables (OS, PFI, DSS, DFI for TCGA; OS, PFI for CPTAC) — a valuable hint in an otherwise
 obtuse tool. Same wording in the web app. Listing text changes go in with the next build, not while
 build 2 is in review.
+**TODO (Nathan, 2026-10-20): the plot caption describes the active filters, and Publish can drop
+any text element.** (1) When samples are filtered (presets, the Filter screen, cohorts), a plain
+description of the filtering shows in the plot's caption, so people remember what they are looking at
+(e.g. "Filtered: sample_type in Primary Tumor; CD8A > 5.2; 9 cohorts"); both apps. (2) For publication,
+every text element of the figure can be kept or removed individually: title, subtitle, caption,
+attribution/source line (today only the source line can be dropped, with the "please cite" reminder),
+axis titles too if easy; the Publish screen gets a switch per element; same in the web app's Publish tab.
 **TODO (Nathan, 2026-10-20): the plot title should name the data source part.** When the GTEx
 subset of the Toil collection is selected, the title says only "TCGA-TARGET-GTEX (Toil)", not the
 subset; it should carry the part's label (`/meta sources` → `source_labels`; both apps). Not a huge

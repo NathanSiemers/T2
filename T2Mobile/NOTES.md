@@ -176,6 +176,29 @@ information in the log files. Design to settle: aggregated counters (e.g. per-mi
 service, or a sidecar reading the Nginx access log and keeping only hashed/truncated addresses with
 short retention) plus a small dashboard; then update the privacy page and the App Store privacy
 answers if anything changes. Not part of the citations round.
+**TODO (Nathan, 2026-10-20): CPTAC `.prot` missing values: NA or zero?** Nathan plotted CLDN6 vs
+CLDN6.prot and found the combination very sparse (CLDN6.prot has values in 192 of the 1,549 proteome
+samples; OV 102, LSCC 44, LUAD 37, BRCA 9, nothing elsewhere). Findings (lead, 2026-10-20): the gaps are
+in the source files, not made by the builder (the OV tumor table has the same holes; the builder stores
+`prot`/`phospho` as `sparse = 0` types, so no row = NA, and only non-finite cells become NA). The values
+are log2 TMT reporter intensities normalized to each cohort's pooled reference (BCM README: "gene and
+phosphosite intensities ... were normalized across cancer types by median centering of the medians of
+reference intensities of each cancer type"), range about 15-29, so a stored 0 would mean an intensity
+of 1, far below every measured value: zero is wrong on this scale. A missing cell means the protein had
+no quantifiable peptide-spectrum match in that sample's TMT plex (TMT-Integrator keeps only PSMs with a
+reference intensity > 0 and purity >= 50%), i.e. not detected, below the detection floor, not "absent".
+It is not missing at random either: in samples with proteome data, mean CLDN6 log2(TPM+1) is 2.13 where
+the protein was quantified and 0.20 where it was not (44% vs 3% with TPM > 1), so the missing samples
+are the low expressers (left-censored). Li et al. 2023 (Cancer Cell, PMID 37582339) only note that
+missing values are "a regular part of all omics data" and "more pronounced in PTM data"; the CPTAC
+pan-cancer analyses impute for their own purposes (DreamAI; Lupine, Gaussian sampling at the floor are
+the common methods) but the distributed harmonized tables are not imputed. Decision so far: keep NA
+(current behaviour); do not store 0. Possible next-round features: (1) show "n measured of n with
+proteome data" for a `.prot`/`.phospho` variable in the stats block and warn when coverage is low;
+(2) an opt-in "treat not-detected as the detection floor" imputation (per-cohort minimum, or
+minimum minus a constant, as in left-censored imputation) so sparse proteins can be compared with
+RNA without silently dropping the low expressers; (3) say in the type description that missing =
+not quantified (already there) and add the "low expressers" interpretation to About.
 **Open:** Apple's verdict on 1.0 (tag `v1.0-submitted`; playbook in the memory file
 `apple-review-outcome` and below); `CODE-LAYOUT.md` — Nathan will read the file-structure
 assessment when there is budget (he said 24 h); the iPhone app could consume the service's

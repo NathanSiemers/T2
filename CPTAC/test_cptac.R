@@ -65,7 +65,7 @@ ok(identical(clin_collide(c("TP53", "Age", "subtype", "POLE_status"), c("TP53", 
 ok(identical(coerce_event(c("Yes", "No", "1", "0", NA)), c(1, 0, 1, 0, NA)), "events Yes/No/0/1 -> numeric")
 
 ## ---------------------------------------------------------------------------
-DB <- "datasets/cptac.db"
+DB <- file.path(Sys.getenv("T2_DATASETS_DIR", "datasets"), "cptac.db")   # the same copy the registry sees
 if (!file.exists(DB)) {
   cat("\n(dataset", DB, "not built -- skipping db + suite tests)\n")
 } else {
@@ -89,7 +89,7 @@ if (!file.exists(DB)) {
   ok(identical(names(cl)[1:5], c("sample", "case", "cancer_type", "study", "sample_type")), "clinpheno leading columns")
   ok(all(cl$OS %in% c(0, 1, NA)) && all(cl$PFI %in% c(0, 1, NA)), "OS / PFI in {0,1,NA}")
   ok(is.numeric(cl$OS) && is.numeric(cl$OS.time) && is.numeric(cl$Age), "OS, OS.time, Age numeric")
-  ok(is.character(cl$KDM5C_mutation) || is.null(cl$KDM5C_mutation), "BIN flags stored as text")
+  ok(!is.null(cl$KDM5C_mutation) && is.character(cl$KDM5C_mutation) && all(cl$KDM5C_mutation %in% c("0", "1", NA)), "BIN flags stored as text (KDM5C_mutation in 0/1/NA)")
   ok(all(is.na(cl$CIBERSORT_B_cell_naive[cl$sample_type == "Solid Tissue Normal"])), "normals: tumor-derived scores are NA")
   ok(any(!is.na(cl$Age[cl$sample_type == "Solid Tissue Normal"])), "normals: Age copied from the case")
   ok(all(sapply(cl[, which(sapply(cl, is.character)), with = FALSE], function(x) all(is.na(x) | validUTF8(x)))), "all text valid UTF-8")
@@ -100,9 +100,11 @@ if (!file.exists(DB)) {
   ty <- q("SELECT DISTINCT p.probe, d.type FROM tcgai d JOIN probes p ON p.key = d.probekey")
   sfx <- ifelse(grepl("\\.(prot|phospho|cnv|mut)$", ty$probe), sub(".*\\.", "", ty$probe), "rna")
   ok(all(sfx == ty$type), "tcgai probe suffix matches its type")
-  ok(!any(grepl("\\.fmut$", ty$probe)) && q1("SELECT COUNT(*) FROM probe_types pt JOIN tcgacati c ON 0") == 0, "fmut probes not in probe_types")
-  ok(!any(grepl("\\..*\\.(prot|phospho|cnv|mut|fmut)$", pr$probe)) || TRUE, "(info) typed probes with a dot in the symbol",
-     paste(sum(grepl("\\..*\\.(prot|phospho|cnv|mut|fmut)$", pr$probe)), "of", nrow(pr)))
+  ok(!any(grepl("\\.fmut$", ty$probe)) &&
+     q1("SELECT COUNT(*) FROM probe_types pt JOIN probes p ON p.key = pt.probekey WHERE p.probe LIKE '%.fmut'") == 0,
+     "fmut probes not in probe_types")
+  cat(sprintf("  info  typed probes with a dot in the symbol part: %d of %d (allowed, see SPEC section 3)\n",
+              sum(grepl("\\..*\\.(prot|phospho|cnv|mut|fmut)$", pr$probe)), nrow(pr)))
   ok(all(c("CD8A", "CD8A.prot", "TP53.mut", "TP53.fmut") %in% pr$probe), "CD8A, CD8A.prot, TP53.mut, TP53.fmut exist")
   ok(any(grepl("^AKT1_S[0-9]+\\.phospho$", pr$probe)) , "an AKT1 phosphosite exists", paste(head(grep("^AKT1_S[0-9]+\\.phospho$", pr$probe, value = TRUE), 3), collapse = ","))
   dtp <- q("SELECT * FROM datatypes"); ok(setequal(dtp$type, c("rna","prot","phospho","cnv","mut","fmut")), "datatypes: 6 types")
@@ -130,7 +132,10 @@ if (!file.exists(DB)) {
     x
   }
   spots <- list()
-  chk <- function(label, src, db) { ok(near(src, db, 1e-5) || (is.na(src) && is.na(db)), label, sprintf("source %s | db %s", format(src, digits = 8), format(db, digits = 8))) }
+  chk <- function(label, src, db) {
+    if (length(src) != 1 || length(db) != 1) { ok(FALSE, label, sprintf("lookup gave %d source / %d db values", length(src), length(db))); return(invisible()) }
+    ok(near(src, db, 1e-5) || (is.na(src) && is.na(db)), label, sprintf("source %s | db %s", format(src, digits = 8), format(db, digits = 8)))
+  }
   PF <- file.path(D, "Proteome_BCM_GENCODE_v34_harmonized_v1/Proteome_BCM_GENCODE_v34_harmonized_v1")
   ## prot (CCRCC tumor + normal)
   pT <- rdm(file.path(PF, "CCRCC_proteomics_gene_abundance_log2_reference_intensity_normalized_Tumor.txt"))
@@ -147,7 +152,8 @@ if (!file.exists(DB)) {
   ph <- rdm(file.path(D, "Phosphoproteome_BCM_GENCODE_v34_harmonized_v1/Phosphoproteome_BCM_GENCODE_v34_harmonized_v1/CCRCC_phospho_site_abundance_log2_reference_intensity_normalized_Tumor.txt"))
   pi <- parse_phospho_id(ph$id); pi$sym <- gm$gene_name[match(pi$ensg, gm$gene)]
   pi$pair <- paste(pi$sym, pi$site); u <- which(!(pi$pair %in% pi$pair[duplicated(pi$pair)]) & is.finite(ph[["C3L-00004"]]) & is.finite(ph[["C3L-00010"]]))
-  for (i in u[c(2, 500)]) for (sm in c("C3L-00004", "C3L-00010"))
+  ok(length(u) >= 2, "phospho: at least two unique (gene, site) rows with values in both samples", paste(length(u)))
+  for (i in u[c(2, min(500, length(u)))]) for (sm in c("C3L-00004", "C3L-00010"))
     chk(sprintf("phospho %s %s", phospho_probe(pi$sym[i], pi$site[i]), sm), ph[[sm]][i], dbval(phospho_probe(pi$sym[i], pi$site[i]), sm, "phospho"))
   ## rna (CCRCC TPM): formula log2(sum(2^x - 1 over ids of the symbol, negatives clamped) + 1)
   tf <- Sys.glob(file.path(D, "mirror/CCRCC/CCRCC-gene_TPM*"))[1]

@@ -42,7 +42,11 @@ create_t2_core_indexes <- function(con) {
     "CREATE INDEX IF NOT EXISTS tested_type_sample ON tested(type, sample)",
     "CREATE INDEX IF NOT EXISTS clinphenoidx     ON clinpheno(sample)",
     "CREATE INDEX IF NOT EXISTS samplesidx       ON samples(sample)",
-    "CREATE INDEX IF NOT EXISTS probesidx        ON probes(probe)"
+    "CREATE INDEX IF NOT EXISTS probesidx        ON probes(probe)",
+    ## the key columns: tcga.db declares them INTEGER PRIMARY KEY, a dbWriteTable-built
+    ## dataset does not, and a join by key then scans the table (bytype, probe_types checks)
+    "CREATE INDEX IF NOT EXISTS sampleskeyidx    ON samples(key)",
+    "CREATE INDEX IF NOT EXISTS probeskeyidx     ON probes(key)"
   )
   for (s in idx) DBI::dbExecute(con, s)
 }
@@ -136,6 +140,25 @@ FROM tcgacati dat
 JOIN samples sa ON sa.key = dat.samplekey
 JOIN probes pr ON pr.key = dat.probekey
 JOIN clinpheno cp ON cp.sample = sa.sample")
+}
+
+## Drop the probe names that ended up with no data at all (a sparse type stores no row for a
+## gene that is 0 in every sample, so such a gene has no probe_types row and is invisible to
+## the views while still being offered in the variable menu through `probes`/`allprobes`).
+## Call before finalize_t2_core(). Returns the number of names removed.
+drop_t2_dataless_probes <- function(con) {
+  DBI::dbExecute(con, "CREATE TEMP TABLE withdata AS SELECT DISTINCT probekey FROM tcgai UNION SELECT DISTINCT probekey FROM tcgacati")
+  DBI::dbExecute(con, "CREATE INDEX withdata_i ON withdata(probekey)")
+  gone <- DBI::dbGetQuery(con, "SELECT probe FROM probes p WHERE NOT EXISTS (SELECT 1 FROM withdata w WHERE w.probekey = p.key)")$probe
+  if (length(gone)) {
+    DBI::dbExecute(con, "DELETE FROM probes WHERE key NOT IN (SELECT probekey FROM withdata)")
+    DBI::dbExecute(con, "CREATE TEMP TABLE gone(probe TEXT)")
+    DBI::dbWriteTable(con, "gone", data.frame(probe = gone, stringsAsFactors = FALSE), append = TRUE, temporary = TRUE)
+    DBI::dbExecute(con, "DELETE FROM allprobes WHERE probe IN (SELECT probe FROM gone)")
+    DBI::dbExecute(con, "DROP TABLE gone")
+  }
+  DBI::dbExecute(con, "DROP TABLE withdata")
+  length(gone)
 }
 
 ## Convenience: probe_types + indexes + views, in the right order.

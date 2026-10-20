@@ -89,3 +89,25 @@ config, the local checkout /scratch/nathan/R/T2 mounted read-only, api-mode agai
 `T2-devdata/t2-api-mode-dev.Renviron.site`), LAN only: **http://10.1.0.1:3862/T2T/**. It picks up code
 edits on the next session (Shiny Server re-sources the app per session; a new dataset needs
 `docker restart t2api-dev` after copying the db into T2-devdata/datasets/). Stop: `docker rm -f shiny-t2-dev`.
+
+## 2026-10-19: review by three Fable agents (branch `cptac-review-fixes`, PR)
+
+Nathan: "Review all the new code to check for bugs in the next 12 minutes. 3 fable agents"; "Keep a pr
+of suggested changes/fixes". Reviewers: builder logic / shared edits + tests + deploy script / data
+invariants of the built db. Verdicts after the lead's fact checks:
+- Not bugs: dotted bare rna names (`AL627309.1`, 22,054) are served correctly by both readers (fall
+  back to probe_types; Toil has the same names) → SPEC §3 reworded. 70 samples with a survival event
+  but no time are faithful to the meta files (46 tumors + their normals).
+- Fixed on the branch: `sql_tests.R` resolved roles through the service when `T2_API_URL` was set and
+  fell back to TCGA's map silently; `test_multidataset.R` opened the bundle path as a SQLite file
+  (breaks in api-mode); `test_cptac.R` had a tautology (fmut-in-probe_types), an unfailable `|| TRUE`
+  check, a check that passed on an absent column, a `chk()` that crashed on an empty source lookup,
+  an unguarded `u[500]`, and ignored `T2_DATASETS_DIR`; `build_cptac.R` would store a NA TPM cell as
+  0 via the collapse (now refuses NA cells), `dt[, case := case]` scoping, two env-knob edge cases;
+  `00-download.R` never redid an interrupted unzip and did no zip-slip check; `deploy.sh data-stage`
+  took the first of several compose paths and would copy a WAL-mode db without its sidecar.
+- Data-level: 2,204 rna names with no data (0 in every sample) sat in `probes`/`allprobes` and were
+  offered in the menu (Toil: 4,328). New shared `drop_t2_dataless_probes()` in `t2_views.R`, called by
+  both builders; plus `probes(key)` / `samples(key)` indexes (joins by key scanned the table).
+Validation: smoke build, test_cptac.R 70 PASS, sql_tests (DEMO, with T2_API_URL set), deploy dry run,
+and a full rebuild into `T2-devdata/scratch/cptac-pr.db` (not into datasets/, not deployed).

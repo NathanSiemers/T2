@@ -47,9 +47,14 @@ WARN <- function(detail = "") list(ok = TRUE, warn = TRUE, detail = detail)
     bn <- basename(dbpath)
     name <- if (tolower(bn) == "tcga.db") "TCGA" else sub("\\.db$", "", bn)
   }
+  ## the roles of the FILE under test: never the service's (T2_API_URL may be set in the
+  ## container), and a failure to resolve them is said, not hidden behind TCGA's map
+  api <- get0("T2_API_URL", envir = globalenv(), ifnotfound = "")
+  if (nzchar(api)) { assign("T2_API_URL", "", envir = globalenv()); on.exit(assign("T2_API_URL", api, envir = globalenv()), add = TRUE) }
   r <- tryCatch(.resolve_roles(name, dbpath),
-                error = function(e) list(roles = gitr_default_roles,
-                                         defaults = list(), title = name, label = name))
+                error = function(e) { message("sql_tests: could not resolve roles for ", name, " (", conditionMessage(e),
+                                              "); using the canonical TCGA map")
+                                      list(roles = gitr_default_roles, defaults = list(), title = name, label = name) })
   list(name = name, roles = r$roles, defaults = r$defaults)
 }
 

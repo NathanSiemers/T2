@@ -22,8 +22,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,17 +78,38 @@ type Dataset struct {
 
 	probesJSON []byte
 
+	meta       map[string]string // the raw dataset_meta table (nil-safe: empty when the file has none)
+	handles    []Handle          // the columns that play cohort / sub-cohort / sample type
+	clinNum    map[string]bool   // clinical + virtual column -> numeric?
+	tte        []TTEVariable
+	typeLabels map[string]string
+	hasLabel   bool // types.label exists
+
+	// the typed variable list, parallel to probeNames (small codes, built once at load)
+	typedTypes   []string // type names used; codes below index into it
+	typedSection []uint8  // 0 handle, 1 probe, 2 clinical
+	typedType    []uint16
+	typedKind    []uint8 // 0 num, 1 cat
+
 	clinicalJSON []byte
 	metaJSON     []byte
 	cache        *columnCache
 }
 
-// the canonical TCGA database predates dataset_meta; its roles are fixed (dataset_registry.R)
-var tcgaRoles = Roles{
-	CohortCol: "tumtype", SubtypeCol: "Subtype_Selected", SampletypeCol: "sample_type",
-	NormalLabel: []string{"Solid Tissue Normal"}, HemeValues: []string{"LAML", "THYM", "DLBC"},
-	SampletypeLevels: []string{"Primary Tumor", "Recurrent Tumor", "Metastatic", "Additional - New Primary",
-		"Additional Metastatic", "Primary Blood Derived Cancer - Peripheral Blood", "Solid Tissue Normal"},
+// Handle: a column that plays a dataset-wide role (see DATASET-CONTRACT.md).
+type Handle struct {
+	Name string `json:"name"`
+	Role string `json:"role"` // cohort | subcohort | sample_type
+}
+
+// TTEVariable: a time-to-event variable, a pair of numeric clinical columns.
+type TTEVariable struct {
+	Name        string `json:"name"`
+	Label       string `json:"label"`
+	EventCol    string `json:"event_col"`
+	TimeCol     string `json:"time_col"`
+	TimeUnit    string `json:"time_unit"`
+	Description string `json:"description"`
 }
 
 // database connections per dataset (set from -db-conns)
@@ -113,7 +136,7 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 		fileSize: fi.Size(), fileMtime: fi.ModTime(), fileIno: inode(fi),
 		version: fmt.Sprintf("%x%x", fi.Size(), fi.ModTime().Unix()),
 		cache:   newColumnCache(cacheBytes)}
-	steps := []func() error{d.loadRoles, d.loadClinical, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.loadSources, d.buildMeta}
+	steps := []func() error{d.loadRoles, d.loadClinical, d.loadTTE, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.loadSources, d.buildMeta}
 	for _, f := range steps {
 		if err := f(); err != nil {
 			db.Close()
@@ -178,26 +201,20 @@ func splitMeta(s string) []string {
 	return out
 }
 
-// loadRoles mirrors .resolve_roles(): TCGA constants, else dataset_meta, else introspection
-// (the introspection step needs the clinical columns and is finished in loadClinical).
+// loadRoles mirrors .resolve_roles(): dataset_meta, else introspection (the introspection
+// step needs the clinical columns and is finished in loadClinical). The raw table is kept in
+// d.meta: the api is the only interpreter of it.
 func (d *Dataset) loadRoles() error {
 	d.Defaults = map[string]string{"x": "cohort", "y": "", "color": "", "size": "", "condition": ""}
 	d.Title, d.Label = d.Name, d.Name
-	if d.Name == "TCGA" {
-		d.Roles = tcgaRoles
-		d.Title, d.Label = "T2: TCGA 2018 Pan-Cancer Database", "TCGA Pan-Cancer 2018"
-		// the cohorts shown first: 33 boxes make the opening plot too busy to read
-		d.Defaults = map[string]string{"x": "cohort", "y": "CD8A", "color": "sample_type", "size": "", "condition": "StromalScore.estimate",
-			"cohorts": "COAD,ESCA,HNSC,KIRC,LUAD,LUSC,PAAD,SKCM,STAD"}
-		return nil
-	}
+	d.meta = map[string]string{}
 	rows, err := d.db.Query("SELECT key, value FROM dataset_meta")
 	if err != nil {
 		d.Roles = Roles{CohortCol: "?"} // "?" = decide from the clinical column names
 		return nil
 	}
 	defer rows.Close()
-	m := map[string]string{}
+	m := d.meta
 	for rows.Next() {
 		var k string
 		var v sql.NullString
@@ -216,7 +233,11 @@ func (d *Dataset) loadRoles() error {
 		d.Label = m["label"]
 	}
 	for _, k := range []string{"x", "y", "color", "size", "condition", "cohorts"} {
-		if v := m["default_"+k]; v != "" {
+		v := m["default_"+k]
+		if k == "cohorts" {
+			v = joinCohorts(v)
+		}
+		if v != "" {
 			d.Defaults[k] = v
 		}
 	}
@@ -310,23 +331,32 @@ func (d *Dataset) loadClinical() error {
 		}
 		byName["cohort"] = byName[c]
 	}
+	if _, ok := byName["cohort"]; !ok || !slices.Contains(order, "cohort") {
+		// a dataset that declares no cohort column still has the virtual `cohort`: one level, its label
+		byName["cohort"] = cohortFromLabel(d.Label, len(sc))
+		order = append(order, "cohort")
+	}
 	d.clin = map[string][]byte{}
 	d.levels = map[string][]string{}
 	d.clinText = map[string]textCol{}
 	d.clinOrder = order
+	d.clinNum = map[string]bool{}
 	for _, n := range order {
 		d.clinText[n] = textOf(byName[n])
 		typ := "clinical"
-		if n == "cohort" || n == "subtype" || n == "lcohort" {
+		if isVirtualColumn(n) {
 			typ = "virtual"
 		}
 		var levels []string
 		if n == d.Roles.SampletypeCol && len(d.Roles.SampletypeLevels) > 0 {
 			levels = d.Roles.SampletypeLevels
 		}
+		d.clinNum[n] = anyNumeric(byName[n], levels)
 		d.clin[n] = encodeAny(n, typ, byName[n], levels)
 		d.levels[n] = levelsOf(byName[n], levels)
 	}
+	// handles, in the order the menus use: subtype, cohort, sample type
+	d.handles = makeHandles(d.Roles, have)
 	// the /clinical response: samples + every clinical column
 	sj, _ := json.Marshal(d.samples)
 	buf := []byte(fmt.Sprintf(`{"dataset":%s,"n":%d,"samples":%s,"columns":[`, jsonString(d.Name), len(d.samples), sj))
@@ -337,6 +367,49 @@ func (d *Dataset) loadClinical() error {
 		buf = append(buf, d.clin[n]...)
 	}
 	d.clinicalJSON = append(buf, ']', '}')
+	return nil
+}
+
+// loadTTE: the time-to-event variables. Declared in dataset_meta (a JSON array), else derived:
+// every numeric clinical column X that has a numeric X.time.
+func (d *Dataset) loadTTE() error {
+	d.tte = []TTEVariable{}
+	ok := func(v TTEVariable) bool {
+		if v.Name == "" {
+			return false
+		}
+		if _, have := d.clin[v.EventCol]; !have || !d.clinNum[v.EventCol] {
+			return false
+		}
+		if _, have := d.clin[v.TimeCol]; !have || !d.clinNum[v.TimeCol] {
+			return false
+		}
+		return true
+	}
+	if raw := strings.TrimSpace(d.meta["tte_variables"]); raw != "" {
+		var decl []TTEVariable
+		if err := json.Unmarshal([]byte(raw), &decl); err != nil {
+			log.Printf("%s: dataset_meta tte_variables is not a JSON array of objects (%v): none offered", d.Name, err)
+			return nil
+		}
+		for _, v := range decl {
+			if v.TimeUnit == "" {
+				v.TimeUnit = "days"
+			}
+			if !ok(v) {
+				log.Printf("%s: tte variable %q dropped: event_col %q / time_col %q not numeric clinical columns", d.Name, v.Name, v.EventCol, v.TimeCol)
+				continue
+			}
+			d.tte = append(d.tte, v)
+		}
+		return nil
+	}
+	for _, x := range d.clinOrder {
+		v := TTEVariable{Name: x, Label: x, EventCol: x, TimeCol: x + ".time", TimeUnit: "days"}
+		if ok(v) {
+			d.tte = append(d.tte, v)
+		}
+	}
 	return nil
 }
 
@@ -428,20 +501,42 @@ func (d *Dataset) loadSparse() error {
 
 func (d *Dataset) loadDatatypes() error {
 	d.dtype = map[string]string{}
+	d.typeLabels = map[string]string{}
 	rows, err := d.db.Query("SELECT type, r_datatype FROM datatypes")
-	if err != nil {
-		return nil // optional table
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var t string
-		var r sql.NullString
-		if err := rows.Scan(&t, &r); err != nil {
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var t string
+			var r sql.NullString
+			if err := rows.Scan(&t, &r); err != nil {
+				return err
+			}
+			d.dtype[t] = r.String
+			d.typeLabels[t] = t
+		}
+		if err := rows.Err(); err != nil {
 			return err
 		}
-		d.dtype[t] = r.String
+	} // optional table
+	// types.label: the word a plot title uses for the type; the column may be missing
+	d.hasLabel = d.hasColumn("types", "label")
+	q := "SELECT type, NULL FROM types"
+	if d.hasLabel {
+		q = "SELECT type, label FROM types"
 	}
-	return rows.Err()
+	if lr, err := d.db.Query(q); err == nil {
+		defer lr.Close()
+		for lr.Next() {
+			var t string
+			var l sql.NullString
+			if err := lr.Scan(&t, &l); err != nil {
+				return err
+			}
+			d.setTypeLabel(t, l)
+		}
+		return lr.Err()
+	}
+	return nil
 }
 
 // loadProbeNames builds the searchable list in the order the T2 selectors use:
@@ -463,9 +558,9 @@ func (d *Dataset) loadProbeNames() error {
 			d.probeLower = append(d.probeLower, strings.ToLower(n))
 		}
 	}
-	for _, v := range []string{"subtype", "cohort"} {
-		if _, ok := d.clin[v]; ok {
-			add(v)
+	for _, h := range d.handles {
+		if h.Role == "subcohort" || h.Role == "cohort" {
+			add(h.Name)
 		}
 	}
 	for rows.Next() {
@@ -475,8 +570,10 @@ func (d *Dataset) loadProbeNames() error {
 		}
 		add(p.String)
 	}
-	if _, ok := d.clin[d.Roles.SampletypeCol]; ok {
-		add(d.Roles.SampletypeCol)
+	for _, h := range d.handles {
+		if h.Role == "sample_type" {
+			add(h.Name)
+		}
 	}
 	// clinical columns that are not in allprobes are still valid (survival times, ...)
 	for _, n := range d.clinOrder {
@@ -485,6 +582,7 @@ func (d *Dataset) loadProbeNames() error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	d.buildTyped(d.probeTypeCodes())
 	// names with data that allprobes might not list (it is a superset in every build so far)
 	prows, err := d.db.Query("SELECT probe FROM probes")
 	if err != nil {
@@ -501,6 +599,57 @@ func (d *Dataset) loadProbeNames() error {
 		}
 	}
 	return prows.Err()
+}
+
+type probeType struct {
+	typ string
+	cat bool // categorical-only: no probe_types row, values in tcgacati
+}
+
+// probeTypeCodes: probe name -> its data type, from probe_types, else (a categorical-only
+// probe) from tcgacati. Two queries at load; the result is dropped after the typed list is built.
+func (d *Dataset) probeTypeCodes() map[string]probeType {
+	out := map[string]probeType{}
+	if rows, err := d.db.Query("SELECT p.probe, pt.type FROM probes p JOIN probe_types pt ON pt.probekey = p.key"); err == nil {
+		for rows.Next() {
+			var n, t sql.NullString
+			if rows.Scan(&n, &t) == nil && n.Valid && t.Valid {
+				out[n.String] = probeType{typ: t.String}
+			}
+		}
+		rows.Close()
+	}
+	cati := map[int64]string{}
+	if rows, err := d.db.Query("SELECT DISTINCT probekey, type FROM tcgacati"); err == nil {
+		for rows.Next() {
+			var k int64
+			var t sql.NullString
+			if rows.Scan(&k, &t) == nil && t.Valid {
+				if _, dup := cati[k]; !dup {
+					cati[k] = t.String
+				}
+			}
+		}
+		rows.Close()
+	}
+	if len(cati) > 0 {
+		if rows, err := d.db.Query("SELECT key, probe FROM probes"); err == nil {
+			for rows.Next() {
+				var k int64
+				var n sql.NullString
+				if rows.Scan(&k, &n) == nil && n.Valid {
+					if _, has := out[n.String]; has {
+						continue
+					}
+					if t, ok := cati[k]; ok {
+						out[n.String] = probeType{typ: t, cat: true}
+					}
+				}
+			}
+			rows.Close()
+		}
+	}
+	return out
 }
 
 // isKnown: is this name a variable of the dataset at all? Answered from memory, before any
@@ -597,7 +746,7 @@ func (d *Dataset) loadPresets() error {
 		}
 		op = strings.ToLower(strings.TrimSpace(op))
 		lv, known := d.levels[col]
-		if !known || (op != "in" && op != "not in") || !contains(lv, val) {
+		if !known || (op != "in" && op != "not in") || !slices.Contains(lv, val) {
 			fmt.Fprintf(os.Stderr, "dataset %s: default_filters row ignored (preset %q: %s %s %q)\n", d.Name, label, col, op, val)
 			continue
 		}
@@ -621,15 +770,6 @@ func (d *Dataset) loadPresets() error {
 		}
 	}
 	return rows.Err()
-}
-
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }
 
 func (d *Dataset) derivePresets() {
@@ -664,7 +804,7 @@ func (d *Dataset) ensureHemePreset() {
 func (d *Dataset) knownLevels(col string, vals []string) []string {
 	out := []string{}
 	for _, v := range vals {
-		if contains(d.levels[col], v) {
+		if slices.Contains(d.levels[col], v) {
 			out = append(out, v)
 		}
 	}
@@ -701,32 +841,88 @@ func (d *Dataset) buildMeta() error {
 		}
 		return out
 	}
-	types := table("SELECT type, description, example, reference, source_file, source_url FROM types ORDER BY type")
+	cols := "type, description, example, reference, source_file, source_url"
+	if d.hasLabel {
+		cols += ", COALESCE(label, '') AS label"
+	}
+	types := table("SELECT " + cols + " FROM types ORDER BY type")
 	if len(types) == 0 {
 		types = table("SELECT type FROM types ORDER BY type")
 	}
-	meta := map[string]any{
-		"dataset": d.Name, "title": d.Title, "label": d.Label, "version": d.version,
-		"n_samples": len(d.samples), "n_probes": len(d.probeNames),
-		"roles": d.Roles, "defaults": d.Defaults,
-		"presets":               d.presets,
-		"sources":               d.sources,
-		"clinical_columns":      d.clinOrder,
-		"clinical_descriptions": clinicalDescriptions(d.Name, d.clinOrder),
-		"survival_endpoints":    []string{"OS", "PFI", "DSS", "DFI"},
-		"cohorts":               table("SELECT * FROM cohorts"),
-		"types":                 types,
-		"datatypes":             d.dtype,
+	if !d.hasLabel {
+		for _, row := range types {
+			row["label"] = ""
+		}
+	}
+	survival := []string{}
+	for _, v := range d.tte {
+		survival = append(survival, v.Name)
+	}
+	meta := metaDoc{
+		DatasetSummary:       d.summary(),
+		Dataset:              d.Name,
+		Presets:              d.presets,
+		ClinicalColumns:      d.clinOrder,
+		ClinicalDescriptions: clinicalDescriptions(d.Name, d.clinOrder),
+		SurvivalEndpoints:    survival,
+		TTEVariables:         d.tte,
+		TypeLabels:           d.typeLabels,
+		About: map[string]string{"description": d.meta["about"], "citation": d.meta["citation"],
+			"attribution": d.meta["attribution"], "url": d.meta["about_url"]},
+		DefaultCohorts: splitMeta(d.meta["default_cohorts"]),
+		Cohorts:        table("SELECT * FROM cohorts"),
+		Types:          types,
+		Datatypes:      d.dtype,
 	}
 	var err error
 	d.metaJSON, err = json.Marshal(meta)
 	if err != nil {
 		return err
 	}
-	// every selectable name, for a client that fills its own menus (the R app's selectize)
+	// every selectable name, for a client that fills its own menus (the R app's selectize),
+	// with the typed arrays (section / type / kind codes, parallel to probes)
+	sec, typ, kind := make([]int, len(d.probeNames)), make([]int, len(d.probeNames)), make([]int, len(d.probeNames))
+	for i := range d.probeNames {
+		sec[i], typ[i], kind[i] = int(d.typedSection[i]), int(d.typedType[i]), int(d.typedKind[i])
+	}
 	d.probesJSON, err = json.Marshal(map[string]any{"dataset": d.Name, "version": d.version,
-		"n": len(d.probeNames), "probes": d.probeNames})
+		"n": len(d.probeNames), "probes": d.probeNames, "types": d.typedTypes, "section": sec, "type": typ, "kind": kind})
 	return err
+}
+
+// DatasetSummary: what /v1/datasets lists for each dataset and /v1/{ds}/meta starts with.
+type DatasetSummary struct {
+	Name     string            `json:"name"`
+	Title    string            `json:"title"`
+	Label    string            `json:"label"`
+	Samples  int               `json:"n_samples"`
+	Probes   int               `json:"n_probes"`
+	Version  string            `json:"version"`
+	Roles    Roles             `json:"roles"`
+	Defaults map[string]string `json:"defaults"`
+	Sources  []Source          `json:"sources"` // the whole collection and its parts, for the data-source menu
+	Handles  []Handle          `json:"handles"`
+}
+
+func (d *Dataset) summary() DatasetSummary {
+	return DatasetSummary{d.Name, d.Title, d.Label, len(d.samples), len(d.probeNames), d.version, d.Roles, d.Defaults, d.sources, d.handles}
+}
+
+// metaDoc is the /v1/{ds}/meta document; fields are only ever added.
+type metaDoc struct {
+	DatasetSummary
+	Dataset              string            `json:"dataset"`
+	Presets              []Preset          `json:"presets"`
+	ClinicalColumns      []string          `json:"clinical_columns"`
+	ClinicalDescriptions any               `json:"clinical_descriptions"`
+	SurvivalEndpoints    []string          `json:"survival_endpoints"`
+	TTEVariables         []TTEVariable     `json:"tte_variables"`
+	TypeLabels           map[string]string `json:"type_labels"`
+	About                map[string]string `json:"about"`
+	DefaultCohorts       []string          `json:"default_cohorts"` // the array form: names can contain commas
+	Cohorts              []map[string]any  `json:"cohorts"`
+	Types                []map[string]any  `json:"types"`
+	Datatypes            map[string]string `json:"datatypes"`
 }
 
 // ---------------------------------------------------------------------------------------
@@ -925,10 +1121,9 @@ func encodeNumAsCat(name, typ string, vals []float64) []byte {
 	return encodeCodes(name, typ, levels, codes)
 }
 
-// encodeAny encodes a column read as raw database values: numeric if every present value is
-// a number, else categorical. fixedLevels, if given, is the level order to use; values
-// outside it are missing.
-func encodeAny(name, typ string, vals []any, fixedLevels []string) []byte {
+// anyNumeric: the rule encodeAny uses -- numeric iff some value is present and every present
+// value is a number (and no fixed level order is given).
+func anyNumeric(vals []any, fixedLevels []string) bool {
 	numeric, present := fixedLevels == nil, false
 	for _, v := range vals {
 		switch v.(type) {
@@ -940,7 +1135,14 @@ func encodeAny(name, typ string, vals []any, fixedLevels []string) []byte {
 			numeric = false
 		}
 	}
-	if numeric && present {
+	return numeric && present
+}
+
+// encodeAny encodes a column read as raw database values: numeric if every present value is
+// a number, else categorical. fixedLevels, if given, is the level order to use; values
+// outside it are missing.
+func encodeAny(name, typ string, vals []any, fixedLevels []string) []byte {
+	if anyNumeric(vals, fixedLevels) {
 		out := make([]float64, len(vals))
 		for i, v := range vals {
 			switch x := v.(type) {
@@ -1000,4 +1202,128 @@ func encodeAny(name, typ string, vals []any, fixedLevels []string) []byte {
 		}
 	}
 	return encodeCodes(name, typ, levels, codes)
+}
+
+type typedHit struct {
+	Name    string `json:"name"`
+	Section string `json:"section"` // handle | probe | clinical
+	Type    string `json:"type"`
+	Kind    string `json:"kind"` // num | cat
+}
+
+// typedHits: the typed fields of search hits (indexes into probeNames), as words
+func (d *Dataset) typedHits(idx []int) []typedHit {
+	out := make([]typedHit, 0, len(idx))
+	for _, i := range idx {
+		h := typedHit{Name: d.probeNames[i], Section: []string{"handle", "probe", "clinical"}[d.typedSection[i]],
+			Type: d.typedTypes[d.typedType[i]], Kind: "num"}
+		if d.typedKind[i] == 1 {
+			h.Kind = "cat"
+		}
+		out = append(out, h)
+	}
+	return out
+}
+
+// joinCohorts: the file stores default_cohorts as a "|" list (older files: commas); the api serves commas.
+func joinCohorts(v string) string { return strings.Join(splitMeta(v), ",") }
+
+// setTypeLabel records types.label: NULL (or no column) = the type name, "" stays "".
+func (d *Dataset) setTypeLabel(t string, l sql.NullString) {
+	if l.Valid {
+		d.typeLabels[t] = cleanText(l.String)
+	} else if _, ok := d.typeLabels[t]; !ok {
+		d.typeLabels[t] = t
+	}
+}
+
+// makeHandles: subtype (sub-cohort), cohort, sample type -- the declared columns that exist.
+// `cohort` always exists (see loadClinical).
+func makeHandles(r Roles, have map[string]bool) []Handle {
+	h := []Handle{}
+	if c := r.SubtypeCol; c != "" && have[c] {
+		h = append(h, Handle{"subtype", "subcohort"})
+	}
+	h = append(h, Handle{"cohort", "cohort"})
+	if c := r.SampletypeCol; c != "" && have[c] {
+		h = append(h, Handle{c, "sample_type"})
+	}
+	return h
+}
+
+func cohortFromLabel(label string, n int) []any {
+	lab := make([]any, n)
+	for i := range lab {
+		lab[i] = label
+	}
+	return lab
+}
+
+// buildTyped fills the parallel arrays of the typed variable list (section, type code, kind)
+// for d.probeNames, from the clinical columns and the probe types.
+func (d *Dataset) buildTyped(ptypes map[string]probeType) {
+	typeCode := map[string]uint16{}
+	code := func(t string) uint16 {
+		c, ok := typeCode[t]
+		if !ok {
+			c = uint16(len(d.typedTypes))
+			d.typedTypes = append(d.typedTypes, t)
+			typeCode[t] = c
+		}
+		return c
+	}
+	isHandle := map[string]bool{}
+	for _, h := range d.handles {
+		isHandle[h.Name] = true
+	}
+	d.typedSection, d.typedType, d.typedKind, d.typedTypes = nil, nil, nil, nil
+	for _, n := range d.probeNames {
+		var sec, kind uint8 = 1, 0
+		var typ string
+		if _, isClin := d.clin[n]; isClin {
+			sec, typ = 2, "clinical"
+			if isVirtualColumn(n) {
+				typ = "virtual"
+			}
+			if !d.clinNum[n] {
+				kind = 1
+			}
+		} else if pt, ok := ptypes[n]; ok {
+			typ = pt.typ
+			if pt.cat || d.declaredType(n, pt.typ) == "factor" {
+				kind = 1
+			}
+		} else {
+			typ = "unknown"
+			if d.declaredType(n, typ) == "factor" {
+				kind = 1
+			}
+		}
+		if isHandle[n] {
+			sec = 0
+		}
+		d.typedSection = append(d.typedSection, sec)
+		d.typedType = append(d.typedType, code(typ))
+		d.typedKind = append(d.typedKind, kind)
+	}
+}
+
+func isVirtualColumn(n string) bool { return n == "cohort" || n == "subtype" || n == "lcohort" }
+
+// hasColumn: does the table have this column? (PRAGMA table_info)
+func (d *Dataset) hasColumn(table, col string) bool {
+	rows, err := d.db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, ctype string
+		var dflt sql.NullString
+		if rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk) == nil && name == col {
+			return true
+		}
+	}
+	return false
 }

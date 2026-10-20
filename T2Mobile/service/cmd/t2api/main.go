@@ -41,7 +41,7 @@ const (
 
 type server struct {
 	datasets     map[string]*Dataset
-	order        []string // dataset names, TCGA first
+	order        []string // dataset names: dataset_meta `order` ascending, then alphabetical
 	started      time.Time
 	nReq         atomic.Int64
 	nErr         atomic.Int64
@@ -54,7 +54,7 @@ type server struct {
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
-	tcga := flag.String("tcga", "/data/tcga.db", "the canonical TCGA database (served as dataset \"TCGA\"); empty to skip")
+	tcga := flag.String("tcga", "/data/tcga.db", "transitional: a TCGA database outside -datasets (served as \"TCGA\" unless datasets/TCGA.db exists); optional, ignored if absent")
 	dir := flag.String("datasets", "/data/datasets", "directory of additional <name>.db datasets; empty to skip")
 	cacheMB := flag.Int("cache-mb", 512, "memory for cached probe columns, per dataset, in MB")
 	conns := flag.Int("db-conns", 48, "database connections per dataset (concurrent uncached lookups)")
@@ -82,21 +82,23 @@ func main() {
 		log.Printf("dataset %s: %d samples, %d clinical columns, %d probe names, loaded in %s",
 			name, len(d.samples), len(d.clinOrder), len(d.probeNames), time.Since(t0).Round(time.Millisecond))
 	}
-	if *tcga != "" {
-		if _, err := os.Stat(*tcga); err == nil {
-			add("TCGA", *tcga)
-		}
-	}
+	var files []string
 	if *dir != "" {
-		files, _ := filepath.Glob(filepath.Join(*dir, "*.db"))
-		sort.Strings(files)
-		for _, f := range files {
-			name := strings.TrimSuffix(filepath.Base(f), ".db")
-			if name != "TCGA" {
-				add(name, f)
-			}
+		files, _ = filepath.Glob(filepath.Join(*dir, "*.db"))
+	}
+	if *tcga != "" {
+		if _, err := os.Stat(*tcga); err != nil {
+			log.Printf("-tcga %s not present: not used", *tcga)
+			*tcga = ""
 		}
 	}
+	for _, f := range datasetFiles(*tcga, files) {
+		add(f.name, f.path)
+	}
+	s.order = orderDatasets(s.order, func(n string) (int, bool) {
+		v, err := strconv.Atoi(strings.TrimSpace(s.datasets[n].meta["order"]))
+		return v, err == nil
+	})
 	if len(s.datasets) == 0 {
 		log.Fatal("no datasets could be loaded")
 	}
@@ -278,21 +280,9 @@ func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleDatasets(w http.ResponseWriter, r *http.Request) {
-	type entry struct {
-		Name     string            `json:"name"`
-		Title    string            `json:"title"`
-		Label    string            `json:"label"`
-		Samples  int               `json:"n_samples"`
-		Probes   int               `json:"n_probes"`
-		Version  string            `json:"version"`
-		Roles    Roles             `json:"roles"`
-		Defaults map[string]string `json:"defaults"`
-		Sources  []Source          `json:"sources"` // the whole collection and its parts (see /meta), for the data-source menu
-	}
-	out := []entry{}
+	out := []DatasetSummary{}
 	for _, name := range s.order {
-		d := s.datasets[name]
-		out = append(out, entry{d.Name, d.Title, d.Label, len(d.samples), len(d.probeNames), d.version, d.Roles, d.Defaults, d.sources})
+		out = append(out, s.datasets[name].summary())
 	}
 	w.Header().Set("Cache-Control", "no-cache") // the list of current versions: never reused unchecked
 	writeJSON(w, map[string]any{"datasets": out})
@@ -339,7 +329,7 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 	// contain it; within a group the shorter name first, then alphabetical. So "T", "MET" or
 	// "CD8B" are found however many names contain those letters (table order used to decide
 	// which 60 of 500 matches were shown, and the exact match could be left out).
-	var exact, starts, contains []string
+	var exact, starts, contains []int
 	total := 0
 	for i, low := range d.probeLower {
 		idx := strings.Index(low, q)
@@ -349,18 +339,19 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 		total++
 		switch {
 		case low == q:
-			exact = append(exact, d.probeNames[i])
+			exact = append(exact, i)
 		case idx == 0:
-			starts = append(starts, d.probeNames[i])
+			starts = append(starts, i)
 		default:
-			contains = append(contains, d.probeNames[i])
+			contains = append(contains, i)
 		}
 	}
-	byLength := func(a, b string) int {
-		if len(a) != len(b) {
-			return len(a) - len(b)
+	byLength := func(a, b int) int {
+		x, y := d.probeNames[a], d.probeNames[b]
+		if len(x) != len(y) {
+			return len(x) - len(y)
 		}
-		return strings.Compare(a, b)
+		return strings.Compare(x, y)
 	}
 	slices.SortFunc(starts, byLength)
 	slices.SortFunc(contains, byLength)
@@ -368,11 +359,14 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 	if len(res) > limit {
 		res = res[:limit]
 	}
-	if res == nil {
-		res = []string{}
+	names := make([]string, len(res))
+	for i, ix := range res {
+		names[i] = d.probeNames[ix]
 	}
+	out := map[string]any{"dataset": d.Name, "query": q, "total_matches": total, "probes": names,
+		"hits_typed": d.typedHits(res)}
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	writeJSON(w, map[string]any{"dataset": d.Name, "query": q, "total_matches": total, "probes": res})
+	writeJSON(w, out)
 }
 
 // handleValues is the gitr() of the API: the requested columns, aligned to the dataset's
@@ -453,4 +447,48 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+type datasetFile struct{ name, path string }
+
+// datasetFiles: every *.db in the datasets directory is a dataset named by its file name
+// without .db. The -tcga file (transitional) is added as "TCGA" unless datasets/TCGA.db exists.
+func datasetFiles(tcga string, files []string) []datasetFile {
+	sort.Strings(files)
+	var out []datasetFile
+	have := map[string]bool{}
+	for _, f := range files {
+		name := strings.TrimSuffix(filepath.Base(f), ".db")
+		have[name] = true
+		out = append(out, datasetFile{name, f})
+	}
+	if tcga != "" {
+		if have["TCGA"] {
+			log.Printf("both -tcga %s and datasets/TCGA.db exist: serving the datasets one", tcga)
+		} else {
+			out = append([]datasetFile{{"TCGA", tcga}}, out...)
+		}
+	}
+	return out
+}
+
+// orderDatasets: by the integer `order` of dataset_meta (ascending; a dataset without one
+// comes after all that have one), then by name.
+func orderDatasets(names []string, order func(string) (int, bool)) []string {
+	out := append([]string{}, names...)
+	slices.SortStableFunc(out, func(a, b string) int {
+		va, oa := order(a)
+		vb, ob := order(b)
+		switch {
+		case oa && ob && va != vb:
+			return va - vb
+		case oa != ob:
+			if oa {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a, b)
+	})
+	return out
 }

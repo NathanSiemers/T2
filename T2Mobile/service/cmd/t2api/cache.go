@@ -30,15 +30,15 @@ type inflight struct {
 }
 
 type columnCache struct {
-	mu       sync.Mutex
-	budget   int64
-	used     int64
-	order    *list.List // front = most recently used
-	items    map[string]*list.Element
-	pending  map[string]*inflight
-	hits     atomic.Int64
-	misses   atomic.Int64
-	evicted  atomic.Int64
+	mu      sync.Mutex
+	budget  int64
+	used    int64
+	order   *list.List // front = most recently used
+	items   map[string]*list.Element
+	pending map[string]*inflight
+	hits    atomic.Int64
+	misses  atomic.Int64
+	evicted atomic.Int64
 }
 
 func newColumnCache(budget int64) *columnCache {

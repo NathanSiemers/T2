@@ -20,6 +20,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 )
 
 type Source struct {
@@ -206,7 +207,7 @@ func (d *Dataset) loadSources() error {
 		return nil
 	}
 	for i, lv := range d.sourceLevels {
-		if !contains(d.levels[d.sourceCol], lv) {
+		if !slices.Contains(d.levels[d.sourceCol], lv) {
 			fmt.Fprintf(os.Stderr, "dataset %s: source %q is not a value of %s; skipped\n", d.Name, lv, d.sourceCol)
 			continue
 		}

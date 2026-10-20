@@ -1271,3 +1271,12 @@ of verified copies in 6 min; served dir `/scratch/shinyusb/T2-data-20261021/data
 Live `/v1/datasets`: TCGA (order 1), DEMO, cptac, tcgatargetgtex with handles; cptac `/meta` has OS/PFI,
 type labels, the NCI attribution, `default_cohorts`. Pending: the Mac build + UI tests of the phone app
 (`ops/test.sh ios`, the Mac was unreachable); matrixStats in the shinyt2t image.
+**Mac, 2026-10-19 21:20:** the MacBook is on the LAN as `10.0.0.110` (`Nathans-MacBook-Air.local`; the
+documented `10.13.13.4` was its VPN address and no longer routes), so `ops/test.sh ios` takes
+`T2_MAC=10.0.0.110`. The contract-round iOS code compiles there: `xcodebuild build` and
+`build-for-testing` for `generic/platform=iOS Simulator` both succeed (app, T2AppTests incl.
+FigureTests, T2UITests). The simulator runs are blocked: Xcode 27.1 says "CoreSimulator is out of
+date (1171.7.0 < 1174.9.2)" and the component install needs authorization on the Mac ("Install
+Failed: Authorization is required to install the packages"), which is Nathan's step: open Xcode once
+and let it install its components, or `sudo xcodebuild -runFirstLaunch`; then `T2_MAC=10.0.0.110
+ops/test.sh ios` (UI tests against the dev service through the tunnel).

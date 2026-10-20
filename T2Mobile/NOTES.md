@@ -133,9 +133,12 @@ agent runs it). Lessons of the switch, all now encoded in those scripts: the sit
 `/etc/nginx/conf.d/nginx.conf` in the Nginx container; the pool's Shiny Server serves only
 the path in its conf (so `/T2/` is rewritten to `/T2Tc/`); never remove the checkout's
 `tcga.db`/`datasets` links; Shiny Server passes no container environment to R.
-**TODO (Nathan, 2026-10-20): the synthetic DEMO data set must not show up in the apps** (the iPhone app
-and the web app list it today; `DatasetMeta.isDemo` exists in T2Kit but the dataset list still offers
-it). Not part of the citations round; do it in the next app round.
+**TODO (Nathan, 2026-10-20): the synthetic DEMO data set must not show up in the apps.** The iPhone
+app already hides it (`AppModel` filters `isDemo`: name DEMO or "not real data" in the title; Nathan
+confirmed on the simulator). The WEB app still lists it (`lib.R list_sources()` takes every `/v1/datasets`
+entry): filter it the same way there, or better, have the service mark a dataset as hidden
+(`dataset_meta` key, e.g. `hidden = 1`, echoed in `/v1/datasets`) so neither app needs the rule. Next
+app round.
 **TODO (Nathan, 2026-10-20): the plot title should name the data source part.** When the GTEx
 subset of the Toil collection is selected, the title says only "TCGA-TARGET-GTEX (Toil)", not the
 subset; it should carry the part's label (`/meta sources` → `source_labels`; both apps). Not a huge

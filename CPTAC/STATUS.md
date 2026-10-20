@@ -135,3 +135,5 @@ and dimension tables identical, 12,033 fact values differ by ≤ 7e-15 from SQLi
 70/0, sql_tests 62/0, contract check 22/0. sha256 018547d6…3c49a, in `datasets/cptac.db` and
 `T2-devdata/datasets/cptac.db`. The Shiny app shows the attribution on About and KM on OS/PFI from the
 declared entries. Release: with the contract round (data-stage with TCGA.db and cptac.db, DEMO.db).
+Released 2026-10-19 ~20:30 with the contract round: served `/scratch/shinyusb/T2-data-20261021/datasets/cptac.db`
+(sha256 018547d6…), live check 28/28; live `/meta` shows OS/PFI, labels, attribution.

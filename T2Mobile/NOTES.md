@@ -1263,3 +1263,11 @@ implementation agents by layer, the lead reviewing and committing:
 Open: matrixStats is not in the shinyt2t image (`t2_row_medians` falls back to apply); the Toil file
 got its keys via `dataset_meta.R` (builder writes them at its next rebuild); `bytype` view absent in
 TCGA/Toil files (WARN).
+**Released 2026-10-19 ~20:30** (Nathan: "Yes, release now"): `deploy.sh service` (rollback tag
+`t2api:pre-20261019-2020`), `data-stage 20261021 TCGA.db cptac.db DEMO.db tcgatargetgtex.db` (78 GB
+of verified copies in 6 min; served dir `/scratch/shinyusb/T2-data-20261021/datasets/` with
+`TCGA.db`; no top-level file), `data` (compose: `-datasets` only, no `-tcga`; rollback
+`docker-compose.yml.pre-data-20261019-2026`), `code` (served 08cd67f), `status`, `check` 28/28.
+Live `/v1/datasets`: TCGA (order 1), DEMO, cptac, tcgatargetgtex with handles; cptac `/meta` has OS/PFI,
+type labels, the NCI attribution, `default_cohorts`. Pending: the Mac build + UI tests of the phone app
+(`ops/test.sh ios`, the Mac was unreachable); matrixStats in the shinyt2t image.

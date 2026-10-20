@@ -199,6 +199,24 @@ proteome data" for a `.prot`/`.phospho` variable in the stats block and warn whe
 minimum minus a constant, as in left-censored imputation) so sparse proteins can be compared with
 RNA without silently dropping the low expressers; (3) say in the type description that missing =
 not quantified (already there) and add the "low expressers" interpretation to About.
+**Nathan (2026-10-20): offer a "zero" option for not-detected proteomics values**, as an option, only
+for samples that WERE analyzed by proteomics; samples never measured by proteomics stay NA. Needs
+thinking through for the api and the apps: the api should know which data types get a "zero" (or
+"floor") option, which is a new sort of api call. Left as a note for further consideration. Lead's
+first sketch: the service already distinguishes the two cases per type (`tested` says which samples
+were analyzed for the type; `sparse` says whether a missing row means the default value or missing,
+`dataset.go` loadTested/loadSparse and the values path at :962-990), so the knowledge is in the data
+layer already and no app rule is needed. Contract sketch: (a) `/meta` `datatypes[]` (or a `types[]`
+field) gains `missing` = `not_tested_only` (dense types like `rna`, where every tested sample has a
+value) or `not_detected` (proteome, phosphoproteome: a tested sample may lack a value) plus the list of
+fill options the type supports (`na`, `zero`, `floor`); (b) `/v1/{ds}/values?...&fill=zero|floor`
+(default `na`) makes the service fill the "tested but no row" cells of such a type with 0 or with the
+per-cohort minimum of that probe, never the untested samples; (c) the apps show the option only for a
+variable whose type advertises it, label the plot (caption: "not-detected protein values set to 0 /
+to the detection floor") and keep the choice per plot, not globally; (d) the Shiny file mode passes
+the same flag to `gitr`, equiv suite compares both. Which types get it is a property of the data
+(`sparse = 0` types with `tested` rows), so the builders need no change beyond perhaps a `types` column
+naming the allowed fills.
 **Open:** Apple's verdict on 1.0 (tag `v1.0-submitted`; playbook in the memory file
 `apple-review-outcome` and below); `CODE-LAYOUT.md` — Nathan will read the file-structure
 assessment when there is budget (he said 24 h); the iPhone app could consume the service's

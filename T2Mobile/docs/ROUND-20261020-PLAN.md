@@ -47,6 +47,14 @@ option stays a note (Nathan: "leave it for now").
 ## Status
 
 - 2026-10-20 evening: branch created, dev DEMO marked hidden, three agents started (Go, R, iOS).
+- 2026-10-21 early hours: all seven items done on the branch (service 92c1d16/cb455e2, web 5848d94/e1c0abe/5270f82,
+  iOS 937f1a9/7ea42bc, security suite f647829, reference audit 62b2a1f). Draft PR #14. Verified on the dev stack: Go
+  tests, equivalence (76 checks incl. fill), app/app-service, Chrome suite, Swift 87, simulator 8 unit + 9 UI (fill picker
+  on CPTAC, absent on TCGA). `security/scan.sh --quick`: 6 FAIL, all baseline-stale items of this branch (go.mod/go.sum/
+  Dockerfile manifest, two indirect Go modules from `go mod tidy`, refs, untracked files); Nathan accepts the baseline
+  after reviewing the PR. NOT released: production frozen while iOS build 2 is in App Review. Release order after the
+  freeze: `deploy.sh service`; `dataset_meta.R type-fill` on a staged copy of the served cptac.db + `hidden=1` on DEMO,
+  `data-stage`, `data`; `code`, `check`; listing texts with asc.py; next iOS build (1.0 build 3 or 1.1).
 
 ## Item 7 (added 2026-10-20 evening): not-detected values as zero or the detection floor, as an option
 

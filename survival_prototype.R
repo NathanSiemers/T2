@@ -280,7 +280,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
     endpoint, ylab, grp_desc, nrow(df), if (capped) sprintf(", ≤%d%s", as.integer(max_time), unit$short) else "",
     cond_note, endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
   attr(g, "t2summary") <- paste0(attr(g, "t2summary"), if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
-  attr(g, "km_data") <- df                            # sample, grp — for tests
+  attr(g, "km_data") <- df                            # sample, grp - for tests
   attr(g, "t2fill") <- t2_fill_of(d)                  # the answer's word on not-detected values (lib.R)
   g
 }

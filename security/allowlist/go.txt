@@ -1,0 +1,31 @@
+# loadtest is a stand-alone load generator (a separate binary, not part of /t2api); an http client and a -insecure flag are its job
+T2Mobile/service/cmd/loadtest/main\.go:[0-9]+:.*("crypto/tls"|tls\.Config|http\.Client)
+# the ONE listener of the service (address from the -addr flag, default :8080)
+cmd/t2api/main\.go:[0-9]+:\s+log\.Fatal\(srv\.ListenAndServe\(\)\)
+# request headers/parameters the API reads: Accept-Encoding (gzip), If-None-Match (304), v (dataset version), all, q, limit, probes (docs/API.md)
+cmd/t2api/main\.go:[0-9]+:.*Header\.Get\("(Accept-Encoding|If-None-Match)"\)
+cmd/t2api/main\.go:[0-9]+:.*URL\.Query\(\)\.Get\("(v|all|q|limit)"\)
+cmd/t2api/main\.go:[0-9]+:\s+q := r\.URL\.Query\(\)$
+# the service restarts itself (exit 3) when a dataset file was replaced on disk, so that it loads the new one (documented in API.md "Replacing a database")
+cmd/t2api/main\.go:[0-9]+:.*os\.Exit\(3\)
+# contact form: the only environment variable read is T2_CONTACT_DIR; headers for the content type and the client address (rate limit only, held in memory, never stored)
+cmd/t2api/contact\.go:[0-9]+:.*os\.Getenv\("T2_CONTACT_DIR"\)
+cmd/t2api/contact\.go:[0-9]+:.*Header\.Get\("(X-Real-IP|X-Forwarded-For|Content-Type)"\)
+cmd/t2api/contact\.go:[0-9]+:.*(SplitHostPort\(r\.RemoteAddr\)|return r\.RemoteAddr)
+# the only file the service writes: messages.jsonl in T2_CONTACT_DIR, append-only, mode 0640
+cmd/t2api/contact\.go:[0-9]+:.*os\.OpenFile\(path, os\.O_CREATE\|os\.O_WRONLY\|os\.O_APPEND, 0o640\)
+# the dataset version is derived from the database file identity (inode, mtime) to detect replacement
+cmd/t2api/dataset\.go:[0-9]+:\s+"syscall"$
+# the clinical-column descriptions are compiled into the binary from this one file
+cmd/t2api/descriptions\.go:[0-9]+://go:embed clinical_descriptions\.tsv$
+# /healthz is exempt from the in-flight limit so a watchdog sees the process alive while it is busy (a path literal compared with r.URL.Path; no behaviour change for any user data); the test asserts the same
+cmd/t2api/main\.go:[0-9]+:\s+if r\.URL\.Path == "/healthz" \{
+cmd/t2api/limited_test\.go:[0-9]+:.*r\.URL\.Path != "/healthz"
+# usage.go (UNCOMMITTED round-20261020 work, reviewed by the 2026-10-20 audit): aggregate usage counters. The client address keys a per-minute in-memory map from which only two numbers survive (distinct clients, max per client); the map is dropped each minute. User-Agent is classified to ios/web/other. The hourly counts file is written ONLY when -usage-dir is set (default off; the production container is read-only). Re-review if usage.go changes.
+cmd/t2api/usage\.go:[0-9]+:.*Header\.Get\("(X-Real-IP|X-Forwarded-For|User-Agent)"\)
+cmd/t2api/usage\.go:[0-9]+:.*(SplitHostPort\(r\.RemoteAddr\)|return r\.RemoteAddr)
+cmd/t2api/usage\.go:[0-9]+:.*clientKind\(r\.Header\.Get\("User-Agent"\)\)
+cmd/t2api/usage\.go:[0-9]+:\s+f, err = os\.OpenFile\(filepath\.Join\(dir, "usage-"
+cmd/t2api/usage_test\.go:[0-9]+:
+# fill_test.go (uncommitted test helper of the round): executes SQL statements against a throwaway test database in the Go test only
+cmd/t2api/fill_test\.go:[0-9]+:.*db\.Exec\(q\)

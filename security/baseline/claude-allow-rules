@@ -1,0 +1,47 @@
+settings.json allow Bash(/scratch/nathan/R/T2/T2Mobile/ops/deploy.sh:*)
+settings.local.json allow Bash(git add:*)
+settings.local.json allow Bash(git commit:*)
+settings.local.json allow Bash(git push:*)
+settings.local.json allow Bash(Rscript -e ' library\(sqldf\) db <- "tcga.db" for \(t in c\("tcgai","tcgacati","tested","probes","samples","nosuffix"\)\) {   n <- sqldf\(sprintf\("SELECT 
+settings.local.json allow Bash(sqlite3:*)
+settings.local.json allow Bash(Rscript -e 'library\(RSQLite\); con=dbConnect\(SQLite\(\),"tcga.db",flags=SQLITE_RO\); for\(t in c\("tcgai","tcgacati","tested","probes","samples"\)\) cat\
+settings.local.json allow Bash(Rscript -e 'library\(RSQLite\); con=dbConnect\(SQLite\(\),"tcga.db",flags=SQLITE_RO\); cat\("types in tcgacati:\\n"\); print\(dbGetQuery\(con,"select disti
+settings.local.json allow Bash(Rscript -e ' library\(RSQLite\) con <- dbConnect\(SQLite\(\), "tcga.db", flags=SQLITE_RO\)  probes <- c\("CDKN2A.cnv", "CDKN2A.mut", "CCR8", "FOXP3", "CD3E
+settings.local.json allow Bash(Rscript 00-master.R)
+settings.local.json allow Bash(tee rebuild.log)
+settings.local.json allow Bash(Rscript -e ' library\(RSQLite\) con <- dbConnect\(SQLite\(\), "tcga.db", flags=SQLITE_RO\)  probes <- c\("CDKN2A.cnv", "CDKN2A.mut", "CCR8", "FOXP3", "CD3E
+settings.local.json allow Bash(tee rebuild2.log)
+settings.local.json allow Bash(tee rebuild3.log)
+settings.local.json allow Bash(Rscript -e ' library\(RSQLite\) con = dbConnect\(SQLite\(\), "tcga.db", flags=SQLITE_RO\)  cat\("=== Table sizes ===\\n"\) for \(t in c\("tcgai","tcgacati"
+settings.local.json allow Bash(Rscript -e ' library\(RSQLite\) con = dbConnect\(SQLite\(\), "tcga.db"\) dbExecute\(con, "UPDATE datatypes SET r_datatype = \\"factor\\" WHERE type = \\"fm
+settings.local.json allow Bash(Rscript -e ' library\(tidyr\) df = data.frame\(a = 1:3, b = factor\(c\("x","y","z"\)\)\) cat\("data.frame: is.factor\(df[, \\"b\\"]\):", is.factor\(df[, "b
+settings.local.json allow Bash(Rscript Testing/test_download.R 2>&1)
+settings.local.json allow Bash(Rscript -e ' library\(UCSCXenaTools\)  cat\("=== Available functions ===\\n"\) cat\(grep\("TCGA|Xena|avail|show|download", ls\("package:UCSCXenaTools"\), v
+settings.local.json allow Bash(zcat Data/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.xena.gz)
+settings.local.json allow Bash(grep -c '^[0-9]*$')
+settings.local.json allow Bash(grep -cv '^[0-9]*$')
+settings.local.json allow Bash(Rscript -e ':*)
+settings.local.json allow Bash(curl -sL -o /dev/null -w "%{http_code} %{url_effective}" "https://www.cell.com/cell-reports/fulltext/S2211-1247\(18\)31961-4")
+settings.local.json allow WebSearch
+settings.local.json allow WebFetch(domain:www.cell.com)
+settings.local.json allow WebFetch(domain:pmc.ncbi.nlm.nih.gov)
+settings.local.json allow Bash(curl -sL -D - "https://pmc.ncbi.nlm.nih.gov/articles/instance/5961503/bin/NIHMS962902-supplement-2.xlsx" -o /tmp/test_supp2.xlsx)
+settings.local.json allow Read(//tmp/**)
+settings.local.json allow Bash(curl -sL -o /tmp/test_mmc5.xlsx -H 'User-Agent: Mozilla/5.0 \(X11; Linux x86_64\) AppleWebKit/537.36 \(KHTML, like Gecko\) Chrome/120.0.0.0 Safari/537.36' 
+settings.local.json allow WebFetch(domain:www.sciencedirect.com)
+settings.local.json allow Bash(curl -sL -o /home/rstudio/R/T2/Data/Knijnenburg_mmc5_TableS5.pdf https://ars.els-cdn.com/content/image/1-s2.0-S2211124718304376-mmc5.pdf)
+settings.local.json allow WebFetch(domain:gdc.cancer.gov)
+settings.local.json allow Bash(curl -sL -o /dev/null -w '%{http_code} %{size_download}' https://ars.els-cdn.com/content/image/1-s2.0-S0092867418302290-mmc5.xlsx)
+settings.local.json allow Bash(curl -sL -o /tmp/ding_mmc5.xlsx https://ars.els-cdn.com/content/image/1-s2.0-S0092867418302290-mmc5.xlsx)
+settings.local.json allow Bash(ls -lh /home/rstudio/R/T2/Data/Knijnenburg_TableS5_MSIsensor.xlsx /home/rstudio/R/T2/Data/TCGA_DDR_Data_Resources*)
+settings.local.json allow Bash(Rscript:*)
+settings.local.json allow Bash(git rm:*)
+settings.local.json allow Bash(gh pr *)
+settings.local.json allow Bash(git pull *)
+settings.local.json allow Bash(ops/deploy.sh status *)
+settings.local.json allow Bash(curl *)
+settings.local.json allow Bash(awk *)
+settings.local.json allow Bash(python3 -c 'import sys,json;m=json.load\(sys.stdin\);print\(m["n_probes"],m["n_samples"]\)')
+settings.local.json allow Bash(python3 -c 'import sys,json *)
+settings.local.json allow Read(//scratch/nathan/R/T2-devdata/**)
+settings.local.json allow Bash(docker exec *)

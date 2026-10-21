@@ -1,0 +1,8 @@
+    command: ["-addr", ":8080", "-datasets", "/data/datasets", "-cache-mb", "512", "-max-inflight", "64"]
+    command: ["-addr", ":8080", "-datasets", "/data/datasets", "-cache-mb", "512"]
+    command: ["/usr/bin/shiny-server"]
+    entrypoint: ["/usr/local/bin/pool-entrypoint"]
+    image: haproxy:3.0-alpine
+    image: shinyt2t:2026.10
+    image: t2api:2026.10
+  image: shinypublic:2026.10

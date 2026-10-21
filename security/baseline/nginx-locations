@@ -1,0 +1,24 @@
+location /
+location /AllNets/
+location /GENIO/
+location /PC3/
+location /SCBlood/
+location /SCMel/
+location /T2/
+location /T2T/
+location /T2Tc/
+location /api/t2/v1/
+location /fphome/
+location /t2app/
+location = /
+location = /AllNets
+location = /GENIO
+location = /PC3
+location = /SCBlood
+location = /SCMel
+location = /T2
+location = /T2T
+location = /T2Tc
+location = /api/t2/healthz
+location = /api/t2/v1/contact
+location = /favicon.ico

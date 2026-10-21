@@ -1,0 +1,16 @@
+apport-autoreport.timer
+apt-daily-upgrade.timer
+apt-daily.timer
+dpkg-db-backup.timer
+e2scrub_all.timer
+fstrim.timer
+fwupd-refresh.timer
+logrotate.timer
+man-db.timer
+motd-news.timer
+plocate-updatedb.timer
+snapd.snap-repair.timer
+systemd-tmpfiles-clean.timer
+ua-timer.timer
+update-notifier-download.timer
+update-notifier-motd.timer

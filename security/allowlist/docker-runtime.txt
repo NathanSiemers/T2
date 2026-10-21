@@ -1,0 +1,2 @@
+# Nathan's Open WebUI (not part of T2) runs in the host network namespace
+^openwebui network=host$

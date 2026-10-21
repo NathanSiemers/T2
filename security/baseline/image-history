@@ -1,0 +1,120 @@
+t2api:2026.10 /bin/sh -c #(nop)  ENTRYPOINT ["/t2api"]
+t2api:2026.10 /bin/sh -c #(nop)  EXPOSE 8080
+t2api:2026.10 /bin/sh -c #(nop)  USER 999:999
+t2api:2026.10 /bin/sh -c #(nop) COPY file:<id> in /loadtest 
+t2api:2026.10 /bin/sh -c #(nop) COPY file:<id> in /t2api 
+shinyt2t:2026.10 /bin/sh -c #(nop)  LABEL com.docker.compose.image.builder=classic
+shinyt2t:2026.10 /bin/sh -c #(nop)  CMD ["/usr/bin/shiny-server"]
+shinyt2t:2026.10 /bin/sh -c #(nop)  ENTRYPOINT ["/usr/local/bin/shiny-entrypoint"]
+shinyt2t:2026.10 /bin/sh -c chmod 755 /usr/local/bin/shiny-entrypoint
+shinyt2t:2026.10 /bin/sh -c #(nop) COPY file:<id> in /usr/local/bin/shiny-entrypoint 
+shinyt2t:2026.10 /bin/sh -c echo 'export OPENBLAS_NUM_THREADS=1' >> /usr/local/lib/R/etc/ldpaths
+shinyt2t:2026.10 /bin/sh -c printf 'TMPDIR=/tmp\nSQLITE_TMPDIR=/tmp\nXDG_CACHE_HOME=/tmp/cache\n' >> /usr/local/lib/R/etc/Renviron.site  && echo 'options(gsubfn.engine = "R")' >> /usr/local/lib/R/etc/Rprofile.site
+shinyt2t:2026.10 /bin/sh -c (SUDO_FORCE_REMOVE=yes apt-get purge -y sudo gdebi-core 2>/dev/null || true)  && rm -rf /var/lib/apt/lists/* /srv/shiny-server/*
+shinyt2t:2026.10 /bin/sh -c groupmod -g 990 systemd-journal  && groupmod -g 999 shiny  && usermod -u 999 -g 999 shiny  && chown -R 999:999 /var/lib/shiny-server /var/log/shiny-server /home/shiny
+shinyt2t:2026.10 /bin/sh -c Rscript -e 'for (p in c("shiny", "shinythemes", "shinycssloaders", "rmarkdown", "DBI", "RSQLite", "sqldf", "ggplot2", "ggthemes", "viridis", "tidyverse", "survival", "survminer", "quantreg", "ragg", "systemfonts", "jsonlite", "rlang")) suppressPackageStartupMessages(library(p, character.only = TRUE)); stopifnot(capabilities("cairo"))'
+shinyt2t:2026.10 /bin/sh -c install2.r --error --skipinstalled --ncpus -1         shinythemes shinycssloaders sqldf ggthemes viridis survminer quantreg  && rm -rf /tmp/downloaded_packages /tmp/Rtmp*
+shinyt2t:2026.10 COPY scripts /rocker_scripts # buildkit
+shinyt2t:2026.10 CMD ["/init"]
+shinyt2t:2026.10 EXPOSE [3838/tcp]
+shinyt2t:2026.10 RUN /bin/sh -c /rocker_scripts/install_shiny_server.sh # buildkit
+shinyt2t:2026.10 COPY scripts/init_set_env.sh /rocker_scripts/init_set_env.sh # buildkit
+shinyt2t:2026.10 COPY scripts/install_pandoc.sh /rocker_scripts/install_pandoc.sh # buildkit
+shinyt2t:2026.10 COPY scripts/install_s6init.sh /rocker_scripts/install_s6init.sh # buildkit
+shinyt2t:2026.10 COPY scripts/install_shiny_server.sh /rocker_scripts/install_shiny_server.sh # buildkit
+shinyt2t:2026.10 ENV PANDOC_VERSION=default
+shinyt2t:2026.10 ENV SHINY_SERVER_VERSION=latest
+shinyt2t:2026.10 ENV S6_VERSION=v2.1.0.2
+shinyt2t:2026.10 RUN /bin/sh -c /rocker_scripts/install_tidyverse.sh # buildkit
+shinyt2t:2026.10 COPY scripts/install_tidyverse.sh /rocker_scripts/install_tidyverse.sh # buildkit
+shinyt2t:2026.10 RUN /bin/sh -c if grep -q "1000" /etc/passwd; then
+shinyt2t:2026.10     userdel --remove "$(id -un 1000)";
+shinyt2t:2026.10 fi
+shinyt2t:2026.10 /rocker_scripts/setup_R.sh
+shinyt2t:2026.10  # buildkit
+shinyt2t:2026.10 COPY scripts/setup_R.sh /rocker_scripts/setup_R.sh # buildkit
+shinyt2t:2026.10 COPY scripts/bin/ /rocker_scripts/bin/ # buildkit
+shinyt2t:2026.10 ENV LANG=en_US.UTF-8
+shinyt2t:2026.10 ENV CRAN=https://p3m.dev/cran/__linux__/noble/2026-04-23
+shinyt2t:2026.10 RUN /bin/sh -c /rocker_scripts/install_R_source.sh # buildkit
+shinyt2t:2026.10 COPY scripts/install_R_source.sh /rocker_scripts/install_R_source.sh # buildkit
+shinyt2t:2026.10 ENV TZ=Etc/UTC
+shinyt2t:2026.10 ENV R_HOME=/usr/local/lib/R
+shinyt2t:2026.10 ENV R_VERSION=4.5.3
+shinyt2t:2026.10 /bin/sh -c #(nop)  CMD ["/bin/bash"]
+shinyt2t:2026.10 /bin/sh -c #(nop) ADD file:<id> in / 
+shinyt2t:2026.10 /bin/sh -c #(nop)  LABEL org.opencontainers.image.version=24.04
+shinyt2t:2026.10 /bin/sh -c #(nop)  ARG LAUNCHPAD_BUILD_ARCH
+shinyt2t:2026.10 /bin/sh -c #(nop)  ARG RELEASE
+shinypublic:2026.10 /bin/sh -c #(nop)  CMD ["/usr/bin/shiny-server"]
+shinypublic:2026.10 /bin/sh -c #(nop)  ENTRYPOINT ["/usr/local/bin/shiny-entrypoint"]
+shinypublic:2026.10 /bin/sh -c chmod 755 /usr/local/bin/shiny-entrypoint
+shinypublic:2026.10 /bin/sh -c #(nop) COPY file:<id> in /usr/local/bin/shiny-entrypoint 
+shinypublic:2026.10 /bin/sh -c printf 'TMPDIR=/tmp\nSQLITE_TMPDIR=/tmp\nXDG_CACHE_HOME=/tmp/cache\n' >> /usr/local/lib/R/etc/Renviron.site  && echo 'options(gsubfn.engine = "R")' >> /usr/local/lib/R/etc/Rprofile.site
+shinypublic:2026.10 /bin/sh -c SUDO_FORCE_REMOVE=yes apt-get purge -y sudo gdebi-core webalizer dselect  && rm -rf /var/lib/apt/lists/*  && Rscript -e 'for (p in c("shinyCustom", "tSpace")) if (p %in% rownames(installed.packages())) remove.packages(p)'
+shinypublic:2026.10 /bin/sh -c Rscript 202403-r-package-install.R
+shinypublic:2026.10 /bin/sh -c #(nop) ADD file:<id> in 202403-r-package-install.R 
+shinypublic:2026.10 /bin/sh -c Rscript bioc-install.R
+shinypublic:2026.10 /bin/sh -c #(nop) ADD file:<id> in bioc-install.R 
+shinypublic:2026.10 /bin/sh -c Rscript rsqlite-make.R
+shinypublic:2026.10 /bin/sh -c #(nop) ADD file:<id> in rsqlite-make.R 
+shinypublic:2026.10 /bin/sh -c #(nop) ADD dir:ff9e974f798e4c74b219073b4115ceee3b30f21ade2184b8d9c842413003ef45 in RSQLite 
+shinypublic:2026.10 /bin/sh -c #(nop) ADD file:<id> in /etc/shiny-server/shiny-server.conf 
+shinypublic:2026.10 /bin/sh -c Rscript install.knitit.R
+shinypublic:2026.10 /bin/sh -c #(nop) ADD file:<id> in install.knitit.R 
+shinypublic:2026.10 /bin/sh -c #(nop) ADD dir:365b499b0c4a2a541f8118ddbeccffd8ed5b146bb5f5913847b2cb79dc4fae1f in knitit 
+shinypublic:2026.10 /bin/sh -c Rscript -e  'devtools::install_github("hylasD/tSpace", build = TRUE, build_opts = c("--no-resave-data", "--no-manual"), force = T)'
+shinypublic:2026.10 /bin/sh -c Rscript -e  'devtools::install_github("homerhanumat/shinyCustom")'
+shinypublic:2026.10 /bin/sh -c Rscript r-package-install.R
+shinypublic:2026.10 /bin/sh -c #(nop) ADD file:<id> in r-package-install.R 
+shinypublic:2026.10 /bin/sh -c apt-get install -y libgeos++-dev libgeos3.10.2 libgeos-c1v5 libgeos-dev
+shinypublic:2026.10 /bin/sh -c apt-get install -y      sudo gdebi-core  pandoc  pandoc-citeproc       libcairo2-dev   libxt-dev  libjpeg-dev  wget       libssl-dev libxml2-dev pandoc psmisc dselect       libmariadb-dev       libglpk-dev       libcurl4-openssl-dev git webalizer libbz2-dev libhdf5-dev       sqlite3
+shinypublic:2026.10 /bin/sh -c apt-get update
+shinypublic:2026.10 RUN /bin/sh -c /rocker_scripts/install_tidyverse.sh # buildkit
+shinypublic:2026.10 LABEL org.opencontainers.image.licenses=GPL-2.0-or-later org.opencontainers.image.source=https://github.com/rocker-org/rocker-versioned2 org.opencontainers.image.vendor=Rocker Project org.opencontainers.image.authors=Carl Boettiger <cboettig@ropensci.org>
+shinypublic:2026.10 CMD ["/init"]
+shinypublic:2026.10 EXPOSE map[3838/tcp:{}]
+shinypublic:2026.10 RUN /bin/sh -c /rocker_scripts/install_shiny_server.sh # buildkit
+shinypublic:2026.10 ENV PANDOC_VERSION=default
+shinypublic:2026.10 ENV SHINY_SERVER_VERSION=latest
+shinypublic:2026.10 ENV S6_VERSION=v2.1.0.2
+shinypublic:2026.10 LABEL org.opencontainers.image.licenses=GPL-2.0-or-later org.opencontainers.image.source=https://github.com/rocker-org/rocker-versioned2 org.opencontainers.image.vendor=Rocker Project org.opencontainers.image.authors=Carl Boettiger <cboettig@ropensci.org>
+shinypublic:2026.10 CMD ["R"]
+shinypublic:2026.10 RUN /bin/sh -c /rocker_scripts/setup_R.sh # buildkit
+shinypublic:2026.10 COPY scripts /rocker_scripts # buildkit
+shinypublic:2026.10 ENV LANG=en_US.UTF-8
+shinypublic:2026.10 ENV CRAN=https://p3m.dev/cran/__linux__/jammy/2023-10-30
+shinypublic:2026.10 RUN /bin/sh -c /rocker_scripts/install_R_source.sh # buildkit
+shinypublic:2026.10 COPY scripts/install_R_source.sh /rocker_scripts/install_R_source.sh # buildkit
+shinypublic:2026.10 ENV TZ=Etc/UTC
+shinypublic:2026.10 ENV R_HOME=/usr/local/lib/R
+shinypublic:2026.10 ENV R_VERSION=4.3.1
+shinypublic:2026.10 LABEL org.opencontainers.image.licenses=GPL-2.0-or-later org.opencontainers.image.source=https://github.com/rocker-org/rocker-versioned2 org.opencontainers.image.vendor=Rocker Project org.opencontainers.image.authors=Carl Boettiger <cboettig@ropensci.org>
+shinypublic:2026.10 /bin/sh -c #(nop)  CMD ["/bin/bash"]
+shinypublic:2026.10 /bin/sh -c #(nop) ADD file:<id> in / 
+shinypublic:2026.10 /bin/sh -c #(nop)  LABEL org.opencontainers.image.version=22.04
+shinypublic:2026.10 /bin/sh -c #(nop)  LABEL org.opencontainers.image.ref.name=ubuntu
+shinypublic:2026.10 /bin/sh -c #(nop)  ARG LAUNCHPAD_BUILD_ARCH
+shinypublic:2026.10 /bin/sh -c #(nop)  ARG RELEASE
+nginx-nginx:latest /bin/sh -c #(nop)  LABEL com.docker.compose.image.builder=classic
+nginx-nginx:latest /bin/sh -c #(nop) COPY dir:71db7a96039f68dab116c32037e05aba6edba8549f4e20f9536d89ec9a8e1ae7 in /usr/share/nginx/html/fiveprime 
+nginx-nginx:latest /bin/sh -c #(nop) COPY file:<id> in /etc/nginx/conf.d/default.conf 
+nginx-nginx:latest /bin/sh -c #(nop) COPY file:<id> in /etc/nginx/conf.d/nginx.conf 
+nginx-nginx:latest CMD ["nginx" "-g" "daemon off;"]
+nginx-nginx:latest STOPSIGNAL SIGQUIT
+nginx-nginx:latest EXPOSE map[80/tcp:{}]
+nginx-nginx:latest ENTRYPOINT ["/docker-entrypoint.sh"]
+nginx-nginx:latest COPY 30-tune-worker-processes.sh /docker-entrypoint.d # buildkit
+nginx-nginx:latest COPY 20-envsubst-on-templates.sh /docker-entrypoint.d # buildkit
+nginx-nginx:latest COPY 15-local-resolvers.envsh /docker-entrypoint.d # buildkit
+nginx-nginx:latest COPY 10-listen-on-ipv6-by-default.sh /docker-entrypoint.d # buildkit
+nginx-nginx:latest COPY docker-entrypoint.sh / # buildkit
+nginx-nginx:latest RUN /bin/sh -c set -x     && groupadd --system --gid 101 nginx     && useradd --system --gid nginx --no-create-home --home /nonexistent --comment "nginx user" --shell /bin/false --uid 101 nginx     && apt-get update     && apt-get install --no-install-recommends --no-install-suggests -y gnupg1 ca-certificates     &&     NGINX_GPGKEYS="573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62 8540A6F18833A80E9C1653A42FD21310B49F6B46 9E9BE90EACBCDE69FE9B204CBCDCD8A38D88A2B3";     NGINX_GPGKEY_PATH=/etc/apt/keyrings/nginx-archive-keyring.gpg;     export GNUPGHOME="$(mktemp -d)";     found='';     for NGINX_GPGKEY in $NGINX_GPGKEYS; do     for server in         hkp://keyserver.ubuntu.com:80         pgp.mit.edu     ; do         echo "Fetching GPG key $NGINX_GPGKEY from $server";         gpg1 --batch --keyserver "$server" --keyserver-options timeout=10 --recv-keys "$NGINX_GPGKEY" && found=yes && break;     done;     test -z "$found" && echo >&2 "error: failed to fetch GPG key $NGINX_GPGKEY" && exit 1;     done;     gpg1 --batch --export $NGINX_GPGKEYS > "$NGINX_GPGKEY_PATH" ;     rm -rf "$GNUPGHOME";     apt-get remove --purge --auto-remove -y gnupg1 && rm -rf /var/lib/apt/lists/*     && dpkgArch="$(dpkg --print-architecture)"     && nginxPackages="         nginx=${NGINX_VERSION}-${PKG_RELEASE}         nginx-module-xslt=${NGINX_VERSION}-${DYNPKG_RELEASE}         nginx-module-geoip=${NGINX_VERSION}-${DYNPKG_RELEASE}         nginx-module-image-filter=${NGINX_VERSION}-${DYNPKG_RELEASE}         nginx-module-njs=${NGINX_VERSION}+${NJS_VERSION}-${NJS_RELEASE}         nginx-module-acme=${NGINX_VERSION}+${ACME_VERSION}-${PKG_RELEASE}     "     && case "$dpkgArch" in         amd64|arm64)             echo "deb [signed-by=$NGINX_GPGKEY_PATH] https://nginx.org/packages/mainline/debian/ trixie nginx" >> /etc/apt/sources.list.d/nginx.list             && apt-get update             ;;         *)             tempDir="$(mktemp -d)"             && chmod 777 "$tempDir"                         && savedAptMark="$(apt-mark showmanual)"                         && apt-get update             && apt-get install --no-install-recommends --no-install-suggests -y                 cargo                 curl                 devscripts                 equivs                 git                 libxml2-utils                 lsb-release                 xsltproc             && (                 cd "$tempDir"                 && export CARGO_HOME="$tempDir/.cargo"                 && REVISION="${NGINX_VERSION}-${PKG_RELEASE}"                 && REVISION=${REVISION%~*}                 && curl -f -L -O https://github.com/nginx/pkg-oss/archive/${REVISION}.tar.gz                 && PKGOSSCHECKSUM="2c5d692f7ffad335e20376eca8a94f21ec11acd32c2a043e12681546b05503e6e1eb4ad03ca145ff944e8851a16514d692faf39da80d83dda5f34ec5353ecf14 *${REVISION}.tar.gz"                 && if [ "$(openssl sha512 -r ${REVISION}.tar.gz)" = "$PKGOSSCHECKSUM" ]; then                     echo "pkg-oss tarball checksum verification succeeded!";                 else                     echo "pkg-oss tarball checksum verification failed!";                     exit 1;                 fi                 && tar xzvf ${REVISION}.tar.gz                 && cd pkg-oss-${REVISION}                 && cd debian                 && for target in base module-geoip module-image-filter module-njs module-xslt module-acme; do                     make rules-$target;                     mk-build-deps --install --tool="apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends --yes"                         debuild-$target/nginx-$NGINX_VERSION/debian/control;                 done                 && make base module-geoip module-image-filter module-njs module-xslt module-acme             )                         && apt-mark showmanual | xargs apt-mark auto > /dev/null             && { [ -z "$savedAptMark" ] || apt-mark manual $savedAptMark; }                         && ls -lAFh "$tempDir"             && ( cd "$tempDir" && dpkg-scanpackages . > Packages )             && grep '^Package: ' "$tempDir/Packages"             && echo "deb [ trusted=yes ] file://$tempDir ./" > /etc/apt/sources.list.d/temp.list             && apt-get -o Acquire::GzipIndexes=false update             ;;     esac         && apt-get install --no-install-recommends --no-install-suggests -y                         $nginxPackages                         gettext-base                         curl     && apt-get remove --purge --auto-remove -y && rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/nginx.list         && if [ -n "$tempDir" ]; then         apt-get purge -y --auto-remove         && rm -rf "$tempDir" /etc/apt/sources.list.d/temp.list;     fi     && ln -sf /dev/stdout /var/log/nginx/access.log     && ln -sf /dev/stderr /var/log/nginx/error.log     && mkdir /docker-entrypoint.d # buildkit
+nginx-nginx:latest ENV DYNPKG_RELEASE=1~trixie
+nginx-nginx:latest ENV PKG_RELEASE=1~trixie
+nginx-nginx:latest ENV ACME_VERSION=0.4.1
+nginx-nginx:latest ENV NJS_RELEASE=1~trixie
+nginx-nginx:latest ENV NJS_VERSION=1.0.1
+nginx-nginx:latest ENV NGINX_VERSION=1.31.6
+nginx-nginx:latest LABEL maintainer=NGINX Docker Maintainers <docker-maint@nginx.com>
+nginx-nginx:latest # debian.sh --arch 'amd64' out/ 'trixie' '@1787529600'

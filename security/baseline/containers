@@ -1,0 +1,259 @@
+haproxy-t2tc image=sha256:0727772b591b2f0fe6a01dd3174c74d7b268fdcc53dd9013f937ce63c0baac08 cfgimage=haproxy:3.0-alpine priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=99:99 ro=true ep=[docker-entrypoint.sh] cmd=[haproxy -f /usr/local/etc/haproxy/haproxy.cfg]
+   mount bind /scratch/Docker/ShinyPublic/haproxy/haproxy.cfg -> /usr/local/etc/haproxy/haproxy.cfg rw=false
+   envname 
+   envname HAPROXY_SHA256
+   envname HAPROXY_URL
+   envname HAPROXY_VERSION
+   envname PATH
+   envname T2TC_COOKIE_KEY
+nginx-nginx-1 image=sha256:d5602366cb7d906d91549ca5e3b8c99c46454aa17f5bdbb77251fcca58a1e32c cfgimage=nginx-nginx priv=false net=nginx_default capadd=<no value> dns=<no value> extrahosts=[] pid= user= ro=false ep=[/docker-entrypoint.sh] cmd=[nginx -g daemon off;]
+   mount bind /scratch/Docker/Nginx/data/certs -> /etc/nginx/certs rw=true
+   envname 
+   envname ACME_VERSION
+   envname DYNPKG_RELEASE
+   envname NGINX_VERSION
+   envname NJS_RELEASE
+   envname NJS_VERSION
+   envname PATH
+   envname PKG_RELEASE
+openwebui image=sha256:254411b60f37fcd5cb1386bd0dfa19ea29ee0dc2a058a3d876c9f791c2b26957 cfgimage=ghcr.io/open-webui/open-webui:main priv=false net=host capadd=<no value> dns=[] extrahosts=<no value> pid= user=0:0 ro=false ep=<no value> cmd=[bash start.sh]
+   mount bind /scratch/Docker/open-webui/data -> /app/backend/data rw=true
+   envname 
+   envname AIOHTTP_CLIENT_TIMEOUT
+   envname ANONYMIZED_TELEMETRY
+   envname AUXILIARY_EMBEDDING_MODEL
+   envname DOCKER
+   envname DO_NOT_TRACK
+   envname ENV
+   envname GPG_KEY
+   envname HF_HOME
+   envname HOME
+   envname LANG
+   envname OLLAMA_BASE_URL
+   envname OLLAMA_MODELS
+   envname OPENAI_API_BASE_URL
+   envname OPENAI_API_KEY
+   envname PATH
+   envname PORT
+   envname PYTHONUNBUFFERED
+   envname PYTHON_SHA256
+   envname PYTHON_VERSION
+   envname RAG_EMBEDDING_MODEL
+   envname RAG_RERANKING_MODEL
+   envname SCARF_NO_ANALYTICS
+   envname SENTENCE_TRANSFORMERS_HOME
+   envname TIKTOKEN_CACHE_DIR
+   envname TIKTOKEN_ENCODING_NAME
+   envname USE_AUXILIARY_EMBEDDING_MODEL_DOCKER
+   envname USE_CUDA_DOCKER
+   envname USE_CUDA_DOCKER_VER
+   envname USE_EMBEDDING_MODEL_DOCKER
+   envname USE_OLLAMA_DOCKER
+   envname USE_RERANKING_MODEL_DOCKER
+   envname USE_SLIM_DOCKER
+   envname UV_LINK_MODE
+   envname WEBUI_BUILD_VERSION
+   envname WEBUI_SECRET_KEY
+   envname WHISPER_MODEL
+   envname WHISPER_MODEL_DIR
+shiny image=sha256:029225bff5e3262551677afead7068766581f794226de7ba70a26b914183a930 cfgimage=shinydocker_shinydocker:latest priv=false net=shinydocker_default capadd=<no value> dns=<no value> extrahosts=[] pid= user= ro=false ep=<no value> cmd=[/init]
+   mount bind /scratch/Docker/ShinyDocker/shiny-server.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/shinyusb -> /srv/shiny-server rw=false
+   mount bind /var/log/shiny-server-legacy -> /var/log/shiny-server rw=true
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shiny-allnets image=sha256:b8f67847a76f91edaba4afce226fd5a8b885c0ebb35dee71be7b94afe76569d2 cfgimage=shinypublic:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/shiny-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/AllNets.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/shinyusb/AllNets -> /srv/shiny-server/AllNets rw=false
+   mount bind /var/log/shiny-server-AllNets -> /var/log/shiny-server rw=true
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shiny-genio image=sha256:b8f67847a76f91edaba4afce226fd5a8b885c0ebb35dee71be7b94afe76569d2 cfgimage=shinypublic:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/shiny-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/GENIO.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/shinyusb/GENIO -> /srv/shiny-server/GENIO rw=false
+   mount bind /scratch/shinyusb/db/GENIO -> /srv/shiny-server/db/GENIO rw=false
+   mount bind /var/log/shiny-server-GENIO -> /var/log/shiny-server rw=true
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shiny-pc3 image=sha256:b8f67847a76f91edaba4afce226fd5a8b885c0ebb35dee71be7b94afe76569d2 cfgimage=shinypublic:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/shiny-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/PC3.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/shinyusb/PC3 -> /srv/shiny-server/PC3 rw=false
+   mount bind /scratch/shinyusb/db/TCGAGTEX.db -> /srv/shiny-server/db/TCGAGTEX.db rw=false
+   mount bind /var/log/shiny-server-PC3 -> /var/log/shiny-server rw=true
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shiny-scblood image=sha256:b8f67847a76f91edaba4afce226fd5a8b885c0ebb35dee71be7b94afe76569d2 cfgimage=shinypublic:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/shiny-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/SCBlood.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/shinyusb/SCBlood -> /srv/shiny-server/SCBlood rw=false
+   mount bind /var/log/shiny-server-SCBlood -> /var/log/shiny-server rw=true
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shiny-scmel image=sha256:b8f67847a76f91edaba4afce226fd5a8b885c0ebb35dee71be7b94afe76569d2 cfgimage=shinypublic:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/shiny-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/SCMel.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/shinyusb/SCMel -> /srv/shiny-server/SCMel rw=false
+   mount bind /var/log/shiny-server-SCMel -> /var/log/shiny-server rw=true
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shiny-t2-dev image=<dev image: rebuilt by test.sh dev-up> cfgimage=shinyt2t:2026.10 priv=false net=t2api-dev capadd=<no value> dns=<no value> extrahosts=<no value> pid= user= ro=true ep=[/usr/local/bin/shiny-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/T2T.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/nathan/R/T2 -> /srv/shiny-server/T2T rw=false
+   mount bind /scratch/nathan/R/T2-devdata/shiny-dev-log -> /var/log/shiny-server rw=true
+   mount bind /scratch/nathan/R/T2-devdata/t2-api-mode-dev.Renviron.site -> /usr/local/lib/R/etc/Renviron.site rw=false
+   mount bind /scratch/shinyusb/Thanos -> /srv/shiny-server/Thanos rw=false
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shiny-t2t image=sha256:bac18faa596a1c639dc776e40c074fc8b60fa97fcf31ae942b8b153db5ab5dc2 cfgimage=shinyt2t:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/shiny-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/T2T.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/Docker/ShinyPublic/conf/t2-api-mode.Renviron.site -> /usr/local/lib/R/etc/Renviron.site rw=false
+   mount bind /scratch/shinyusb/T2T -> /srv/shiny-server/T2T rw=false
+   mount bind /scratch/shinyusb/Thanos -> /srv/shiny-server/Thanos rw=false
+   mount bind /var/log/shiny-server-T2T -> /var/log/shiny-server rw=true
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shinypublic-shiny-t2tc-1 image=sha256:bac18faa596a1c639dc776e40c074fc8b60fa97fcf31ae942b8b153db5ab5dc2 cfgimage=shinyt2t:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/pool-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/T2Tc.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/Docker/ShinyPublic/conf/t2-api-mode.Renviron.site -> /usr/local/lib/R/etc/Renviron.site rw=false
+   mount bind /scratch/Docker/ShinyPublic/t2t/pool-entrypoint.sh -> /usr/local/bin/pool-entrypoint rw=false
+   mount bind /scratch/shinyusb/T2T -> /srv/shiny-server/T2Tc rw=false
+   mount bind /scratch/shinyusb/Thanos -> /srv/shiny-server/Thanos rw=false
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shinypublic-shiny-t2tc-2 image=sha256:bac18faa596a1c639dc776e40c074fc8b60fa97fcf31ae942b8b153db5ab5dc2 cfgimage=shinyt2t:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/pool-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/T2Tc.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/Docker/ShinyPublic/conf/t2-api-mode.Renviron.site -> /usr/local/lib/R/etc/Renviron.site rw=false
+   mount bind /scratch/Docker/ShinyPublic/t2t/pool-entrypoint.sh -> /usr/local/bin/pool-entrypoint rw=false
+   mount bind /scratch/shinyusb/T2T -> /srv/shiny-server/T2Tc rw=false
+   mount bind /scratch/shinyusb/Thanos -> /srv/shiny-server/Thanos rw=false
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shinypublic-shiny-t2tc-3 image=sha256:bac18faa596a1c639dc776e40c074fc8b60fa97fcf31ae942b8b153db5ab5dc2 cfgimage=shinyt2t:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/pool-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/T2Tc.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/Docker/ShinyPublic/conf/t2-api-mode.Renviron.site -> /usr/local/lib/R/etc/Renviron.site rw=false
+   mount bind /scratch/Docker/ShinyPublic/t2t/pool-entrypoint.sh -> /usr/local/bin/pool-entrypoint rw=false
+   mount bind /scratch/shinyusb/T2T -> /srv/shiny-server/T2Tc rw=false
+   mount bind /scratch/shinyusb/Thanos -> /srv/shiny-server/Thanos rw=false
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+shinypublic-shiny-t2tc-4 image=sha256:bac18faa596a1c639dc776e40c074fc8b60fa97fcf31ae942b8b153db5ab5dc2 cfgimage=shinyt2t:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/usr/local/bin/pool-entrypoint] cmd=[/usr/bin/shiny-server]
+   mount bind /scratch/Docker/ShinyPublic/conf/T2Tc.conf -> /etc/shiny-server/shiny-server.conf rw=false
+   mount bind /scratch/Docker/ShinyPublic/conf/t2-api-mode.Renviron.site -> /usr/local/lib/R/etc/Renviron.site rw=false
+   mount bind /scratch/Docker/ShinyPublic/t2t/pool-entrypoint.sh -> /usr/local/bin/pool-entrypoint rw=false
+   mount bind /scratch/shinyusb/T2T -> /srv/shiny-server/T2Tc rw=false
+   mount bind /scratch/shinyusb/Thanos -> /srv/shiny-server/Thanos rw=false
+   envname 
+   envname CRAN
+   envname LANG
+   envname PANDOC_VERSION
+   envname PATH
+   envname R_HOME
+   envname R_VERSION
+   envname S6_VERSION
+   envname SHINY_SERVER_VERSION
+   envname TZ
+t2api image=sha256:79459df33aa4ed99c3a4045bb5b358a8552847d0c0af277b40327a3f38c54307 cfgimage=t2api:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:1000 ro=true ep=[/t2api] cmd=[-addr :8080 -datasets /data/datasets -cache-mb 512]
+   mount bind /scratch/shinyusb/T2-data-20261020b/datasets -> /data/datasets rw=false
+   mount bind /scratch/shinyusb/t2-contact -> /contact rw=true
+   envname 
+   envname GOMAXPROCS
+   envname PATH
+   envname T2_CONTACT_DIR
+t2api-dev image=<dev image: rebuilt by test.sh dev-up> cfgimage=t2api:dev priv=false net=t2api-dev capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/t2api] cmd=[-addr :8080 -datasets /data/datasets -cache-mb 512]
+   mount bind /scratch/nathan/R/T2-devdata/contact -> /contact rw=true
+   mount bind /scratch/nathan/R/T2-devdata/datasets -> /data/datasets rw=false
+   mount bind /scratch/nathan/R/T2/tcga.db -> /data/tcga.db rw=false
+   envname 
+   envname PATH
+   envname T2_CONTACT_DIR
+t2api-web image=sha256:79459df33aa4ed99c3a4045bb5b358a8552847d0c0af277b40327a3f38c54307 cfgimage=t2api:2026.10 priv=false net=shinypublic capadd=<no value> dns=<no value> extrahosts=[] pid= user=999:999 ro=true ep=[/t2api] cmd=[-addr :8080 -datasets /data/datasets -cache-mb 512 -max-inflight 64]
+   mount bind /scratch/shinyusb/T2-data-20261020b/datasets -> /data/datasets rw=false
+   envname 
+   envname GOMAXPROCS
+   envname PATH

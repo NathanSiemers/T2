@@ -272,6 +272,9 @@ ui = fluidPage(
             border-left: 4px solid #e08e0b; max-width: 1100px; }
         .t2-survival-hint { margin: 0 0 12px 0; max-width: 1100px; }
         .t2-survival-hint.t2-hint-x { font-size: 88%; color: #555; margin: 0 0 8px 0; }
+        .t2-fill { margin: 2px 0 6px 0; font-size: 90%; }
+        .t2-fill .form-group { margin-bottom: 0; }
+        .t2-fill label.control-label { font-weight: 600; margin-right: 8px; }
         .t2-ref { margin: 0 0 8px 0; max-width: 1100px; }
         .t2-footer { font-size: 80%; color: #666; margin: 18px 0 8px 0; border-top: 1px solid #dce4ec; padding-top: 6px; }
     "))),
@@ -312,6 +315,8 @@ ui = fluidPage(
         ## ---- (b) the result; every Plot button lands here ----
         tabPanel("Plot", value = "plot",
             div(class = "t2-filter-status", textOutput('filter_status')),
+            ## "Not-detected values": shown only when the values answer of this plot offers more than "missing"
+            uiOutput('fill_ui'),
             ## the plot area is rebuilt at the chosen Plot height (Appearance tab)
             fluidRow( column(12, align="center", uiOutput('main_plot_ui')) ),
             h4("Data Summary"),
@@ -527,6 +532,8 @@ server = function(input, output, session) {
         new = unique(new[!is.na(new) & nzchar(new)])
         ## arm the guard, unless the old picks ARE the new selections (then pushing them is right)
         stale_picks <<- if (setequal(old, new)) NULL else old
+        ## the not-detected choice belongs to the data source it was made on
+        fill_choice("na"); fill_state(NULL)
     }, ignoreInit = TRUE)
 
     ## when multi_y is toggled on, add "probe" to color choices and select it
@@ -661,7 +668,12 @@ server = function(input, output, session) {
     output$tweak_inputs = renderUI(tweak_widgets(input))
 
     ## ---- plotting: any of the three Plot buttons ----
-    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3))
+    ## the not-detected values choice (per session): "na" | "zero" | "floor". The control itself is drawn
+    ## only from what the last plot's values answer offered (fill_state), never from types or dataset names.
+    fill_choice = reactiveVal("na")
+    fill_state = reactiveVal(NULL)       # t2_fill_of() of the last plot's data (NULL: no plot yet / a new source)
+    fill_bump = reactiveVal(0)           # a changed choice draws the plot again, like pressing Plot
+    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump()))
     ## the plot's height on the page is, like every Appearance setting, taken at
     ## the moment Plot is pressed
     plot_height = reactiveVal(t2_style_default('plot_height'))
@@ -682,7 +694,7 @@ server = function(input, output, session) {
         samp = sanitize_t2_samples(input, b)
         gg = sanitize_t2_tweaks(input)
         note = paste0("Samples: ", samp$label, ".", if (!is.null(fs$note)) paste0(" ", fs$note) else "")
-        ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules)
+        ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules, fill = fill_choice())
         plot_snapshot <<- list(inp = inp, b = b, ctx = ctx, note = note, gg = gg)
         fcap = filter_caption_for(b, inp, samp, fs)
         withProgress(message = 'Working...', value = 0, {
@@ -690,6 +702,24 @@ server = function(input, output, session) {
             fun_plot1(inp, reactive = FALSE, ctx = ctx, gg = gg, filter_caption = fcap)
         })
     })
+    observe({
+        res = tryCatch(plot_result(), error = function(e) NULL)
+        fill_state(t2_result_fill(res))
+    })
+    output$fill_ui = renderUI({
+        info = fill_state()
+        opts = info$options
+        if (length(opts) < 2) return(NULL)           # nothing but "missing" applies: no control at all
+        lab = c(na = "Missing", zero = "Zero", floor = "Detection floor")
+        cur = isolate(fill_choice())
+        div(class = "t2-fill",
+            radioButtons('not_detected', "Not-detected values", inline = TRUE,
+                         choices = stats::setNames(opts, lab[opts]), selected = if (cur %in% opts) cur else "na"))
+    })
+    observeEvent(input$not_detected, {
+        v = .t2_one(input$not_detected, c("na", "zero", "floor"), "na")
+        if (!identical(v, fill_choice())) { fill_choice(v); fill_bump(fill_bump() + 1) }
+    }, ignoreInit = TRUE)
     ## pressing Plot anywhere shows the result
     observeEvent(input$plot_btn,  updateTabsetPanel(session, 'tabs', selected = 'plot'))
     observeEvent(input$plot_btn2, updateTabsetPanel(session, 'tabs', selected = 'plot'))
@@ -759,18 +789,19 @@ server = function(input, output, session) {
         gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input, "pub_"))
         fs = filter_state(b)
         samp = sanitize_t2_samples(input, b)
-        list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules), gg = gg,
+        list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules, fill = fill_choice()), gg = gg,
              base_size = fig$base_size, family = fig$family, fig_width = fig$width,
              ## each text element of the figure has its own switch (Publish tab)
              caption = if (fig$source_line) T2_CITATION else "",
              filter_caption = if (fig$show_caption) filter_caption_for(b, inp, samp, fs) else "",
+             fill_caption = fig$show_caption,           # the not-detected line is part of the caption
              show = fig[c("show_title", "show_subtitle", "show_axis_titles")])
     })
     pub_draw = function(s) {
         t2_apply_text_switches(
             fun_plot1(s$inp, reactive = FALSE, ctx = s$ctx, gg = s$gg,
                       base_size = s$base_size, base_family = s$family, caption = s$caption,
-                      fig_width = s$fig_width, filter_caption = s$filter_caption),
+                      fig_width = s$fig_width, filter_caption = s$filter_caption, fill_caption = s$fill_caption),
             title = s$show$show_title, subtitle = s$show$show_subtitle, axis_titles = s$show$show_axis_titles)
     }
     ## redraw about a second after the last change, not on every keystroke
@@ -898,7 +929,8 @@ server = function(input, output, session) {
                 b = bundle()
                 snap = list(inp = sanitize_t2_input(input, b), b = b,
                             ctx = t2_plot_ctx(b, keep = isolate(filter_state(b))$keep,
-                                              rules = isolate(sanitize_t2_samples(input, b))$rules))
+                                              rules = isolate(sanitize_t2_samples(input, b))$rules,
+                                              fill = isolate(fill_choice())))
             }
             write.csv(fun_table1(snap$inp, ctx = snap$ctx), file)
         })

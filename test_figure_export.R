@@ -226,6 +226,29 @@ ok(inherits(kmt, "ggsurvplot") && is.null(kmt$plot$labels$title) && is.null(kmt$
    "switches also strip the Kaplan-Meier curve and its risk table")
 fk <- tmp("png"); t2_render_figure(kmt, fk, 7, 4.75, 100, "png"); ok(file.size(fk) > 1000, "the stripped Kaplan-Meier figure renders")
 
+cat("\n== the not-detected caption ==\n")
+cx <- list(menu = data.frame(name = c("A.prot", "B.prot", "C.prot", "X.phospho"), type = c("prot", "prot", "prot", "phospho")),
+           type_labels = c(prot = "protein", phospho = "phosphosite"))
+ok(identical(t2_fill_caption(list(fill = "zero", filled = c(A.prot = 1357L), tested_n = c(A.prot = 1549L)), cx),
+             "Not-detected protein values set to 0 (1,357 of 1,549 tested samples)"), "one probe: the sentence, the word from type_labels")
+ok(identical(t2_fill_caption(list(fill = "floor", filled = c(A.prot = 10L), tested_n = c(A.prot = 20L)), cx),
+             "Not-detected protein values set to the detection floor, per cohort (10 of 20 tested samples)"), "floor wording")
+ok(identical(t2_fill_caption(list(fill = "zero", filled = c(A.prot = 1L, X.phospho = 2L), tested_n = c(A.prot = 5L, X.phospho = 6L)), cx),
+             "Not-detected protein/phosphosite values set to 0: A.prot (1 of 5), X.phospho (2 of 6)"), "two probes: a clause each")
+ok(identical(t2_fill_caption(list(fill = "zero", filled = c(A.prot = 1000L, B.prot = 2000L, C.prot = 3L), tested_n = c(A.prot = 5L, B.prot = 6L, C.prot = 7L)), cx),
+             "3,003 not-detected values set to 0 (3 variables)"), "more than two: the total")
+ok(identical(t2_fill_caption(list(fill = "zero", filled = integer(0), tested_n = integer(0)), cx), "") && identical(t2_fill_caption(NULL, cx), ""), "nothing filled: no caption")
+pnd <- quiet(fun_plot1(list(x = "CD8A", y = "FOXP3", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(b), caption = T2_CITATION))
+ok(!is.null(pnd$fill) && identical(pnd$fill$options, "na"), "TCGA: the plot result carries the answer's fill options (na only)")
+bc <- load_dataset_bundle("cptac")
+pz <- t2_figure_object(quiet(fun_plot1(list(x = "CLDN6", y = "CLDN6.prot", cohort = "all", allComplete = TRUE), reactive = FALSE,
+                                       ctx = t2_plot_ctx(bc, fill = "zero"), caption = T2_CITATION, filter_caption = "Filtered: x", fig_width = 7)))
+ok(grepl("Filtered: x", pz$labels$caption, fixed = TRUE) && grepl("Not-detected protein values set to 0", gsub("\n", " ", pz$labels$caption)) && grepl(T2_CITATION, pz$labels$caption, fixed = TRUE),
+   "figure: Filtered line, not-detected line and source line")
+pz2 <- t2_figure_object(quiet(fun_plot1(list(x = "CLDN6", y = "CLDN6.prot", cohort = "all", allComplete = TRUE), reactive = FALSE,
+                                        ctx = t2_plot_ctx(bc, fill = "zero"), caption = "", fill_caption = FALSE)))
+ok(is.null(pz2$labels$caption), "Publish with the Caption switch off: no not-detected line either")
+
 cat("\n== t2_filter_caption ==\n")
 bb <- list(mycohorts = c(a = "BRCA", b = "LUAD", c = "COAD", d = "OV", e = "GBM"))
 ok(identical(t2_filter_caption(list(group = NULL, exclusions = character(0)), bb, "all"), ""), "unfiltered: no caption")

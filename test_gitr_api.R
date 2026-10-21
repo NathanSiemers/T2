@@ -104,6 +104,33 @@ for (ds in intersect(t2_datasets(), names(files))) {
     r <- same_frame(ga, gf, c("sample", t2_role(ba$roles, "sampletype_col"), head(pick, 4)))
     ok(isTRUE(r), paste("gitr with", paste(names(args), collapse = "+"), if (isTRUE(r)) sprintf("identical (%d rows)", nrow(gf)) else r))
   }
+  ## not-detected values: the service and the files agree on fill = zero / floor, and on what they report
+  fattr <- function(x) list(attr(x, "fill_options"), attr(x, "fill", exact = TRUE), attr(x, "filled"), attr(x, "tested_n"))
+  gn <- quiet(gitr(head(pick, 3), dbfile = ba$path, roles = ba$roles))
+  ok(identical(attr(gn, "fill_options"), with_files(attr(quiet(gitr(head(pick, 3), dbfile = fi$path, roles = fi$roles)), "fill_options"))),
+     sprintf("fill_options reported alike by service and files (%s)", paste(attr(gn, "fill_options"), collapse = "|")))
+  if (ds == "cptac") {
+    fp <- c("CLDN6", "CLDN6.prot", "CLDN6.phospho", "TP53.mut")
+    fp <- intersect(fp, c(ba$mygenes, ba$clin_vars))
+    ok("CLDN6.prot" %in% fp, "cptac has CLDN6.prot for the fill cases")
+    ga0 <- quiet(gitr(fp, dbfile = ba$path, roles = ba$roles))
+    ok(identical(attr(ga0, "fill_options"), c("na", "zero", "floor")) && is.null(attr(ga0, "fill", exact = TRUE)), "cptac: the answer offers na, zero, floor for a proteome probe; none applied by default")
+    ok(identical(attr(quiet(gitr("CLDN6", dbfile = ba$path, roles = ba$roles)), "fill_options"), "na"), "an RNA-only request offers na only")
+    for (fl in c("zero", "floor")) for (extra in list(list(), list(cohort = co3), list(keep_samples = keep))) {
+      ga <- quiet(do.call(gitr, c(list(fp, dbfile = ba$path, roles = ba$roles, fill = fl), extra)))
+      gf <- with_files(quiet(do.call(gitr, c(list(fp, dbfile = fi$path, roles = fi$roles, fill = fl), extra))))
+      r <- same_frame(ga, gf, c("sample", fp))
+      ok(isTRUE(r) && identical(fattr(ga), fattr(gf)),
+         paste("fill =", fl, if (length(extra)) paste("with", names(extra)) else "", "identical (frame, filled, tested_n):",
+               if (isTRUE(r)) sprintf("filled %s of %s", paste(attr(ga, "filled"), collapse = ","), paste(attr(ga, "tested_n"), collapse = ",")) else r))
+    }
+    z <- quiet(gitr(fp, dbfile = ba$path, roles = ba$roles, fill = "zero"))
+    ok(sum(is.na(ga0$CLDN6.prot)) - sum(is.na(z$CLDN6.prot)) == attr(z, "filled")[["CLDN6.prot"]] && all(z$CLDN6.prot[is.na(ga0$CLDN6.prot)] %in% c(0, NA)),
+       "zero: the cells that were missing and tested are 0, the count matches `filled`; untested stay NA")
+    ok(identical(ga0$CLDN6, z$CLDN6), "an RNA column in the same request is unchanged by the fill")
+    z2 <- quiet(gitr("CLDN6", dbfile = ba$path, roles = ba$roles, fill = "zero"))
+    ok(is.null(attr(z2, "fill", exact = TRUE)), "a fill that the answer did not offer is not applied (RNA only)")
+  }
   ga <- quiet(gitr("no_such_probe_zzz", dbfile = ba$path, roles = ba$roles))
   ok("no_such_probe_zzz" %in% colnames(ga) && all(is.na(ga$no_such_probe_zzz)), "an unknown probe is an all-NA column, as with the files")
 }

@@ -2,6 +2,8 @@
 ##   Rscript dataset_meta.R show      <db>
 ##   Rscript dataset_meta.R set       <db> key=value [key=value ...]   (lists: a|b|c; creates the table when missing)
 ##   Rscript dataset_meta.R set-json  <db> key @file.json              (tte_variables | references; validates the JSON, stores it compact)
+##   Rscript dataset_meta.R type-fill  <db> type=na|zero|floor [type=...] (adds types.fill_options when absent; the
+##                                                                      not-detected fills the type offers, na first)
 ##   Rscript dataset_meta.R type-label <db> type=label [type=label ...] (adds types.label when absent;
 ##                                                                      refuses an unknown type; rna= sets "")
 ## All writes go through t2_build_lib.R (t2_write_meta / t2_write_types), the one writer the builders use too;
@@ -11,10 +13,10 @@
 ## Every mode refuses a path under /scratch/shinyusb (the served files). Never run against a
 ## SERVED database file: stage a copy, change it, test it, and deploy by a new directory / atomic mv.
 args = commandArgs(trailingOnly = TRUE)
-usage = "usage: Rscript dataset_meta.R show|set|set-json|type-label <db> [args ...]"
+usage = "usage: Rscript dataset_meta.R show|set|set-json|type-label|type-fill <db> [args ...]"
 if (length(args) < 2) stop(usage)
 mode = args[1]; db = args[2]
-if (!mode %in% c("show", "set", "set-json", "type-label")) stop(usage)
+if (!mode %in% c("show", "set", "set-json", "type-label", "type-fill")) stop(usage)
 .p = normalizePath(db, mustWork = FALSE)
 if (grepl("^/scratch/shinyusb(/|$)", .p) || grepl("^/scratch/shinyusb(/|$)", db))
   stop("refusing a served path: ", db)
@@ -50,6 +52,15 @@ if (mode == "set") {
   t2_write_types(con, data.frame(type = sub("=.*", "", kv), label = sub("^[^=]*=", "", kv), stringsAsFactors = FALSE), allow_new = FALSE)
   m = DBI::dbGetQuery(con, "SELECT type, label FROM types ORDER BY key")
   for (i in seq_len(nrow(m))) cat(sprintf("%-18s \"%s\"\n", m$type[i], m$label[i]))
+  quit(save = "no", status = 0)
+}
+if (mode == "type-fill") {
+  if (length(args) < 3) stop("type-fill: need type=na|zero|floor ...")
+  kv = args[-(1:2)]
+  if (any(!grepl("=", kv, fixed = TRUE))) stop("not type=fills: ", paste(kv[!grepl("=", kv, fixed = TRUE)], collapse = " "))
+  t2_write_types(con, data.frame(type = sub("=.*", "", kv), fill_options = sub("^[^=]*=", "", kv), stringsAsFactors = FALSE), allow_new = FALSE)
+  m = DBI::dbGetQuery(con, "SELECT type, fill_options FROM types ORDER BY key")
+  for (i in seq_len(nrow(m))) cat(sprintf("%-18s %s\n", m$type[i], if (is.na(m$fill_options[i])) "(na)" else m$fill_options[i]))
   quit(save = "no", status = 0)
 }
 if (!has_meta()) stop("no dataset_meta table in ", db)

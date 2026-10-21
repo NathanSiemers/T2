@@ -101,6 +101,13 @@ because both readers take the type from the text after the last dot and `probes.
 unique. Its proteome, phosphoproteome and copy number are `sparse = 0` types (no row = NA), its
 RNA and binary mutations `sparse = 1` (no row = 0). The data decisions are in `CPTAC/SPEC.md`.
 
+The optional `types.fill_options` column (`na|zero|floor`, `na` first; absent = `na` only; only on
+`sparse = 0` types) says how a sample that was TESTED for the type but has no stored value may be
+served: missing (`na`), 0 (`zero`) or the probe's detection floor (`floor`: the smallest stored value
+among the tested samples of the same cohort, else of the dataset). Samples never tested stay missing.
+`Rscript dataset_meta.R type-fill <db> prot=na|zero|floor ...` sets it; `gitr(..., fill = )` and the
+service (`values?fill=`) read it, and the answer's `fill_options` tells the app whether to offer the choice.
+
 ## How to add a new dataset
 
 1. **Build a `<NAME>.db`** with the standard T2 schema shape. Two options:

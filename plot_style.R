@@ -449,7 +449,7 @@ t2_style_survival = function(res, style = list(), gg = list(), caption = NULL, f
     ## a source line, when the caller asks for one (Publish tab)
     if (is.null(lb$caption) && length(caption) == 1 && !is.na(caption) && nzchar(caption))
         lb$caption = caption
-    keep = attributes(res)[c("t2summary", "km_data", "stats")]
+    keep = attributes(res)[c("t2summary", "km_data", "stats", "t2fill")]
     ## legend columns, and titles wrapped to a figure's width (Publish tab)
     extra = function(p) {
         if (!is.null(gg[["legend.ncol"]])) {

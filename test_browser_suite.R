@@ -163,6 +163,23 @@ ok(img_ok("pub_preview") && isTRUE(js("$('.t2-cite').text().indexOf('You have re
 shot("11b-publish-text-off")
 set_input(pub_show_title = TRUE, pub_show_axis_titles = TRUE, pub_source = TRUE); settle(1000)
 
+## ---- 07b not-detected values: only where the values answer offers them (CPTAC proteome) ----
+ok(!isTRUE(js("!!document.getElementById('not_detected')")), "TCGA: no not-detected control on the Plot tab")
+set_input(tabs = "select"); settle(500)
+setv("dataset", "cptac"); settle(5000)
+setv("x", "CLDN6"); setv("y", "CLDN6.prot"); setv("color", ""); settle(1500)
+plot_now(wait = 8000)
+ok(img_ok("main_plot") && isTRUE(js("!!document.getElementById('not_detected')")), "cptac CLDN6 vs CLDN6.prot: the Not-detected values control appears")
+ok(setequal(choices("not_detected"), c("na", "zero", "floor")), "it offers exactly what the answer listed: Missing, Zero, Detection floor")
+n0 <- as.integer(sub(".*Samples with data for both X and Y: (\\d+).*", "\\1", output_text("plot_summary")))
+set_input(not_detected = "zero"); settle(8000)
+s <- output_text("plot_summary")
+ok(grepl("not-detected values set to 0", s) && as.integer(sub(".*Samples with data for both X and Y: (\\d+).*", "\\1", s)) > n0,
+   "Zero: the plot is drawn again with more samples and the Data Summary says so")
+shot("13-plot-cptac-zero")
+setv("dataset", "TCGA"); settle(4000); set_input(tabs = "plot"); settle(500)
+ok(!isTRUE(js("!!document.getElementById('not_detected')")), "switching to TCGA hides the control")
+
 ## ---- 08 About: data types, clinical variables, contact form ----
 set_input(tabs = "about"); settle(1500)
 ok(js("document.querySelectorAll('#datatypes tr').length") > 10, "the data-type table is there")

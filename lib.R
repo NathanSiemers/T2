@@ -99,13 +99,14 @@ list_sources = function(include_hidden = FALSE) {
 ##   type_labels  the title word of each data type; menu  the typed variable list
 ##   keep       the Filter tab's surviving sample ids (NULL = no restriction)
 ##   rules      the sample choice (source, group, exclusions) as preset rules
-t2_plot_ctx = function(bundle, keep = NULL, rules = list()) {
+##   fill       the not-detected values: "na" (missing), "zero" or "floor" (what the values answer offers)
+t2_plot_ctx = function(bundle, keep = NULL, rules = list(), fill = "na") {
   ## label: the dataset word of the plot title -- the part's own label when a part of
   ## a collection is chosen (GTEx within TCGA-TARGET-GTEx), else the dataset's
   list(name = bundle$name, path = bundle$path, version = bundle$version,
        label = if (!is.null(bundle$part_label)) bundle$part_label else bundle$label,
        roles = bundle$roles, handles = bundle$handles, tte = bundle$tte,
-       type_labels = bundle$type_labels, menu = bundle$menu, keep = keep, rules = rules)
+       type_labels = bundle$type_labels, menu = bundle$menu, keep = keep, rules = rules, fill = fill)
 }
 ## The one-line pointer to the survival analysis, from the bundle's tte list
 ## (/meta tte_variables): "Survival curves: choose OS, PFI, DSS or DFI as X
@@ -165,9 +166,59 @@ t2_filter_caption = function(samp = list(), b = list(), cohort = "all", rules = 
 t2_caption_text = function(filter_caption = "", source_line = "", fig_width = NULL, size = 9) {
   one = function(x) if (length(x) == 1 && !is.na(x) && nzchar(x)) x else NULL
   wrap = function(x) if (is.null(fig_width)) paste(strwrap(x, 110), collapse = "\n") else t2_wrap_text(x, fig_width, size)
-  fc = one(filter_caption)
-  out = c(if (!is.null(fc)) wrap(fc), one(source_line))
+  ## filter_caption: one string, or several lines (the Filtered line, the not-detected line)
+  fcs = Filter(Negate(is.null), lapply(filter_caption, one))
+  out = c(vapply(fcs, wrap, ""), one(source_line))
   if (length(out)) paste(out, collapse = "\n") else ""
+}
+
+## What the values answer said about not-detected values, from a data frame gitr() returned:
+## list(options = the fills on offer (na first), fill = the one applied or NULL, filled, tested_n
+## = named integer vectors of the probes with cells changed). The app shows its "Not-detected
+## values" control iff `options` has more than "na", and offers exactly those.
+t2_fill_of = function(df)
+  list(options = attr(df, "fill_options") %||% "na", fill = attr(df, "fill", exact = TRUE),
+       filled = attr(df, "filled"), tested_n = attr(df, "tested_n"))
+
+## the fill info of a plot result (a plotter list, or a ggsurvplot / ggplot with attr t2fill); NULL if none
+t2_result_fill = function(res) {
+  if (is.null(res)) return(NULL)
+  if (!is.null(attr(res, "t2fill"))) return(attr(res, "t2fill"))
+  if (is.list(res) && !inherits(res, "ggsurvplot") && !is.null(res$fill)) res$fill else NULL
+}
+
+## the data type's word of a variable for the not-detected caption ("protein"), "" when none
+t2_type_word = function(v, ctx) {
+  i = match(v, ctx$menu$name); ty = if (is.na(i)) NA_character_ else ctx$menu$type[i]
+  w = if (is.na(ty)) "" else unname(ctx$type_labels[ty]) %||% ""
+  if (identical(w, ty)) "" else w
+}
+
+## The caption line for filled values: "Not-detected protein values set to 0 (1,357 of 1,549 tested
+## samples)" / "... set to the detection floor, per cohort (...)". One probe: that sentence; two:
+## the sentence with a clause per probe; more: the total of cells and the number of variables.
+## "" when no cell was filled. The numbers are the answer's (filled / tested_n); the word is the
+## data type's label (/meta type_labels).
+t2_fill_caption = function(info, ctx) {
+  if (is.null(info) || is.null(info$fill) || !length(info$filled)) return("")
+  how = if (identical(info$fill, "zero")) "0" else "the detection floor, per cohort"
+  n = function(x) format(x, big.mark = ",", trim = TRUE)
+  p = names(info$filled)
+  words = unique(Filter(nzchar, vapply(p, t2_type_word, "", ctx = ctx)))
+  noun = paste0("Not-detected ", if (length(words)) paste0(paste(words, collapse = "/"), " "), "values")
+  if (length(p) == 1)
+    return(sprintf("%s set to %s (%s of %s tested samples)", noun, how, n(info$filled[[1]]), n(info$tested_n[[p]])))
+  if (length(p) == 2)
+    return(sprintf("%s set to %s: %s", noun, how, paste(sprintf("%s (%s of %s)", p, n(info$filled[p]), n(info$tested_n[p])), collapse = ", ")))
+  sprintf("%s not-detected values set to %s (%d variables)", n(sum(info$filled)), how, length(p))
+}
+
+## one Data Summary line per filled probe
+t2_fill_summary = function(info) {
+  if (is.null(info) || is.null(info$fill) || !length(info$filled)) return(character(0))
+  p = names(info$filled)
+  sprintf("%s: %s not-detected values set to %s (%s tested samples)", p, format(info$filled, big.mark = ",", trim = TRUE),
+          if (identical(info$fill, "zero")) "0" else "the detection floor of the cohort", format(info$tested_n[p], big.mark = ",", trim = TRUE))
 }
 
 ## the context of the default dataset, for scripts and tests that plot without a bundle
@@ -287,6 +338,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     base_size = 12, base_family = "sans", caption = "Nathan Siemers, Ph.D.", fig_width = NULL,
     ## filter_caption: the "Filtered: ..." line (t2_filter_caption), above the source line
     filter_caption = "",
+    ## fill_caption: also say in the caption when not-detected values were set to 0 / the floor
+    fill_caption = TRUE,
     coordflip = FALSE, evaluate_vars = FALSE,
     condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
     multi_y = FALSE, zscore_y = FALSE,
@@ -337,6 +390,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## build data summary before any transformations
     summary_lines = c()
     summary_lines = c(summary_lines, sprintf("Total samples after filters: %d", nrow(data)))
+    fill_info = t2_fill_of(data)               # the values answer's word on not-detected values
+    summary_lines = c(summary_lines, t2_fill_summary(fill_info))
     ## per-variable completeness
     all_vars = unique(c(x, y, color, shape, size, facet, active_condition))
     all_vars = all_vars[!is.null(all_vars) & all_vars != "" & all_vars %in% colnames(data)]
@@ -779,7 +834,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if( coordflip ) {
         p = p + coord_flip()
     }
-    cap = t2_caption_text(filter_caption, caption, fig_width, 0.75 * base_size)
+    cap = t2_caption_text(c(filter_caption, if (isTRUE(fill_caption)) t2_fill_caption(fill_info, ctx)), caption, fig_width, 0.75 * base_size)
     if (nzchar(cap)) p = p + labs(caption = cap)
     ## user-supplied titles / labels (drawn literally), then every other tweak
     user_labs = gg[grep('^labs\\.', names(gg), value = TRUE)]
@@ -812,7 +867,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         plot_summary = paste0(plot_summary, "\n\n  WARNINGS:\n  ",
                               paste(warnings, collapse = "\n  "))
 
-    list(plot = p, summary = plot_summary,
+    list(plot = p, summary = plot_summary, fill = fill_info,
          warning = if (length(warnings) > 0) paste(warnings, collapse = "\n") else NULL)
 }
 
@@ -827,7 +882,8 @@ fun_table1 = function ( input, ctx = t2_default_ctx() ) {
     gitr( my.input,
           cohort = if (length(input$cohort)) input$cohort else 'all',
           nonormal = isTRUE(input$nonormal), noheme = isTRUE(input$noheme),
-          dbfile = ctx$path, roles = ctx$roles, keep_samples = ctx$keep, rules = ctx$rules )
+          dbfile = ctx$path, roles = ctx$roles, keep_samples = ctx$keep, rules = ctx$rules,
+          fill = ctx$fill %||% "na" )
 }
 
 
@@ -835,7 +891,7 @@ fun_table1 = function ( input, ctx = t2_default_ctx() ) {
 ## plot context (t2_plot_ctx) -- the active data source and the samples chosen
 fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list(),
                      base_size = 12, base_family = "sans", caption = NULL, fig_width = NULL,
-                     filter_caption = "") {
+                     filter_caption = "", fill_caption = TRUE) {
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
     }
@@ -875,6 +931,7 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
     if (!is.null(caption)) input$caption = caption
     if (!is.null(fig_width)) input$fig_width = fig_width
     if (length(filter_caption) == 1 && !is.na(filter_caption) && nzchar(filter_caption)) input$filter_caption = filter_caption
+    input$fill_caption = isTRUE(fill_caption)
 
     ## Survival mode: if X is one of the dataset's time-to-event variables (/meta
     ## `tte_variables`), draw a Kaplan-Meier plot of the Y marker's tertiles
@@ -884,8 +941,8 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
             return(list(warning = "Survival plot: pick a Y marker to stratify into groups."))
         ## Appearance settings laid over the survival plot: fonts, legend, theme
         km_style = input[intersect(names(input), names(formals(t2_font_theme)))]
-        return(tryCatch(t2_style_survival(
-            survival_km(y = input$y, endpoint = input$x[1],
+        return(tryCatch({
+            km = survival_km(y = input$y, endpoint = input$x[1],
                         cohort = if (length(input$cohort)) input$cohort else "all",
                         facet  = input$facet,
                         multi_y = isTRUE(as.logical(input$multi_y)[1]),
@@ -899,9 +956,13 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
                         nonormal = TRUE,
                         noheme = if (!is.null(input$noheme)) as.logical(input$noheme)[1] else FALSE,
                         base_size = base_size, base_family = base_family,
-                        ctx = ctx),
-            style = km_style, gg = gg, fig_width = fig_width,
-            caption = t2_caption_text(filter_caption, caption, fig_width, 0.75 * base_size)),
+                        ctx = ctx)
+            ## not-detected values set to 0 / the floor: said in the caption and the summary, as for a scatter
+            fi = attr(km, "t2fill")
+            if (length(fi$filled)) attr(km, "t2summary") = paste(c(attr(km, "t2summary"), t2_fill_summary(fi)), collapse = "\n")
+            t2_style_survival(km, style = km_style, gg = gg, fig_width = fig_width,
+                caption = t2_caption_text(c(filter_caption, if (isTRUE(fill_caption)) t2_fill_caption(fi, ctx)), caption, fig_width, 0.75 * base_size))
+            },
             error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))
     }
 

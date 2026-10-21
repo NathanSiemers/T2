@@ -67,6 +67,20 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE) {
     if (length(m)) F(paste("missing:", paste(m, collapse = ", "))) else P()
   })
 
+  add("contract", "types.fill_options (optional): valid, only on sparse = 0 types", function() {
+    if (!"types" %in% tabs || !"fill_options" %in% DBI::dbListFields(con, "types")) return(P("no fill_options column: every type offers na only"))
+    t <- DBI::dbGetQuery(con, "SELECT type, fill_options FROM types WHERE fill_options IS NOT NULL AND fill_options <> ''")
+    if (!nrow(t)) return(P("no type offers a fill"))
+    sp <- if ("sparse" %in% tabs) DBI::dbGetQuery(con, "SELECT type, sparse FROM sparse") else data.frame(type = character(0), sparse = integer(0))
+    bad <- character(0)
+    for (i in seq_len(nrow(t))) {
+      r <- tryCatch(t2_fill_options_check(t$fill_options[i]), error = function(e) conditionMessage(e))
+      if (!identical(r, t$fill_options[i])) { bad <- c(bad, sprintf("%s: %s", t$type[i], if (identical(r, "na") || is.character(r) && grepl("^[a-z|]+$", r)) "not canonical" else r)); next }
+      if (!identical(r, "na") && !identical(as.integer(sp$sparse[match(t$type[i], sp$type)]), 0L)) bad <- c(bad, sprintf("%s offers a fill but is not sparse = 0", t$type[i]))
+    }
+    if (length(bad)) F(paste(bad, collapse = "; ")) else P(paste(sprintf("%s=%s", t$type, t$fill_options), collapse = ", "))
+  })
+
   ## ---- dataset_meta ----------------------------------------------------------
   meta <- list()
   if (has("dataset_meta") && all(c("key", "value") %in% cols("dataset_meta"))) {

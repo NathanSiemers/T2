@@ -6,7 +6,8 @@
 ##                 tte = list(t2_tte("OS", "Overall Survival", "OS", "OS.time")))
 ##   t2_write_types(con, spec)       spec: data.frame(type, description, example, reference, source_url,
 ##                                   source_file, label, r_datatype, sparse, default_value); only `type`
-##                                   is required, a column that is absent or NA is left as it is
+##                                   is required, a column that is absent or NA is left as it is;
+##                                   optional fill_options ("na|zero|floor", see T2_FILL_OPTIONS) is added as a column
 ##   t2_finalize_dataset(con, name, filters = name)
 ##                                   drop_t2_dataless_probes + finalize_t2_core + write_default_filters
 ##                                   + check_dataset_contract; stops when the check FAILS
@@ -17,6 +18,23 @@ T2_META_KEYS <- c("title", "label", "cohort_col", "subtype_col", "sampletype_col
                   "default_condition", "default_cohorts", "source_col", "sources", "source_labels",
                   "source_descriptions", "tte_variables", "references", "about", "citation", "attribution", "about_url", "order",
                   "hidden")   # order: optional integer, ascending in the dataset list; hidden: "1" = served but left out of the apps' menus (DEMO), "0"/absent = listed
+## the not-detected fills a data type may offer (types.fill_options, "|"-separated, `na` first):
+## na = a tested sample with no stored value is missing; zero = it is 0; floor = the smallest stored
+## value of the probe among the tested samples of the same cohort (else of the dataset)
+T2_FILL_OPTIONS <- c("na", "zero", "floor")
+## t2_fill_options_check(x): the validated "|" string (a subset of T2_FILL_OPTIONS in display order,
+## `na` first, no repeats) or stop(); x may be a vector of words or one "|" string; "" / NA = "na"
+t2_fill_options_check <- function(x) {
+  w <- if (length(x) == 1 && !is.na(x)) strsplit(as.character(x), "|", fixed = TRUE)[[1]] else as.character(x)
+  w <- trimws(w[!is.na(w)]); w <- w[nzchar(w)]
+  if (!length(w)) return("na")
+  bad <- setdiff(w, T2_FILL_OPTIONS)
+  if (length(bad)) stop("unknown fill option(s): ", paste(bad, collapse = ", "), " (known: ", paste(T2_FILL_OPTIONS, collapse = ", "), ")")
+  if (anyDuplicated(w)) stop("fill_options repeats a word: ", paste(w, collapse = "|"))
+  if (w[1] != "na") stop("fill_options must start with na: ", paste(w, collapse = "|"))
+  if (!identical(w, T2_FILL_OPTIONS[T2_FILL_OPTIONS %in% w])) stop("fill_options must be in the order na|zero|floor: ", paste(w, collapse = "|"))
+  paste(w, collapse = "|")
+}
 T2_TTE_FIELDS <- c("name", "label", "event_col", "time_col", "time_unit", "description")
 
 if (!exists("set_t2_sparse")) stop("source t2_views.R before t2_build_lib.R")
@@ -99,6 +117,12 @@ t2_write_meta <- function(con, meta = list(), tte = NULL) {
     for (k in names(vals)) {
       DBI::dbExecute(con, "DELETE FROM dataset_meta WHERE key = ?", params = list(k))
       DBI::dbExecute(con, "INSERT INTO dataset_meta(key, value) VALUES (?, ?)", params = list(k, unname(vals[[k]])))
+    }
+    if (has("fill_options")) {               # optional column, added when absent; validated
+      t2_ensure_columns(con, "types", c(fill_options = "TEXT"))
+      for (i in seq_len(nrow(spec))) if (!is.na(spec$fill_options[i]))
+        DBI::dbExecute(con, "UPDATE types SET fill_options = ? WHERE type = ?",
+                       params = list(t2_fill_options_check(spec$fill_options[i]), spec$type[i]))
     }
     DBI::dbCommit(con)
   }, error = function(e) { try(DBI::dbRollback(con), silent = TRUE); stop(e) })

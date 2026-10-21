@@ -213,6 +213,7 @@ final class T2UITests: XCTestCase {
         element("about").tap()
         XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 20), "the About sheet did not open")
         shot("04b-about")
+        XCTAssertTrue(element("survival-hint").exists, "no survival hint at the top of About")
         // the contact form: Send stays disabled until name, a valid address and a message are there
         scrollTo("contact-button").tap()
         XCTAssertTrue(element("contact-send").waitForExistence(timeout: 20), "no contact form")
@@ -387,11 +388,41 @@ final class T2UITests: XCTestCase {
         shot("22-plot-after-removing-filters")
     }
 
+    /// the survival hint under X (the dataset has time-to-event variables) and in About
+    func test08_SurvivalHint() {
+        launch()
+        waitFor("survival-hint-select", "the survival hint under X")
+        let hint = text(of: "survival-hint-select")
+        XCTAssertTrue(hint.contains("Kaplan-Meier") && hint.contains("OS"), hint)
+        shot("29-select-survival-hint")
+    }
+
     /// a figure of a real size: the two page presets, PNG and PDF, the share sheet
     func test04_Publish() {
         launch(tab: "publish")
         waitFor("publish-preview", "the figure preview")
         shot("23-publish-half-page-third-high")
+        // the text elements: each can be switched off; the preview's accessibility value lists what it shows
+        func shown() -> String {
+            // (the form is a lazy list: the preview must be scrolled back into view to be read)
+            let e = scrollTo("publish-preview")
+            return ", " + ((e.value as? String) ?? "") + ","      // (", title," cannot be mistaken for ", subtitle,")
+        }
+        func flip(_ id: String) {
+            // (the right-hand end of the row, where the switch is; a tap on the label works too, but this is exact)
+            scrollTo(id).coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(shown().contains(", title,") && shown().contains(", source,"), "the preview shows no title: \(shown())")
+        flip("publish-title")
+        XCTAssertTrue(waitUntil(timeout: 10) { let v = shown(); return v.count > 3 && !v.contains(", title,") }, "the title stayed after its switch was turned off: \(shown())")
+        XCTAssertTrue(shown().contains(", axes,"), shown())
+        flip("publish-title")
+        XCTAssertTrue(waitUntil(timeout: 10) { shown().contains(", title,") }, "the title did not come back: \(shown())")
+        flip("publish-source")
+        XCTAssertTrue(waitUntil(timeout: 10) { let v = shown(); return v.count > 3 && !v.contains(", source,") }, "the source line stayed: \(shown())")
+        XCTAssertTrue(element("publish-title").exists)
+        flip("publish-source")
+        scrollTo("publish-preview")
         element("publish-preset").tap()
         let full = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Full page wide'")).firstMatch
         if full.waitForExistence(timeout: 10) {

@@ -146,7 +146,7 @@ final class AppModel {
     /// TCGA dataset). Until 2026-10-10 the app defined these itself; now nothing about a
     /// dataset is written here.
     var sources: [DataSource] {
-        datasets.filter { !$0.isDemo }.flatMap { d -> [DataSource] in
+        datasets.filter { !$0.isHidden }.flatMap { d -> [DataSource] in
             [DataSource(dataset: d.name, preset: nil, label: d.label)] +
             d.parts.map { DataSource(dataset: d.name, preset: $0.label, label: "\(d.label): \($0.label)") }
         }
@@ -202,7 +202,7 @@ final class AppModel {
         await run("Loading datasets") {
             self.datasets = try await self.api.datasets()
             let wanted = UserDefaults.standard.string(forKey: "t2Dataset")
-            let offered = self.datasets.filter { !$0.isDemo }
+            let offered = self.datasets.filter { !$0.isHidden }
             let first = offered.first { $0.name == wanted } ?? offered.first
             if let first, self.meta == nil { try await self.open(first.name, launch: true) }
         }
@@ -508,9 +508,23 @@ final class AppModel {
             request.fitLine = fitLine
             // (the website also asks for the cohort and the sample type of a sample when it keeps only complete ones)
             let required = [m.cohortColumn, m.sampleTypeColumn].compactMap { $0 }
-            let context = PlotBuilder.Context(datasetLabel: m.label, tte: m.tte, typeLabels: m.typeWords, handleColumns: required)
+            let context = PlotBuilder.Context(datasetLabel: PlotBuilder.sourceWord(dataset: m.label, part: fixedPreset),
+                                              tte: m.tte, typeLabels: m.typeWords, handleColumns: required, filters: filterNote)
             return PlotBuilder.build(request, columns: filter.columns, keep: currentMask(), context: context)
         }
+    }
+
+    /// what is filtered, for the figure's "Filtered: ..." caption: the group and exclusions in
+    /// use, the cohorts, and the Filter screen's other rules (the data source is named in the title)
+    var filterNote: FilterNote {
+        let exclusions = Set(allPresets.filter(Self.isExclusion).map(\.label))
+        let used = activePresets.filter { $0 != fixedPreset }
+        let cohortCol = meta?.cohortColumn
+        return FilterNote(groups: used.filter { !exclusions.contains($0) }.sorted(),
+                          exclusions: used.filter { exclusions.contains($0) }.sorted(),
+                          cohorts: chosenCohorts.map { Array($0) },
+                          cohortTotal: availableCohorts.count,
+                          rules: filter.filters.filter { $0.column != cohortCol && $0.isActive })
     }
 
     /// is X a time-to-event variable of this dataset (so the plot is a Kaplan-Meier plot)?

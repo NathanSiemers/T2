@@ -24,10 +24,12 @@ public enum PlotBuilder {
         public var handleColumns: [String]
         /// the most panels a faceted plot may have
         public var maxPanels: Int
+        /// the active filters, for the figure's "Filtered: ..." caption (empty = none)
+        public var filters: FilterNote
         public init(datasetLabel: String = "", tte: [TTEVariable] = [], typeLabels: [String: String] = [:],
-                    handleColumns: [String] = [], maxPanels: Int = 36) {
+                    handleColumns: [String] = [], maxPanels: Int = 36, filters: FilterNote = FilterNote()) {
             self.datasetLabel = datasetLabel; self.tte = tte; self.typeLabels = typeLabels
-            self.handleColumns = handleColumns; self.maxPanels = maxPanels
+            self.handleColumns = handleColumns; self.maxPanels = maxPanels; self.filters = filters
         }
     }
 
@@ -47,6 +49,21 @@ public enum PlotBuilder {
     ///   - columns: every loaded column by name (clinical columns and fetched probes)
     ///   - keep: the samples that pass the presets, the cohort choice and the Filter screen
     public static func build(_ request: PlotRequest, columns: [String: Column], keep: Mask, context: Context = Context()) -> PlotScene {
+        var scene = buildScene(request, columns: columns, keep: keep, context: context)
+        if scene.kind != .empty { scene.caption = context.filters.text }
+        return scene
+    }
+
+    /// The word a title uses for the data source: the dataset's label, or, when one part of
+    /// it is the source ("GTEx" of "TCGA-TARGET-GTEx (Toil)"), the part's label, with the
+    /// dataset label's closing parenthesis (the processing, "(Toil)") kept: "GTEx (Toil)".
+    public static func sourceWord(dataset: String, part: String?) -> String {
+        guard let part, !part.isEmpty else { return dataset }
+        guard !part.contains("("), dataset.hasSuffix(")"), let open = dataset.lastIndex(of: "(") else { return part }
+        return part + " " + dataset[open...]
+    }
+
+    static func buildScene(_ request: PlotRequest, columns: [String: Column], keep: Mask, context: Context) -> PlotScene {
         let n = keep.count
         var warnings: [String] = []
         let xNames = request.x.filter { !$0.isEmpty }, yNames = request.y.filter { !$0.isEmpty }

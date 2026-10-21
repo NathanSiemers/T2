@@ -48,6 +48,7 @@ struct PublishView: View {
                 .frame(height: previewHeight)
                 .accessibilityElement()
                 .accessibilityLabel("Figure preview")
+                .accessibilityValue(shownText(scene))
                 .accessibilityIdentifier("publish-preview")
                 Text(readout).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("publish-readout")
             } header: {
@@ -66,6 +67,21 @@ struct PublishView: View {
                     ForEach([150.0, 200, 300, 450, 600], id: \.self) { Text("\(Int($0)) dpi").tag($0) }
                 }
             }
+            // each text element of the figure can be kept or dropped (all on to start with)
+            Section {
+                Toggle("Title", isOn: $model.figure.style.showTitle).accessibilityIdentifier("publish-title")
+                Toggle("Subtitle", isOn: $model.figure.style.showSubtitle).accessibilityIdentifier("publish-subtitle")
+                Toggle("Caption (which samples are filtered)", isOn: $model.figure.style.showCaption).accessibilityIdentifier("publish-caption")
+                Toggle("Axis titles", isOn: $model.figure.style.showAxisTitles).accessibilityIdentifier("publish-axes")
+                Toggle("Source line (attribution)", isOn: $model.figure.style.showSourceLine)
+                    .accessibilityIdentifier("publish-source")
+                if !model.figure.style.showSourceLine {
+                    Text("You removed the source line. Please cite T2 in anything that uses this figure: \(t2Citation)")
+                        .font(.footnote).foregroundStyle(.orange).textSelection(.enabled)
+                }
+            } header: {
+                Text("Text on the figure")
+            }
             Section("Sizes at final print size (points)") {
                 Stepper("Title \(Int(model.figure.style.titleSize))", value: $model.figure.style.titleSize, in: 0...40)
                 Stepper("Subtitle \(Int(model.figure.style.subtitleSize))", value: $model.figure.style.subtitleSize, in: 0...40)
@@ -80,11 +96,6 @@ struct PublishView: View {
                 }
                 Toggle("Legend", isOn: $model.figure.style.showLegend)
                 Toggle("Fit line", isOn: $model.figure.style.showFit)
-                Toggle("Source line", isOn: $model.figure.style.showSourceLine)
-                if !model.figure.style.showSourceLine {
-                    Text("You removed the source line. Please cite T2 in anything that uses this figure: \(t2Citation)")
-                        .font(.footnote).foregroundStyle(.orange).textSelection(.enabled)
-                }
             }
             Section {
                 Button("Plot: PNG") { export(scene, pdf: false) }.accessibilityIdentifier("export-png")
@@ -123,6 +134,18 @@ struct PublishView: View {
         }
     }
 
+    /// which text elements the figure shows, for the preview's accessibility value (the UI tests read it)
+    private func shownText(_ scene: PlotScene) -> String {
+        let s = model.figure.style
+        var shown: [String] = []
+        if s.showTitle, s.titleSize > 0, !scene.title.isEmpty { shown.append("title") }
+        if s.showSubtitle, s.subtitleSize > 0, !scene.subtitle.isEmpty { shown.append("subtitle") }
+        if s.showCaption, !scene.caption.isEmpty { shown.append("caption") }
+        if s.showSourceLine { shown.append("source") }
+        if s.showAxisTitles, s.axisTitleSize > 0 { shown.append("axes") }
+        return shown.joined(separator: ", ")
+    }
+
     /// the preview is as wide as the screen allows, never larger than the figure itself
     private var previewHeight: CGFloat {
         let available: CGFloat = 330
@@ -143,7 +166,12 @@ struct PublishView: View {
         model.figure.widthIn = p.widthIn
         model.figure.heightIn = p.heightIn
         model.figure.dpi = p.dpi
-        model.figure.style = p.style
+        // (a size preset brings its type sizes, not the user's choice of which text elements to show)
+        var style = p.style
+        let old = model.figure.style
+        style.showTitle = old.showTitle; style.showSubtitle = old.showSubtitle; style.showCaption = old.showCaption
+        style.showAxisTitles = old.showAxisTitles; style.showSourceLine = old.showSourceLine
+        model.figure.style = style
         exported = nil
         message = ""
         savedToPhotos = false

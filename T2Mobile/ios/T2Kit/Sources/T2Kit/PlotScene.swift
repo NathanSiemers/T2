@@ -238,6 +238,8 @@ public struct PlotScene: Sendable, Equatable {
     public var n: Int
     /// Y probes plotted individually (each sample drawn once per probe); 0 otherwise
     public var probesStacked: Int = 0
+    /// the line under the figure that says which samples are in it ("Filtered: ..."); empty when nothing is filtered
+    public var caption: String = ""
     /// what `n` counts, for the screen: "4,312 samples" or "8,624 points (4,312 samples x 2 probes)"
     public var countText: String {
         guard probesStacked > 1 else { return "\(n.formatted()) samples" }

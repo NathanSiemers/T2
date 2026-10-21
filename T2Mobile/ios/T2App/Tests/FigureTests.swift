@@ -116,6 +116,25 @@ final class FigureTests: XCTestCase {
         XCTAssertLessThan(ink(render(s, noText)), ink(render(s, .forPrint)) * 0.7, "removing every text leaves most of the ink")
     }
 
+    /// the Publish screen's switches: each text element, off, takes its ink out of the figure
+    /// (the sizes stay non-zero: it is the switch that removes the text)
+    func testTextElementSwitchesRemoveTheirElement() {
+        var s = scene()
+        s.caption = "Filtered: Primary tumors only; cohorts: 2 of 33."
+        func inkWith(_ change: (inout PlotStyle) -> Void) -> Double {
+            var st = PlotStyle.forPrint; change(&st); return ink(render(s, st, width: 500, height: 400))
+        }
+        let all = inkWith { _ in }
+        XCTAssertLessThan(inkWith { $0.showTitle = false }, all - 50, "the title switch removes no ink")
+        XCTAssertLessThan(inkWith { $0.showSubtitle = false }, all - 50, "the subtitle switch removes no ink")
+        XCTAssertLessThan(inkWith { $0.showCaption = false }, all - 50, "the caption switch removes no ink")
+        XCTAssertLessThan(inkWith { $0.showSourceLine = false }, all - 50, "the source line switch removes no ink")
+        XCTAssertLessThan(inkWith { $0.showAxisTitles = false }, all - 50, "the axis titles switch removes no ink")
+        // and the caption is drawn at all: the same figure without a caption text has less ink
+        s.caption = ""
+        XCTAssertLessThan(inkWith { _ in }, all - 50, "a caption adds no ink")
+    }
+
     func testPointSizeIsRespected() {
         let s = scene()
         var fine = bare; fine.pointSize = 0.8

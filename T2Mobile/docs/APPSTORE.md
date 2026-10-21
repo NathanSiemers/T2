@@ -4,10 +4,17 @@ The texts and settings of the App Store record (App Store Connect app 6820327009
 `org.fiveprime.t2`, free). Edit here, then apply with `~/.appstoreconnect/asc.py` on the Mac
 (or in App Store Connect). Character limits in brackets.
 
+**Status of the texts (2026-10-20):** the Identity, Promotional text, Description and Keywords
+below are the wording for the NEXT build (build 3, round 2026-10-20: no list of collections,
+"plots, with a few summary statistics", survival analysis first). The live listing of build 2
+(in App Review) still has the OLD text (subtitle "Explore TCGA, TARGET and GTEx", the promotional
+text and the description that name TCGA, TARGET and GTEx and talk up statistics). Apply the new
+texts with `asc.py` only when the freeze is lifted.
+
 ## Identity
 
 - **Name** [30]: T2 Cancer Genomics
-- **Subtitle** [30]: Explore TCGA, TARGET and GTEx
+- **Subtitle** [30]: Explore TCGA and genomic data
 - **Primary category**: Medical — **Secondary**: Reference
   (there is no "Science" category; Nathan chose Medical, 2026-10-07)
 - **Price**: free, all territories
@@ -40,22 +47,25 @@ Store Connect does not ask.
 
 ## Promotional text [170]
 
-Box plots, scatter plots and survival curves from 12,800 TCGA samples and 19,000
-TCGA–TARGET–GTEx samples — drawn on your phone, filtered the way you want.
+Plots with a few summary statistics, and Kaplan–Meier survival analysis, from TCGA (The Cancer Genome Atlas) and other genomic databases — drawn on your phone.
 
 ## Description [4000]
 
-T2 Cancer Genomics puts two of the largest public cancer research collections in your
-hand: the TCGA Pan-Cancer Atlas (about 12,800 samples from 33 cancer types) and the
-combined TCGA, TARGET and GTEx collection (about 19,000 tumor and normal samples, adult
-and pediatric). It is the iPhone companion of T2, the web tool at fiveprime.org.
+T2 Cancer Genomics puts TCGA (The Cancer Genome Atlas) and other genomic databases in your
+hand: thousands of tumor and normal samples, adult and pediatric, with their genomic and
+clinical annotation. It is the iPhone companion of T2, the web tool at fiveprime.org.
 
-Pick any two variables and the app draws the plot that fits: a box plot when one is a
-category (cancer type, mutation, sample type, gender, stage…), a scatter plot with a
-correlation when both are continuous, Kaplan–Meier survival curves when you choose a
-survival endpoint, a count table for two categories. Add color, size and facets (one graph
-per level), flip the axes, order the categories by their median, z-score the Y axis, or
-remove the influence of a third variable from Y or X.
+Survival analysis is the core: choose a survival endpoint (overall, progression-free,
+disease-specific survival and more, as each data set offers them) as X, and the app draws
+Kaplan–Meier curves by groups of any gene or variable on Y, with the risk table, the
+log-rank test and a Cox hazard ratio.
+
+The rest is plots, with a few summary statistics: pick any two variables and the app draws
+the plot that fits: a box plot when one is a category (cancer type, mutation, sample type,
+gender, stage…), a scatter plot with its fitted line when both are continuous, a count
+table for two categories. Add color, size and facets (one graph per level), flip the axes,
+order the categories by their median, z-score the Y axis, or remove the influence of a
+third variable from Y or X.
 
 Variables, for every sample:
 • gene expression (RNA-seq) for about 20,000 genes
@@ -103,7 +113,7 @@ statistical method are listed in the app under About › Sources and citations.
 
 ## Keywords [100, comma-separated]
 
-TCGA,cancer,genomics,GTEx,TARGET,gene expression,survival,mutation,oncology,RNA-seq,tumor
+TCGA,cancer,genomics,survival,Kaplan-Meier,gene expression,mutation,oncology,RNA-seq,tumor,biomarker
 
 ## What's New (1.0)
 

@@ -176,11 +176,18 @@ public struct DatasetSummary: Decodable, Sendable, Equatable, Identifiable {
     public let sources: [DataSource]?
     /// the dataset contract's handles (absent from services before it)
     public let handles: [Handle]?
+    /// the dataset's own metadata says it is not to be offered in the apps (the service's
+    /// `"hidden": true`, e.g. the synthetic test dataset); absent = not hidden, and absent
+    /// from services before 2026-10-20
+    public let hidden: Bool?
     public var id: String { name }
     /// the parts offered as data sources of their own
     public var parts: [DataSource] { (sources ?? []).filter { !$0.isWhole } }
     /// the synthetic test dataset (not real data): built for tests, not offered to users
     public var isDemo: Bool { name == "DEMO" || title.localizedCaseInsensitiveContains("not real data") }
+    /// is the dataset left out of the menus? The service's `hidden` flag, or (for a service
+    /// that does not send it yet) the older rule above.
+    public var isHidden: Bool { hidden == true || isDemo }
 }
 
 /// One data type of a dataset ("rna", "mut", "sig", ...) as the database describes it.
@@ -372,6 +379,19 @@ public struct DatasetMeta: Decodable, Sendable {
     public var handleColumns: [String] { (handles ?? []).map(\.name) }
     /// the time-to-event variables, [] when the service declares none
     public var tte: [TTEVariable] { tteVariables ?? [] }
+    /// "OS, PFI, DSS or DFI": the dataset's time-to-event names, from the data, never a fixed list
+    public var tteNames: String {
+        let n = tte.map(\.name)
+        return n.count <= 1 ? (n.first ?? "") : n.dropLast().joined(separator: ", ") + " or " + n[n.count - 1]
+    }
+    /// the one-line survival hint of the About screen; empty when the dataset has no time-to-event variables
+    public var survivalHint: String {
+        tte.isEmpty ? "" : "Survival curves: choose \(tteNames) as X to draw Kaplan-Meier curves by groups of Y."
+    }
+    /// the short form, under the X picker of the Select screen
+    public var survivalHintShort: String {
+        tte.isEmpty ? "" : "Survival: choose \(tteNames) as X for Kaplan-Meier curves."
+    }
     /// the word a plot title uses for a data type ("mutation" for `mut`); nil = no word (a bare RNA name).
     /// Read from the `types` rows (`type` is a value there): the `type_labels` dictionary is not
     /// decoded, because the snake-case key strategy would mangle type names such as `immune_score`.

@@ -16,6 +16,10 @@ struct AboutView: View {
                 Section {
                     Text("For scientists in biomedical research. T2 gives no medical advice and is not for diagnosis or treatment decisions.")
                         .font(.callout)
+                    // survival analysis first: the names come from the open dataset's time-to-event variables
+                    if let hint = model.meta?.survivalHint, !hint.isEmpty {
+                        Text(hint).font(.callout).accessibilityIdentifier("survival-hint")
+                    }
                     NavigationLink {
                         SourcesView()
                     } label: {
@@ -26,7 +30,7 @@ struct AboutView: View {
                     Text("Research use only")
                 }
                 Section("T2") {
-                    Text("T2 is a database and search tool for cancer genomics data collections. Pick two variables (genes, mutations, copy number, signatures, clinical annotation) and T2 draws the relationship across thousands of tumour samples, with the statistics; narrow the samples with the presets and the Filter screen; export a publication figure from the Publish screen. The phone fetches only the values of the variables you choose; filtering, statistics and drawing happen on the device.")
+                    Text("T2 is a database and search tool for TCGA (The Cancer Genome Atlas) and other genomic databases. Pick two variables (genes, mutations, copy number, signatures, clinical annotation) and T2 draws the relationship across thousands of tumour samples: plots, with a few summary statistics, and Kaplan-Meier survival analysis where the data have follow-up; narrow the samples with the presets and the Filter screen; export a publication figure from the Publish screen. The phone fetches only the values of the variables you choose; filtering, statistics and drawing happen on the device.")
                         .font(.callout)
                     Link(destination: URL(string: "https://www.fiveprime.org")!) {
                         Label("The T2 website (fiveprime.org)", systemImage: "safari")

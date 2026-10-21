@@ -328,9 +328,7 @@ struct SelectView: View {
 
     private var variablesHelp: String {
         var s = "Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. Two numbers give a scatter plot; a category on X gives box plots."
-        if let tte = model.meta?.tte, !tte.isEmpty {
-            s += " A time-to-event variable on X (\(tte.map(\.name).joined(separator: ", "))) gives Kaplan-Meier curves by groups of Y."
-        }
+        // (the survival hint has its own line under the X picker)
         return s
     }
 
@@ -354,6 +352,10 @@ struct SelectView: View {
             }
             Section {
                 VariablePicker(title: "X", current: model.x, allowNone: false) { v in Task { await model.setVariable(.x, to: v) } }
+                // survival is the app's strongest analysis: say where it is, when the dataset has time-to-event variables
+                if let hint = model.meta?.survivalHintShort, !hint.isEmpty {
+                    Text(hint).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("survival-hint-select")
+                }
                 VariablePicker(title: "Y", current: model.y, allowNone: false) { v in Task { await model.setVariable(.y, to: v) } }
                 VariablePicker(title: "Color", current: model.colorLabel) { v in Task { await model.setVariable(.color, to: v) } }
                 VariablePicker(title: "Size", current: model.size) { v in Task { await model.setVariable(.size, to: v) } }

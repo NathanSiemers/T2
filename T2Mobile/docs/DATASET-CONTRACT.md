@@ -52,6 +52,7 @@ check (`dataset_contract_check.R`) requires the ones marked **req** of every fil
 | key | meaning |
 |---|---|
 | `order` | listing position (integer; TCGA = 1) |
+| `hidden` (optional) | `1` / `true` / `yes` (any case) = the apps do not list the dataset (DEMO); anything else or absent = listed. The api serves it as `"hidden": bool` in `/v1/datasets` and still answers every endpoint for it |
 | `title` **req**, `label` **req** | display strings (`"T2: CPTAC Pan-Cancer …"`, `"CPTAC Pan-Cancer"`) |
 | `cohort_col` **req** | clinical column that becomes the virtual `cohort` |
 | `subtype_col` | clinical column that becomes the virtual `subtype` (the sub-cohort handle); empty = none |
@@ -65,6 +66,15 @@ check (`dataset_contract_check.R`) requires the ones marked **req** of every fil
 
 `types.label` **req**: the word a plot title uses for the type (`mut`/`fmut` → "mutation", `cnv` →
 "CNA", `prot` → "protein", `phospho` → "phosphosite", `rna` → "" since a bare name needs no word).
+
+`types.fill_options` (optional column): `|`-separated subset of `na|zero|floor`, `na` first (absent column, NULL or
+empty = `na` only). For a probe of the type, a sample that is tested for the type but has no stored value may be
+served as missing (`na`, the default), 0 (`zero`) or the detection floor (`floor`: the probe's smallest stored value
+among the tested samples of the same cohort, else over the dataset). Meaningful only for types loaded in full
+(`sparse = 0`: CPTAC `prot`, `phospho`); the api ignores it for sparse types. The api serves it as `types[].fill_options`
+in `/meta` and, decisively, as `fill_options` in every values answer (the union over the probes returned): **apps read
+`fill_options` from the values answer only, never from the types rows**, and show the not-detected control only when
+it lists more than `na`.
 
 ### Time-to-event variables
 

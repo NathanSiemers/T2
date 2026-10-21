@@ -41,13 +41,13 @@ missing. `codes`: index into `levels` from 0, `-1` = missing. `type`: the data t
 | Request | Returns |
 |---|---|
 | `GET /healthz` | `ok` |
-| `GET /v1/datasets` | every dataset: `name`, `title`, `label`, `n_samples`, `n_probes`, `version`, `roles`, `defaults`, `sources` (the same list as `/meta`'s, so a client can build its data-source menu from this one answer) |
+| `GET /v1/datasets` | every dataset: `name`, `title`, `label`, `n_samples`, `n_probes`, `version`, `roles`, `defaults`, `sources` (the same list as `/meta`'s, so a client can build its data-source menu from this one answer), `handles`, `hidden` (boolean, always present: `true` for a dataset the apps must not list, e.g. DEMO; the dataset is still served by every endpoint) |
 | `GET /v1/{ds}/meta` | one dataset in full: the above plus `presets`, `sources`, `clinical_columns`, `clinical_descriptions` (what each clinical column means and where it comes from: `column`, `description`, `source`; from `cmd/t2api/clinical_descriptions.tsv`), `survival_endpoints`, `tte_variables`, `handles`, `type_labels`, `about`, `default_cohorts` (array form of `defaults.cohorts`; cohort names can contain commas), `cohorts` (display names), `types` (data-type descriptions, with `label`), `datatypes`. The rules are in [DATASET-CONTRACT.md](DATASET-CONTRACT.md). |
 | `GET /v1/{ds}/clinical` | `samples` (ids, in order) and `columns`: every clinical and virtual column. About 2.7 MB for TCGA (0.5 MB gzipped); fetch once per dataset version and keep it. |
 | `GET /v1/{ds}/probes?q=cd8&limit=50` | names of selectable variables containing `q` (case-insensitive; the exact name first, then names starting with `q`, then the rest; shorter first); `total_matches` |
 | `GET /v1/{ds}/probes?all=1` | every selectable name, in menu order (`subtype`, `cohort`, the probes, the sample-type column): `n`, `probes`. 1.7 MB for TCGA (0.6 MB gzipped); cacheable by version (`&v=`). For a client that fills its own menus (the R app's selectize). The body also carries parallel integer arrays, one entry per name: `section` (0 handle, 1 probe, 2 clinical), `type` (index into `types`, the list of type names used; clinical columns are type `clinical`, the virtual `cohort` / `subtype` `virtual`, a probe with no type row `unknown`), `kind` (0 numeric, 1 categorical). Search (`?q=`) adds `hits_typed`: `[{name, section, type, kind}]` with words instead of codes (`handle`/`probe`/`clinical`, `num`/`cat`); `probes` is unchanged. |
-| `GET /v1/{ds}/values?probes=CD8A,TP53.mut,gender` | `columns` for those names (probes, clinical columns or `cohort` / `subtype`), `missing`: names the dataset does not have. At most 100 names per request. The body also carries the dataset `version`. |
-| `GET /statz` | request and cache counters |
+| `GET /v1/{ds}/values?probes=CD8A,TP53.mut,gender` | `columns` for those names (probes, clinical columns or `cohort` / `subtype`), `missing`: names the dataset does not have. At most 100 names per request. The body also carries the dataset `version`, `fill_options` and, with `&fill=`, `fill`, `filled`, `tested_n` (see [Not-detected values](#not-detected-values-fill)). |
+| `GET /statz` | request and cache counters, and `usage` (see [Usage metrics](#usage-metrics-and-dos-visibility)); internal only, Nginx does not route it |
 
 `roles`: which clinical columns play cohort / subtype / sample type, the sample-type values
 that mean "not tumor" (`normal_label`), the cohort values of heme origin (`heme_values`).
@@ -185,6 +185,84 @@ the new files in a new directory (or under a new name), point the service's volu
 and restart the service. As a safety net the service checks on every request that the file
 it loaded is still the same file (size, modification time, inode); if not, it answers `503`
 and exits so that Docker starts it again with everything loaded afresh.
+
+## Not-detected values (`fill`)
+
+Some types are measured on a subset of a sample's probes (CPTAC proteomics: a protein with no
+quantifiable peptide in a plex has no stored value). For such a type a sample that was TESTED
+but has no stored value is served as missing (null). `GET /v1/{ds}/values?probes=...&fill=zero|floor`
+serves those cells differently; the default is `fill=na` (what every client got before).
+
+- `fill=zero`: the cell is 0. `fill=floor`: the smallest stored value of that probe among the tested
+  samples of the same cohort (the dataset's cohort column, the virtual `cohort`); a cohort with no
+  stored value for the probe uses the probe's smallest stored value over the whole dataset; a probe
+  with no stored value at all stays missing.
+- Only the cells of samples tested for the probe's type and without a stored row change.
+  Samples never tested stay missing; stored values (a stored NULL included) never change.
+- It is applied per probe, and only to probes whose data type offers that fill (`types.fill_options` in
+  the file, `types[].fill_options` in `/meta`, `na` only where the data say nothing). Other probes in the
+  same request, and clinical columns, are served unchanged. A request whose `fill` applies to none of
+  its probes is answered `400 fill not available for these variables`; an unknown value `400 fill must be
+  na, zero or floor`.
+- **The values answer carries the decision; clients read nothing else.** Every answer has
+  `fill_options`: the union over the returned probes of what their types offer, in the order `na`,
+  `zero`, `floor` (`["na"]` when nothing but missing applies). A client shows its "not detected" control
+  only when the list has more than `na`, and offers exactly those options. When a fill other than `na`
+  was applied, the answer also has `fill` (echo), `filled` (`{probe: cells changed}`, only probes with
+  more than 0) and `tested_n` (`{probe: samples tested for its type}`, same probes): enough for a caption
+  such as "set to 0 (1,357 of 1,549 samples)" without knowing what the type is (`type_labels` has the word).
+- The cache and ETag key include the fill; with `?v=` the answer is immutable as before.
+
+```
+GET /v1/cptac/values?probes=CLDN6,CLDN6.prot&fill=zero
+{"dataset":"cptac", ..., "columns":[ CLDN6 (rna, unchanged), CLDN6.prot (1,357 nulls now 0) ],
+ "missing":[], "fill_options":["na","zero","floor"],
+ "fill":"zero", "filled":{"CLDN6.prot":1357}, "tested_n":{"CLDN6.prot":1549}}
+```
+
+## Usage metrics and DoS visibility
+
+The service counts what it serves, in memory, with no addresses, probe names, queries or
+selections (`usage.go`). `GET /statz` (internal: Nginx routes only `/v1/` and `/healthz`) carries,
+besides the existing counters, `usage`:
+
+```
+curl -s http://127.0.0.1:3860/statz | jq .usage
+curl -s http://127.0.0.1:3860/statz | jq '.usage.minutes[-10:] | map({t, requests, max_per_client, distinct_clients, s: .by_status})'
+```
+
+- `since`: when the process started (the counters restart with it).
+- `minutes`: the last 60 minutes, newest last (the service keeps 24 h in memory). Each has
+  `t` (UTC minute), `requests`, `by_endpoint` (`datasets`, `meta`, `clinical`, `probes_all`,
+  `probes_search`, `values`, `contact`, `healthz`, `statz`, `other`), `by_dataset` (loaded names;
+  anything else is `other`), `by_status` (`2xx`, `304`, `4xx`, `429`, `503`, `5xx`), `by_client`
+  (from the User-Agent prefix: `ios` = `T2 iOS`, `web` = `T2-shiny`, `other`), `latency`
+  (`le10ms`, `le50ms`, `le200ms`, `le1s`, `gt1s`), `bytes` written, `busy` (requests refused
+  because every slot was taken), `distinct_clients` and `max_per_client` (the two numbers
+  derived from the client address; the addresses themselves live in a per-minute map that is
+  dropped when the minute ends and are never logged or returned). Zero counts are omitted.
+- `today` and `days`: the same counts (without the client numbers) per UTC day since start.
+
+Reading it: normal traffic has `max_per_client` of a few dozen at most (an app session is a few
+requests, a plot at most one `values` call) and almost all `2xx`/`304`. A burst shows as a
+minute with a large `max_per_client` (one client) or a large `distinct_clients` with `429` /
+`503` / `busy` counts rising (many clients), `latency.gt1s` growing, and `bytes` jumping.
+`503` with `busy` means the in-flight limit was reached; `429` is the contact form's limiter.
+Nginx's own refusals (`limit_req` 429s, blocked paths, fail2ban) never reach the service
+and are not counted here: they are in the Nginx error log and the failure-only access log.
+
+Once an hour the service logs one line of numbers, for example
+`usage 2026-10-21T02:00Z requests=1234 ios=800 web=300 other=134 values=900 429=0 503=0 busy=0 p_latency: ≤10ms=80% ≤50ms=15% ≤200ms=4% ≤1s=1% >1s=0% distinct_clients_max=21 max_per_client=17`.
+With `-usage-dir <dir>` (default off: the production container is read-only) the same record is
+also appended as one JSON line (`t`, the counts above, `distinct_clients_max`, `max_per_client`)
+to `<dir>/usage-YYYY-MM.jsonl`, created 0640; a write error is logged once per hour and
+otherwise ignored.
+
+**Draft for the public privacy page**, to be added if and when the hourly file is enabled:
+"The service keeps hourly counts of requests by type (for example how many requests asked for
+data values, how many were refused when the service was busy), by app (T2 iOS, the web app,
+other) and by response time. It does not store IP addresses, the genes or other variables
+you choose, or your selections; the counts cannot be traced to a person."
 
 ## Limits and safety
 

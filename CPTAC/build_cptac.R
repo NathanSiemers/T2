@@ -665,6 +665,11 @@ type_spec <- data.frame(type = tt, description = sapply(tdef[tt], `[`, 1), examp
                                          mut = "mutation", fmut = "mutation")[tt]),
                         r_datatype = ifelse(tt %in% c("mut", "fmut"), "factor", "numeric"),
                         sparse = tt %in% c("rna", "mut"), default_value = ifelse(tt %in% c("rna", "mut"), 0, NA_real_),
+                        ## how a TESTED sample without a stored value may be served (the api's values?fill=):
+                        ## proteome and phosphoproteome gaps are "not detected" (no quantifiable PSM in the TMT
+                        ## plex, below the detection floor: the low expressers), so zero or the per-cohort floor
+                        ## are meaningful options; every other type's gap is plain missing. Untested = NA always.
+                        fill_options = ifelse(tt %in% c("prot", "phospho"), "na|zero|floor", "na"),
                         stringsAsFactors = FALSE, row.names = NULL)
 t2_write_types(con, type_spec)
 ABOUT <- paste("T2 CPTAC Pan-Cancer: the harmonized proteogenomic data freeze of the National Cancer Institute's Clinical Proteomic Tumor Analysis Consortium (CPTAC),",

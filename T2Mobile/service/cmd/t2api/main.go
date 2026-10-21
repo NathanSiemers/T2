@@ -50,6 +50,7 @@ type server struct {
 	contactLimit contactLimiter
 	inflight     chan struct{} // one token per request being answered (-max-inflight)
 	nBusy        atomic.Int64  // requests refused because every token was taken
+	usage        *usageStats   // counts for /statz and the hourly line (usage.go); nil = off
 }
 
 func main() {
@@ -60,6 +61,7 @@ func main() {
 	conns := flag.Int("db-conns", 48, "database connections per dataset (concurrent uncached lookups)")
 	memMB := flag.Int("mem-limit-mb", 3072, "soft memory limit for the Go runtime, in MB (keep below the container limit)")
 	inflight := flag.Int("max-inflight", 256, "requests answered at once; beyond it a request is refused at once with 503 (a flood then costs no memory and no disk time). 256 x a 100-probe answer is under 2 GB; a small standby takes 32")
+	usageDir := flag.String("usage-dir", "", "when set, one JSON line of counts per hour is appended to <dir>/usage-YYYY-MM.jsonl (counts only; default off: the production container is read-only)")
 	flag.Parse()
 	dbConns = *conns
 	debug.SetMemoryLimit(int64(*memMB) << 20)
@@ -103,6 +105,9 @@ func main() {
 		log.Fatal("no datasets could be loaded")
 	}
 
+	s.usage = newUsage(s.order, time.Now)
+	go s.usage.runHourly(*usageDir)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /statz", s.handleStats)
@@ -115,7 +120,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           s.count(s.limited(s.recovered(gzipped(mux)))),
+		Handler:           s.metered(s.count(s.limited(s.recovered(gzipped(mux))))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -234,6 +239,9 @@ func (s *server) limited(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		default:
 			s.nBusy.Add(1)
+			if uw, ok := w.(*usageWriter); ok {
+				uw.busy = true
+			}
 			s.nErr.Add(1)
 			w.Header().Set("Retry-After", "3")
 			w.Header().Set("Cache-Control", "no-store")
@@ -276,6 +284,9 @@ func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 		ds[name] = d.cache.stats()
 	}
 	out["datasets"] = ds
+	if s.usage != nil {
+		out["usage"] = s.usage.snapshot()
+	}
 	writeJSON(w, out)
 }
 
@@ -414,13 +425,30 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 			return
 		}
 	}
-	if s.cacheable(w, r, d, "v-"+strings.Join(names, ",")) {
+	// fill: how a sample tested for a probe's type but without a stored value is served (see
+	// fetchProbe). The key of the na answer is unchanged, so existing clients see no difference.
+	fill := strings.ToLower(strings.TrimSpace(q.Get("fill")))
+	if fill == "" {
+		fill = "na"
+	}
+	if fill != "na" && fill != "zero" && fill != "floor" {
+		s.fail(w, http.StatusBadRequest, "fill must be na, zero or floor")
+		return
+	}
+	etagKey := "v-" + strings.Join(names, ",")
+	if fill != "na" {
+		etagKey += "|fill=" + fill
+	}
+	if s.cacheable(w, r, d, etagKey) {
 		return
 	}
 	cols := make([][]byte, 0, len(names))
 	missing := []string{}
+	offered := map[string]bool{"na": true}
+	applied := false
+	filled, testedN := map[string]int{}, map[string]int{}
 	for _, n := range names {
-		c, err := d.column(n)
+		c, aux, err := d.columnFill(n, fill)
 		if err != nil {
 			log.Printf("%s: column %q: %v", d.Name, n, err)
 			s.fail(w, http.StatusInternalServerError, "query failed")
@@ -431,6 +459,27 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 			continue
 		}
 		cols = append(cols, c)
+		if aux.typ != "" {
+			for _, f := range d.fillOptionsOf(aux.typ) {
+				offered[f] = true
+			}
+			if fill != "na" && d.fillOffers(aux.typ, fill) {
+				applied = true
+				if aux.filled > 0 {
+					filled[n], testedN[n] = aux.filled, aux.testedN
+				}
+			}
+		}
+	}
+	if fill != "na" && !applied {
+		s.fail(w, http.StatusBadRequest, "fill not available for these variables")
+		return
+	}
+	opts := []string{}
+	for _, f := range fillOrder {
+		if offered[f] {
+			opts = append(opts, f)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"dataset":%s,"version":%s,"n":%d,"columns":[`, jsonString(d.Name), jsonString(d.version), len(d.samples))
@@ -441,7 +490,14 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 		w.Write(c)
 	}
 	mj, _ := json.Marshal(missing)
-	fmt.Fprintf(w, `],"missing":%s}`, mj)
+	oj, _ := json.Marshal(opts)
+	fmt.Fprintf(w, `],"missing":%s,"fill_options":%s`, mj, oj)
+	if fill != "na" {
+		fj, _ := json.Marshal(filled) // maps marshal with sorted keys
+		tj, _ := json.Marshal(testedN)
+		fmt.Fprintf(w, `,"fill":%s,"filled":%s,"tested_n":%s`, jsonString(fill), fj, tj)
+	}
+	w.Write([]byte{'}'})
 }
 
 func jsonString(s string) string {

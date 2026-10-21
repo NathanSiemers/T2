@@ -29,6 +29,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
@@ -47,6 +48,7 @@ type Roles struct {
 
 type Dataset struct {
 	Name, Path, Title, Label string
+	Hidden                   bool // dataset_meta `hidden`: still served, but the apps do not list it
 	Roles                    Roles
 	Defaults                 map[string]string
 
@@ -84,6 +86,10 @@ type Dataset struct {
 	tte        []TTEVariable
 	references []Reference
 	typeLabels map[string]string
+	fillOpts   map[string][]string // data type -> its fill options (types.fill_options); absent = na only
+	cohortOnce sync.Once
+	cohortIdx  []int32 // per sample row: index of its cohort level, -1 = no cohort
+	nCohorts   int
 	hasLabel   bool // types.label exists
 
 	// the typed variable list, parallel to probeNames (small codes, built once at load)
@@ -202,6 +208,15 @@ func splitMeta(s string) []string {
 	return out
 }
 
+// metaTrue: a dataset_meta flag is on for 1, true or yes (any case); anything else is off.
+func metaTrue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
 // loadRoles mirrors .resolve_roles(): dataset_meta, else introspection (the introspection
 // step needs the clinical columns and is finished in loadClinical). The raw table is kept in
 // d.meta: the api is the only interpreter of it.
@@ -227,6 +242,7 @@ func (d *Dataset) loadRoles() error {
 	d.Roles = Roles{CohortCol: m["cohort_col"], SubtypeCol: m["subtype_col"], SampletypeCol: m["sampletype_col"],
 		NormalLabel: splitMeta(m["normal_label"]), HemeValues: splitMeta(m["heme_values"]),
 		SampletypeLevels: splitMeta(m["sampletype_levels"])}
+	d.Hidden = metaTrue(m["hidden"])
 	if m["title"] != "" {
 		d.Title, d.Label = m["title"], m["title"]
 	}
@@ -521,6 +537,19 @@ func (d *Dataset) loadDatatypes() error {
 	} // optional table
 	// types.label: the word a plot title uses for the type; the column may be missing
 	d.hasLabel = d.hasColumn("types", "label")
+	d.fillOpts = map[string][]string{}
+	if d.hasColumn("types", "fill_options") { // optional column: older files have none
+		if fr, err := d.db.Query("SELECT type, fill_options FROM types"); err == nil {
+			for fr.Next() {
+				var t string
+				var f sql.NullString
+				if fr.Scan(&t, &f) == nil {
+					d.fillOpts[t] = parseFillOptions(f.String)
+				}
+			}
+			fr.Close()
+		}
+	}
 	q := "SELECT type, NULL FROM types"
 	if d.hasLabel {
 		q = "SELECT type, label FROM types"
@@ -538,6 +567,65 @@ func (d *Dataset) loadDatatypes() error {
 		return lr.Err()
 	}
 	return nil
+}
+
+var fillOrder = []string{"na", "zero", "floor"}
+
+// parseFillOptions: the `|` list of types.fill_options, tolerant: unknown words and repeats
+// are dropped, `na` is always first (an empty or NULL value is `na` only).
+func parseFillOptions(v string) []string {
+	have := map[string]bool{}
+	for _, w := range strings.Split(v, "|") {
+		have[strings.ToLower(strings.TrimSpace(w))] = true
+	}
+	out := []string{"na"}
+	for _, f := range fillOrder[1:] {
+		if have[f] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// fillOffers: does the data type list this fill?
+func (d *Dataset) fillOptionsOf(typ string) []string {
+	if o := d.fillOpts[typ]; len(o) > 0 {
+		return o
+	}
+	return []string{"na"}
+}
+
+func (d *Dataset) fillOffers(typ, fill string) bool {
+	return slices.Contains(d.fillOpts[typ], fill) // fill is zero or floor here
+}
+
+// cohortIndex: the cohort of every sample row (the virtual `cohort` column, which is the
+// roles' cohort column), as small integers, built once; the `floor` fill groups by it.
+func (d *Dataset) cohortIndex() ([]int32, int) {
+	d.cohortOnce.Do(func() {
+		d.cohortIdx = make([]int32, len(d.samples))
+		for i := range d.cohortIdx {
+			d.cohortIdx[i] = -1
+		}
+		c, ok := d.clinText["cohort"]
+		if !ok {
+			return
+		}
+		ids := map[string]int32{}
+		for i := range d.cohortIdx {
+			if i >= len(c.val) || !c.ok[i] {
+				continue
+			}
+			id, seen := ids[c.val[i]]
+			if !seen {
+				id = int32(len(ids))
+				ids[c.val[i]] = id
+			}
+			d.cohortIdx[i] = id
+		}
+		d.nCohorts = len(ids)
+	})
+	return d.cohortIdx, d.nCohorts
 }
 
 // loadProbeNames builds the searchable list in the order the T2 selectors use:
@@ -857,6 +945,8 @@ func (d *Dataset) buildMeta() error {
 	}
 	for _, row := range types {
 		d.joinReference(row)
+		t, _ := row["type"].(string)
+		row["fill_options"] = d.fillOptionsOf(t)
 	}
 	survival := []string{}
 	for _, v := range d.tte {
@@ -906,10 +996,11 @@ type DatasetSummary struct {
 	Defaults map[string]string `json:"defaults"`
 	Sources  []Source          `json:"sources"` // the whole collection and its parts, for the data-source menu
 	Handles  []Handle          `json:"handles"`
+	Hidden   bool              `json:"hidden"` // not for the apps' lists (e.g. DEMO); always present
 }
 
 func (d *Dataset) summary() DatasetSummary {
-	return DatasetSummary{d.Name, d.Title, d.Label, len(d.samples), len(d.probeNames), d.version, d.Roles, d.Defaults, d.sources, d.handles}
+	return DatasetSummary{d.Name, d.Title, d.Label, len(d.samples), len(d.probeNames), d.version, d.Roles, d.Defaults, d.sources, d.handles, d.Hidden}
 }
 
 // metaDoc is the /v1/{ds}/meta document; fields are only ever added.
@@ -935,29 +1026,46 @@ type metaDoc struct {
 // column returns the encoded JSON object for one name, or nil if the dataset has no such
 // variable. Probe columns are cached; concurrent requests for the same probe share one query.
 func (d *Dataset) column(name string) ([]byte, error) {
-	if c, ok := d.clin[name]; ok {
-		return c, nil
-	}
-	if _, ok := d.known[name]; !ok {
-		return nil, nil // not a variable of this dataset: no query, no cache entry
-	}
-	return d.cache.get(name, func() ([]byte, error) { return d.fetchProbe(name) })
+	b, _, err := d.columnFill(name, "na")
+	return b, err
 }
 
-func (d *Dataset) fetchProbe(name string) ([]byte, error) {
+// columnFill is column plus the fill (see fetchProbe): a probe whose data type does not list
+// the fill is served unchanged, and aux tells the caller whether the fill was applied
+// (aux.filled counts the cells changed; applied = the type lists it).
+func (d *Dataset) columnFill(name, fill string) (col []byte, aux colAux, err error) {
+	if c, ok := d.clin[name]; ok {
+		return c, colAux{}, nil
+	}
+	if _, ok := d.known[name]; !ok {
+		return nil, colAux{}, nil // not a variable of this dataset: no query, no cache entry
+	}
+	col, aux, err = d.cache.get(name, func() ([]byte, colAux, error) { return d.fetchProbe(name, "na") })
+	if err != nil || col == nil || fill == "na" || aux.typ == "" || !d.fillOffers(aux.typ, fill) {
+		return col, aux, err
+	}
+	return d.cache.get(name+"|"+fill, func() ([]byte, colAux, error) { return d.fetchProbe(name, fill) })
+}
+
+// fetchProbe reads one variable. fill is "na", "zero" or "floor": for a numeric probe of a
+// type loaded in full (sparse = 0), a sample that is TESTED for the type but has no stored
+// row is missing (na), 0 (zero) or the smallest stored value of the probe among the tested
+// samples of the same cohort, else of the whole dataset (floor). Samples not tested, and
+// stored values (NULL included), are never changed.
+func (d *Dataset) fetchProbe(name, fill string) ([]byte, colAux, error) {
 	var key int64
 	err := d.db.QueryRow("SELECT key FROM probes WHERE probe = ?", name).Scan(&key)
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return nil, colAux{}, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, colAux{}, err
 	}
 	n := len(d.samples)
 	var typ sql.NullString
 	err = d.db.QueryRow("SELECT type FROM probe_types WHERE probekey = ? ORDER BY rowid LIMIT 1", key).Scan(&typ)
 	if err != nil && err != sql.ErrNoRows {
-		return nil, err
+		return nil, colAux{}, err
 	}
 	if err == nil { // numeric probe: dense over the samples tested for its type
 		vals := make([]float64, n)
@@ -973,39 +1081,91 @@ func (d *Dataset) fetchProbe(name string) ([]byte, error) {
 				vals[i] = st.def // tested, sparse type, no stored row: the default (0)
 			}
 		}
+		doFill := fill != "na" && !st.sparse && tested != nil && d.fillOffers(typ.String, fill)
+		var stored []bool // rows with a stored value or NULL (only kept for a fill)
+		var cohort []int32
+		var cmin []float64 // floor: smallest stored value per cohort
+		gmin := math.Inf(1)
+		if doFill {
+			stored = make([]bool, n)
+			if fill == "floor" {
+				var nc int
+				cohort, nc = d.cohortIndex()
+				cmin = make([]float64, nc)
+				for i := range cmin {
+					cmin[i] = math.Inf(1)
+				}
+			}
+		}
 		rows, err := d.db.Query("SELECT samplekey, value FROM tcgai WHERE probekey = ? AND type = ?", key, typ.String)
 		if err != nil {
-			return nil, err
+			return nil, colAux{}, err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var sk int64
 			var v sql.NullFloat64
 			if err := rows.Scan(&sk, &v); err != nil {
-				return nil, err
+				return nil, colAux{}, err
 			}
 			r, ok := d.keyToRow[sk]
 			if !ok || tested == nil || !tested[r] {
 				continue
 			}
+			if doFill {
+				stored[r] = true
+			}
 			if v.Valid {
 				vals[r] = v.Float64
+				if cmin != nil && !math.IsNaN(v.Float64) && !math.IsInf(v.Float64, 0) {
+					gmin = math.Min(gmin, v.Float64)
+					if c := cohort[r]; c >= 0 {
+						cmin[c] = math.Min(cmin[c], v.Float64)
+					}
+				}
 			} else {
 				vals[r] = math.NaN() // stored NULL: genuinely missing
 			}
 		}
 		if err := rows.Err(); err != nil {
-			return nil, err
+			return nil, colAux{}, err
+		}
+		aux := colAux{typ: typ.String}
+		for _, t := range tested {
+			if t {
+				aux.testedN++
+			}
+		}
+		if doFill { // second pass: the tested samples without a stored row
+			for r := range vals {
+				if !tested[r] || stored[r] {
+					continue
+				}
+				switch fill {
+				case "zero":
+					vals[r] = 0
+					aux.filled++
+				case "floor":
+					f := gmin // a cohort with no stored value: the probe's dataset-wide minimum
+					if c := cohort[r]; c >= 0 && !math.IsInf(cmin[c], 1) {
+						f = cmin[c]
+					}
+					if !math.IsInf(f, 1) { // a probe with no stored value at all stays missing
+						vals[r] = f
+						aux.filled++
+					}
+				}
+			}
 		}
 		if d.declaredType(name, typ.String) == "factor" {
-			return encodeNumAsCat(name, typ.String, vals), nil
+			return encodeNumAsCat(name, typ.String, vals), aux, nil
 		}
-		return encodeNum(name, typ.String, vals), nil
+		return encodeNum(name, typ.String, vals), aux, nil
 	}
 	// categorical probe
 	rows, err := d.db.Query("SELECT samplekey, value, type FROM tcgacati WHERE probekey = ?", key)
 	if err != nil {
-		return nil, err
+		return nil, colAux{}, err
 	}
 	defer rows.Close()
 	// A sample can have several values for one categorical probe (two mutations of one
@@ -1019,7 +1179,7 @@ func (d *Dataset) fetchProbe(name string) ([]byte, error) {
 		var sk int64
 		var v, t sql.NullString
 		if err := rows.Scan(&sk, &v, &t); err != nil {
-			return nil, err
+			return nil, colAux{}, err
 		}
 		found = true
 		ctype = t.String
@@ -1028,10 +1188,10 @@ func (d *Dataset) fetchProbe(name string) ([]byte, error) {
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, colAux{}, err
 	}
 	if !found {
-		return nil, nil
+		return nil, colAux{}, nil
 	}
 	vals := make([]any, n)
 	for r := range raw {
@@ -1039,7 +1199,7 @@ func (d *Dataset) fetchProbe(name string) ([]byte, error) {
 			vals[r] = cleanText(raw[r])
 		}
 	}
-	return encodeAny(name, ctype, vals, nil), nil
+	return encodeAny(name, ctype, vals, nil), colAux{}, nil
 }
 
 // declaredType: the R class gitr gives a probe -- by the suffix after its last ".", else by

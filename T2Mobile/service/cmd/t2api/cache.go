@@ -18,14 +18,24 @@ import (
 // what one entry costs beyond its bytes: list element, entry, map bucket, key header
 const entryOverhead = 256
 
+// colAux travels with a cached column: facts the values answer needs that are not in the
+// encoded bytes (the probe's data type, and what a fill changed).
+type colAux struct {
+	typ     string // data type of a numeric probe ("" for categorical)
+	filled  int    // cells a fill changed
+	testedN int    // samples tested for the type
+}
+
 type cacheEntry struct {
 	key   string
 	value []byte
+	aux   colAux
 }
 
 type inflight struct {
 	done  chan struct{}
 	value []byte
+	aux   colAux
 	err   error
 }
 
@@ -45,20 +55,20 @@ func newColumnCache(budget int64) *columnCache {
 	return &columnCache{budget: budget, order: list.New(), items: map[string]*list.Element{}, pending: map[string]*inflight{}}
 }
 
-func (c *columnCache) get(key string, load func() ([]byte, error)) ([]byte, error) {
+func (c *columnCache) get(key string, load func() ([]byte, colAux, error)) ([]byte, colAux, error) {
 	c.mu.Lock()
 	if el, ok := c.items[key]; ok {
 		c.order.MoveToFront(el)
-		v := el.Value.(*cacheEntry).value
+		e := el.Value.(*cacheEntry)
 		c.mu.Unlock()
 		c.hits.Add(1)
-		return v, nil
+		return e.value, e.aux, nil
 	}
 	if p, ok := c.pending[key]; ok { // someone is already fetching it
 		c.mu.Unlock()
 		<-p.done
 		c.hits.Add(1)
-		return p.value, p.err
+		return p.value, p.aux, p.err
 	}
 	p := &inflight{done: make(chan struct{})}
 	c.pending[key] = p
@@ -68,16 +78,16 @@ func (c *columnCache) get(key string, load func() ([]byte, error)) ([]byte, erro
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				p.value, p.err = nil, fmt.Errorf("panic while loading %q: %v", key, r)
+				p.value, p.aux, p.err = nil, colAux{}, fmt.Errorf("panic while loading %q: %v", key, r)
 			}
 		}()
-		p.value, p.err = load()
+		p.value, p.aux, p.err = load()
 	}()
 
 	c.mu.Lock()
 	delete(c.pending, key)
 	if p.err == nil && p.value != nil {
-		c.items[key] = c.order.PushFront(&cacheEntry{key: key, value: p.value})
+		c.items[key] = c.order.PushFront(&cacheEntry{key: key, value: p.value, aux: p.aux})
 		c.used += int64(len(p.value)) + int64(len(key)) + entryOverhead
 		for c.used > c.budget && c.order.Len() > 1 {
 			last := c.order.Back()
@@ -90,7 +100,7 @@ func (c *columnCache) get(key string, load func() ([]byte, error)) ([]byte, erro
 	}
 	c.mu.Unlock()
 	close(p.done)
-	return p.value, p.err
+	return p.value, p.aux, p.err
 }
 
 func (c *columnCache) stats() map[string]int64 {

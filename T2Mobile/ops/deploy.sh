@@ -39,7 +39,7 @@ case $step in
 service)
     docker tag t2api:2026.10 "t2api:pre-$stamp"
     docker build -q -t t2api:2026.10 "$REPO/T2Mobile/service"
-    (cd "$PUB" && docker compose up -d t2api)
+    (cd "$PUB" && docker compose up -d t2api t2api-web)     # t2api-web: the web app's own instance (2026-10-20)
     sleep 15; printf 'healthz: '; curl -s https://www.fiveprime.org/api/t2/healthz
     curl -s https://www.fiveprime.org/api/t2/v1/datasets | grep -o '"name":"[^"]*"' | tr '\n' ' '; echo
     echo "rollback: docker tag t2api:pre-$stamp t2api:2026.10 && (cd $PUB && docker compose up -d t2api)" ;;
@@ -92,8 +92,8 @@ data)
         sed -i 's|"-tcga", "/data/tcga.db", ||' "$PUB/docker-compose.yml"
     fi
     grep -n "T2-data-" "$PUB/docker-compose.yml"
-    (cd "$PUB" && docker compose up -d t2api shiny-t2t shiny-t2tc)
-    echo "rollback: cp $PUB/docker-compose.yml.pre-data-$stamp $PUB/docker-compose.yml && (cd $PUB && docker compose up -d t2api shiny-t2t shiny-t2tc)" ;;
+    (cd "$PUB" && docker compose up -d t2api t2api-web shiny-t2t shiny-t2tc)
+    echo "rollback: cp $PUB/docker-compose.yml.pre-data-$stamp $PUB/docker-compose.yml && (cd $PUB && docker compose up -d t2api t2api-web shiny-t2t shiny-t2tc)" ;;
 code)
     cd /scratch/shinyusb/T2T && git fetch -q origin && git checkout -q main && git pull -q --ff-only && git log --oneline -1
     "$PUB/scripts/deploy.sh" T2T ;;

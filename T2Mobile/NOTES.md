@@ -1410,6 +1410,26 @@ build (`logs/matrix/unit.log` on the Mac, a `unit passed:`/`FAILED: unit tests` 
 Logs: `/scratch/nathan/R/T2-devdata/logs/20261020-1027/ios.log`. The contract round is now verified on
 every layer; nothing is uploaded to App Store Connect while 1.0 is in review.
 
+**Api resilience bundle, 2026-10-20 evening (Nathan ran `scratchpad/prod-20261020/apply.sh`; classifier refuses
+writes to the production files from Claude).** Applied and verified: (1) **t2api-web**, a second instance of the
+service (same image, same read-only data line, no host port, no contact store, `-max-inflight 64`) for the web app
+only: `conf/t2-api-mode.Renviron.site` now has `T2_API_URL=http://t2api-web:8080` (contact URL still the public
+`t2api`), pool and canary restarted; phones and browsers no longer share one in-flight budget. (2) `GOMAXPROCS=8` on
+both instances (Go 1.23 ignores the cgroup quota). (3) Nginx: `proxy_cache t2api_cache` on `/api/t2/v1/` (4 GB,
+30 d inactive, key `$request_uri|gzip-or-not`, `proxy_cache_lock`, `use_stale ... http_503`, `proxy_buffering on`
+there; only the service's immutable `?v=` answers and the 1-day search answers are stored, no-cache/no-store never);
+a TOTAL `limit_req_zone $server_name zone=t2api_total rate=1500r/s` (burst 500) beside the per-IP zone; `upstream
+t2api_up { server t2api:8080 resolve; keepalive 64; }` with `Connection ""` on the api locations; the dead publish
+`9087:9087` removed from the Nginx compose file (container recreated, conf baked into the image). (4) `deploy.sh`
+service and data steps now `up -d` `t2api t2api-web` (commit below). (5) fail2ban installed (Sonnet agent): sshd
+jail, aggressive, systemd backend, 5 fails/10 min → 1 h ban via ufw, escalating to 1 w; `ignoreip` 127/8, 10/8,
+172.16/12, 192.168/16 (Nathan: "let's trust the LAN for now"); 2 bans in the first 2 minutes. Verified after the run:
+9087 no listener; the same versioned values request three times moved the service's cptac column counters once
+(+2 for two probes), i.e. Nginx answered the repeats; t2api-web healthz 200, its /v1/contact 404 (disabled); public
+/T2/, healthz, datasets 200. Backups `*.pre-apires-<stamp>` beside each file. Service log warning seen at start:
+`tcgatargetgtex: reference "Therapeutically Applicable Research ... (TARGET)" has no journal or no authors` (the
+program-page record; served anyway, cosmetic). Still open from the review: DOCKER-USER rules (proposed, not applied),
+pending kernel reboot, root's 3 authorized keys, `%sudo NOPASSWD`, GoDaddy cert manual renewal 2027-04-04.
 **Host security review, 2026-10-20 (Sonnet agent, sudo authorized by Nathan).** Prompted by the request-path
 diagram (claude.ai artifact "T2 Request Path"). Done: the `xena` container (published 0.0.0.0:3839 to the internet
 without TLS or limits) is stopped with restart=no (rollback `docker update --restart=always xena && docker start

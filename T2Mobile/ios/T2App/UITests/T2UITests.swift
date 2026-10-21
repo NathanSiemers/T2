@@ -397,6 +397,50 @@ final class T2UITests: XCTestCase {
         shot("29-select-survival-hint")
     }
 
+    /// the samples plotted, from the Plot tab's count line ("1,234 samples plotted; ...")
+    private func plottedCount() -> Int {
+        let t = text(of: "plot-count")
+        let digits = t.prefix { $0.isNumber || $0 == "," }.filter(\.isNumber)
+        return Int(digits) ?? -1
+    }
+
+    /// Not-detected values: offered only where the values answer lists more than "na" (CPTAC's
+    /// protein), absent on TCGA. CLDN6 against CLDN6.prot: Zero brings back the tested samples that
+    /// had no protein value, so more samples are plotted and the statistics say how many were set.
+    func test09_NotDetectedFill() {
+        // TCGA first: nothing appears
+        launch()
+        waitFor("survival-hint-select", "the Select screen with data")
+        sleep(3)
+        XCTAssertFalse(element("fill-picker").exists, "the Not detected control is offered on TCGA")
+        shot("30-select-no-fill-on-tcga")
+        app.terminate()
+        // CPTAC
+        launch(tab: "select", ["-t2Dataset", "cptac", "-t2X", "CLDN6", "-t2Y", "CLDN6.prot"])
+        waitFor("fill-picker", "the Not detected control for a protein")
+        shot("31-select-fill-picker")
+        openTab("Plot")
+        waitFor("plot-count", "the plot")
+        let before = plottedCount()
+        XCTAssertGreaterThan(before, 0)
+        openTab("Select")
+        let zero = app.segmentedControls.buttons["Zero"]
+        XCTAssertTrue(zero.waitForExistence(timeout: 20), "no Zero option")
+        zero.tap()
+        XCTAssertTrue(waitUntil(timeout: dataTimeout) { zero.isSelected }, "Zero was not selected")
+        sleep(3)
+        openTab("Plot")
+        waitFor("plot-count", "the plot")
+        XCTAssertTrue(waitUntil(timeout: dataTimeout) { plottedCount() > before }, "n did not rise with Zero: \(before) -> \(plottedCount())")
+        let line = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Not detected, CLDN6.prot'")).firstMatch
+        var swipes = 0
+        while !line.exists && swipes < 8 { app.swipeUp(velocity: .slow); swipes += 1 }
+        XCTAssertTrue(line.exists, "no Not detected line in the statistics")
+        shot("32-plot-fill-zero-statistics")
+        let value = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'set to 0 in'")).firstMatch
+        XCTAssertTrue(value.exists, "the statistics do not say how many values were set to 0")
+    }
+
     /// a figure of a real size: the two page presets, PNG and PDF, the share sheet
     func test04_Publish() {
         launch(tab: "publish")

@@ -145,7 +145,7 @@ struct VariableSearch: View {
                         if searching { ProgressView().controlSize(.small) }
                     }
                     if multiple, !chosen.isEmpty {
-                        ForEach(chosen, id: \.self) { name in
+                        ForEach(chosen.uniqued(), id: \.self) { name in
                             HStack {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
                                 Text(name)
@@ -164,7 +164,7 @@ struct VariableSearch: View {
                 }
                 Section(header: Text(header)) {
                     if q.isEmpty {
-                        ForEach(model.meta?.clinicalColumns ?? [], id: \.self) { name in row(name) }
+                        ForEach((model.meta?.clinicalColumns ?? []).uniqued(), id: \.self) { name in row(name) }
                     } else if searchFailed {
                         Label("The search did not reach the server. Check the connection.", systemImage: "wifi.exclamationmark")
                             .foregroundStyle(.secondary)
@@ -172,7 +172,7 @@ struct VariableSearch: View {
                         Text("No variable of this dataset contains \u{201C}\(q)\u{201D}.").foregroundStyle(.secondary)
                             .accessibilityIdentifier("search-empty")
                     } else {
-                        ForEach(results, id: \.self) { name in row(name) }
+                        ForEach(results.uniqued(), id: \.self) { name in row(name) }
                     }
                 }
             }
@@ -256,7 +256,7 @@ struct ExtraRows: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        ForEach(names, id: \.self) { name in
+        ForEach(names.uniqued(), id: \.self) { name in
             HStack {
                 Text(name)
                 Spacer()
@@ -332,6 +332,16 @@ struct SelectView: View {
         return s
     }
 
+    /// the words of the "Not detected" control (the service's option names)
+    private static func fillName(_ option: String) -> String {
+        switch option {
+        case "na": return "Missing"
+        case "zero": return "Zero"
+        case "floor": return "Floor"
+        default: return option
+        }
+    }
+
     @ViewBuilder private var form: some View {
         @Bindable var model = model
         Form {
@@ -360,6 +370,18 @@ struct SelectView: View {
                 VariablePicker(title: "Color", current: model.colorLabel) { v in Task { await model.setVariable(.color, to: v) } }
                 VariablePicker(title: "Size", current: model.size) { v in Task { await model.setVariable(.size, to: v) } }
                 VariablePicker(title: "Graph for each", current: model.facet) { v in Task { await model.setVariable(.facet, to: v) } }
+                // "Not detected": only where the values answer for the plotted variables offers more than missing
+                if model.fillOptions.count > 1 {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("Not detected", selection: Binding(get: { model.fill }, set: { f in Task { await model.setFill(f) } })) {
+                            ForEach(model.fillOptions, id: \.self) { Text(Self.fillName($0)).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("fill-picker")
+                        Text("Tested samples without a measured value; samples never analyzed stay missing.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 if !model.availableCohorts.isEmpty {
                     let levels = model.availableCohorts
                     NavigationLink {

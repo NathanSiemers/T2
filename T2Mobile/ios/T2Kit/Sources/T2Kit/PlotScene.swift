@@ -305,3 +305,11 @@ public enum PlotFormat {
         return (lo - span * 0.04, hi + span * 0.04)
     }
 }
+
+public extension Sequence where Element: Hashable {
+    /// the elements in order, the first occurrence of each only (a List with `id: \.self` traps on a repeated id)
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
+    }
+}

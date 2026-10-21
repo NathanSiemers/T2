@@ -50,13 +50,18 @@ public struct APIClient: Sendable {
     /// the columns for `names` (any number: sent in requests of at most 100), and the names
     /// the dataset does not have. Pass the `version` the device's sample list belongs to:
     /// values of another database version must never be attached to it (`versionChanged`).
-    public func values(_ dataset: String, probes names: [String], version: String? = nil) async throws -> (columns: [Column], missing: [String]) {
+    /// `fill`: "na" (the default: what every client got before), "zero" or "floor" for the
+    /// not-detected cells of the types that offer it; a fill the answer did not list is a 400.
+    /// The answers' `fill_options` come back in `info`. (The device's URL cache keys on the whole
+    /// address, so every fill is kept apart; "na" adds nothing to it: today's address.)
+    public func values(_ dataset: String, probes names: [String], version: String? = nil, fill: String = "na") async throws -> (columns: [Column], missing: [String], info: ValuesInfo) {
         let chunks = stride(from: 0, to: names.count, by: Self.maxProbesPerRequest).map {
             Array(names[$0..<min($0 + Self.maxProbesPerRequest, names.count)])
         }
         func fetchChunk(_ chunk: [String]) async throws -> Values {
             var query = ["probes": chunk.joined(separator: ",")]
             if let version { query["v"] = version }
+            if fill != "na" { query["fill"] = fill }
             let r = try await get("v1/\(dataset)/values", query: query, as: Values.self)
             if let version, let served = r.version, served != version { throw APIError.versionChanged }
             return r
@@ -73,7 +78,7 @@ public struct APIClient: Sendable {
         }
         var columns: [Column] = [], missing: [String] = []
         for r in answers.compactMap({ $0 }) { columns += r.columns; missing += r.missing }
-        return (columns, missing)
+        return (columns, missing, ValuesInfo.merge(answers.compactMap { $0 }))
     }
 
     /// A message to the owner through the server (the recipient's address stays on the

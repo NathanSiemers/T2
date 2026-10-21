@@ -26,10 +26,12 @@ public enum PlotBuilder {
         public var maxPanels: Int
         /// the active filters, for the figure's "Filtered: ..." caption (empty = none)
         public var filters: FilterNote
+        /// the not-detected cells the service filled in (empty = none), for the caption and the statistics
+        public var fills: FillNote
         public init(datasetLabel: String = "", tte: [TTEVariable] = [], typeLabels: [String: String] = [:],
-                    handleColumns: [String] = [], maxPanels: Int = 36, filters: FilterNote = FilterNote()) {
+                    handleColumns: [String] = [], maxPanels: Int = 36, filters: FilterNote = FilterNote(), fills: FillNote = FillNote()) {
             self.datasetLabel = datasetLabel; self.tte = tte; self.typeLabels = typeLabels
-            self.handleColumns = handleColumns; self.maxPanels = maxPanels; self.filters = filters
+            self.handleColumns = handleColumns; self.maxPanels = maxPanels; self.filters = filters; self.fills = fills
         }
     }
 
@@ -50,7 +52,18 @@ public enum PlotBuilder {
     ///   - keep: the samples that pass the presets, the cohort choice and the Filter screen
     public static func build(_ request: PlotRequest, columns: [String: Column], keep: Mask, context: Context = Context()) -> PlotScene {
         var scene = buildScene(request, columns: columns, keep: keep, context: context)
-        if scene.kind != .empty { scene.caption = context.filters.text }
+        if scene.kind != .empty {
+            var lines = [context.filters.text]
+            if !context.fills.isEmpty {
+                // the samples shown: those passing the filters with a value for every plotted variable
+                let vars = request.variables.filter { columns[$0] != nil }
+                let rows = (0..<keep.count).filter { i in keep[i] && vars.allSatisfy { !(columns[$0]?.isMissing(i) ?? true) } }
+                let d = context.fills.describe(shown: rows, plotted: Set(vars))
+                lines.append(d.caption)
+                scene.stats += d.stats
+            }
+            scene.caption = lines.filter { !$0.isEmpty }.joined(separator: "\n")
+        }
         return scene
     }
 
@@ -217,7 +230,8 @@ public enum PlotBuilder {
         var values: [Double] = []
         values.reserveCapacity(n * k)
         for name in use {
-            let v = columns[name]!.numbers!
+            // (a probe that is not there, or not numeric or short: its rows are missing, never a trap)
+            guard let v = columns[name]?.numbers, v.count == n else { values += [Double](repeating: .nan, count: n); continue }
             values += request.zscoreY ? Stats.zscore(v.indices.map { keep[$0] ? v[$0] : .nan }) : v
         }
         let yName = use.count <= 3 ? use.joined(separator: ", ") : "\(use.count) Y probes"
@@ -420,6 +434,20 @@ public enum PlotBuilder {
         return PlotScene(kind: .scatter, panels: [panel], legend: d.legend, stats: stats, n: rows.count)
     }
 
+    /// The levels ordered by their median; a level whose median is not a number (NaN) goes last
+    /// in either direction, and the comparison stays a strict weak order (it never traps).
+    static func waterfallOrder(_ levels: [Int], medians: [Int: Double], descending: Bool) -> [Int] {
+        func key(_ l: Int) -> Double {
+            guard let m = medians[l], !m.isNaN else { return descending ? -.infinity : .infinity }
+            return m
+        }
+        return levels.enumerated().sorted { a, b in
+            let ka = key(a.element), kb = key(b.element)
+            if ka != kb { return descending ? ka > kb : ka < kb }
+            return a.offset < b.offset
+        }.map(\.element)
+    }
+
     // MARK: categorical against numeric
 
     /// Boxes with the samples jittered over them. `horizontal`: the categories are on the Y axis.
@@ -431,7 +459,7 @@ public enum PlotBuilder {
         // ... or by the median of the values (waterfall)
         if request.waterfall {
             let med = Dictionary(uniqueKeysWithValues: order.map { ($0, Stats.median(members[$0]!.map { v[$0] })) })
-            order.sort { request.waterfallDescending ? med[$0]! > med[$1]! : med[$0]! < med[$1]! }
+            order = waterfallOrder(order, medians: med, descending: request.waterfallDescending)
         }
         let slot = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
         let categoryAxis = PlotAxis(kind: .categorical, lo: 0, hi: Double(order.count), ticks: order.indices.map { Double($0) + 0.5 },

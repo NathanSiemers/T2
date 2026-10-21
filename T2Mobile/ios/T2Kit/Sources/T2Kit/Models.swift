@@ -32,14 +32,15 @@ public struct Column: Sendable, Equatable {
     public var codes: [Int]? { if case .categorical(_, let c) = data { return c } else { return nil } }
     /// is sample `i` missing a value?
     public func isMissing(_ i: Int) -> Bool {
+        // (an index outside the column is missing, never a trap)
         switch data {
-        case .numeric(let v): return v[i].isNaN
-        case .categorical(_, let c): return c[i] < 0
+        case .numeric(let v): return !v.indices.contains(i) || v[i].isNaN
+        case .categorical(_, let c): return !c.indices.contains(i) || c[i] < 0
         }
     }
     /// the level of sample `i`, or nil (numeric column or missing)
     public func level(_ i: Int) -> String? {
-        if case .categorical(let l, let c) = data, c[i] >= 0 { return l[c[i]] }
+        if case .categorical(let l, let c) = data, c.indices.contains(i), c[i] >= 0, l.indices.contains(c[i]) { return l[c[i]] }
         return nil
     }
     public var missingCount: Int { (0..<count).reduce(0) { $0 + (isMissing($1) ? 1 : 0) } }
@@ -463,6 +464,39 @@ public struct Values: Decodable, Sendable {
     public let columns: [Column]
     /// requested names the dataset does not have
     public let missing: [String]
+    /// the fills the answer's variables allow (`["na"]` = none; the control is shown only when more),
+    /// and, when a fill was applied, which one, the cells changed per probe and the samples tested
+    /// (all absent from services before the not-detected option). NOTE the decoder's snake-case
+    /// strategy also rewrites the dictionary keys ("A_B" -> "AB"): the keys are not relied on.
+    public let fillOptions: [String]?
+    public let fill: String?
+    public let filled: [String: Int]?
+    public let testedN: [String: Int]?
+}
+
+/// What the answers to one values request (possibly several chunks) say about not-detected fills.
+public struct ValuesInfo: Sendable, Equatable {
+    /// the union of the chunks' options, in the order na, zero, floor; ["na"] when the service says nothing
+    public var fillOptions: [String] = ["na"]
+    /// the fill the service applied ("na" = none)
+    public var fill: String = "na"
+    /// did the service change any cell?
+    public var anyFilled = false
+    public init(fillOptions: [String] = ["na"], fill: String = "na", anyFilled: Bool = false) {
+        self.fillOptions = fillOptions; self.fill = fill; self.anyFilled = anyFilled
+    }
+    /// merge the answers of the chunks of one request
+    public static func merge(_ answers: [Values]) -> ValuesInfo {
+        var offered = Set<String>(["na"]), applied = "na", any = false
+        for a in answers {
+            offered.formUnion(a.fillOptions ?? [])
+            if let f = a.fill, f != "na" { applied = f }
+            if let c = a.filled, c.values.contains(where: { $0 > 0 }) { any = true }
+        }
+        return ValuesInfo(fillOptions: ["na", "zero", "floor"].filter { offered.contains($0) }
+                              + offered.subtracting(["na", "zero", "floor"]).sorted(),
+                          fill: applied, anyFilled: any)
+    }
 }
 
 /// One search hit with what the service knows about it (`hits_typed`): where the menu puts

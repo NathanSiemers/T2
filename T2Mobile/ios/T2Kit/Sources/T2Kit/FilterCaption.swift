@@ -63,3 +63,55 @@ public struct FilterNote: Sendable, Equatable {
         return s
     }
 }
+
+// MARK: not-detected values
+
+/// Which cells of the plotted probes the service filled in (the "Not detected" option): for
+/// each such probe the samples that were missing in the plain (na) column and have a value in
+/// the filled one, and the word its data type gives it ("protein"). The app works the masks out
+/// by comparing the two columns; nothing here knows what a type is.
+public struct FillNote: Sendable, Equatable {
+    public struct Probe: Sendable, Equatable {
+        public var name: String
+        /// the type's title word ("protein"); empty when the dataset gives none
+        public var word: String
+        /// per sample: filled
+        public var filledMask: [Bool]
+        public init(name: String, word: String, filledMask: [Bool]) { self.name = name; self.word = word; self.filledMask = filledMask }
+    }
+    /// "zero" or "floor"
+    public var fill: String
+    public var probes: [Probe]
+    public init(fill: String = "na", probes: [Probe] = []) { self.fill = fill; self.probes = probes }
+    public var isEmpty: Bool { fill == "na" || probes.isEmpty }
+
+    /// what the cells were set to, in words
+    var valueText: String { fill == "floor" ? "the detection floor, per cohort" : "0" }
+
+    /// The caption line and the statistics lines for the samples shown: the filtered samples that
+    /// have a value for every plotted variable. Only probes with at least one filled cell among
+    /// them are named; nothing at all when there are none.
+    func describe(shown rows: [Int], plotted: Set<String>) -> (caption: String, stats: [StatLine]) {
+        guard !isEmpty else { return ("", []) }
+        let counts = probes.filter { plotted.contains($0.name) }.compactMap { p -> (Probe, Int)? in
+            let k = rows.reduce(0) { $0 + ($1 < p.filledMask.count && p.filledMask[$1] ? 1 : 0) }
+            return k > 0 ? (p, k) : nil
+        }
+        guard !counts.isEmpty else { return ("", []) }
+        let n = rows.count
+        var words: [String] = []
+        for (p, _) in counts where !p.word.isEmpty && !words.contains(p.word) { words.append(p.word) }
+        let kind = words.isEmpty ? "Not-detected values" : "Not-detected \(words.joined(separator: "/")) values"
+        let caption: String
+        if counts.count == 1 {
+            caption = "\(kind) set to \(valueText) (\(counts[0].1.formatted()) of \(n.formatted()) samples shown)"
+        } else if counts.count == 2 {
+            caption = "\(kind) set to \(valueText): " + counts.map { "\($0.0.name) (\($0.1.formatted()) of \(n.formatted()))" }.joined(separator: ", ")
+        } else {
+            let cells = counts.reduce(0) { $0 + $1.1 }
+            caption = "\(cells.formatted()) not-detected values set to \(valueText) (\(counts.count) variables)"
+        }
+        let stats = counts.map { StatLine("Not detected, \($0.0.name)", "set to \(fill == "floor" ? "the floor" : "0") in \($0.1.formatted()) of \(n.formatted())") }
+        return (caption, stats)
+    }
+}

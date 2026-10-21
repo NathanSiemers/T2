@@ -60,6 +60,7 @@ final class AppModel {
         var kmGroups: Int, kmMaxDays: Double
         var zscoreY: Bool, flip: Bool, waterfall: Bool, yIndividually: Bool, fitLine: Bool
         var filterRevision: Int, datasetRevision: Int
+        var fill: String
     }
     private struct ChoicesKey: Equatable { var datasetRevision: Int, fixed: String?, version: String? }
     private let sceneCache = KeyedCache<SceneKey, PlotScene>()
@@ -105,6 +106,26 @@ final class AppModel {
     var zscoreY = false
     var flip = false
     var waterfall = false
+
+    // MARK: not-detected values
+
+    /// How the cells of a tested sample with no stored value are served ("na" = missing, as always;
+    /// "zero" or "floor" where the service offers it). Per plot: back to "na" on a data source switch.
+    var fill = "na"
+    /// The fills the values answer for the plotted variables lists. The control is shown only when
+    /// there is more than "na"; the app does not look at types to decide.
+    var fillOptions: [String] = ["na"]
+    /// per probe, the samples the service filled in (missing in the plain column, a value in the filled one)
+    private var fillMasks: [String: [Bool]] = [:]
+    private var fillOptionsMemo: [String: [String]] = [:]
+    /// the filled cells of the plotted probes, for the caption and the statistics
+    var fillNote: FillNote {
+        guard fill != "na" else { return FillNote() }
+        let words = meta?.typeWords ?? [:]
+        return FillNote(fill: fill, probes: fillMasks.keys.sorted().map { name in
+            FillNote.Probe(name: name, word: words[filter.columns[name]?.type ?? ""] ?? "", filledMask: fillMasks[name] ?? [])
+        })
+    }
 
     /// what is going on, for the user: "Loading CD8A...", or the last problem
     var status = ""
@@ -252,6 +273,7 @@ final class AppModel {
         datasetRevision += 1
         samples = clin.samples
         filter = cf
+        fill = "na"; fillOptions = ["na"]; fillMasks = [:]      // a new data source starts with missing values as missing
         let presets = allPresets
         presetMasks = Dictionary(presets.map { ($0.label, $0.mask(columns: cf.columns, sampleCount: cf.sampleCount)) }, uniquingKeysWith: { a, _ in a })
         fixedPreset = preset.flatMap { label in presets.contains { $0.label == label } ? label : nil }
@@ -327,18 +349,93 @@ final class AppModel {
         guard let ds = datasetName else { return }
         let need = Array(Set(names.filter { !$0.isEmpty && filter.columns[$0] == nil && !isTTE($0) })).sorted()
         guard !need.isEmpty else { return }
-        let r: (columns: [Column], missing: [String])
         do {
-            r = try await api.values(ds, probes: need, version: meta?.version)
+            let r = try await loadValues(ds, need, fill: fill)
+            if !r.missing.isEmpty { status = "Not in this dataset: \(r.missing.joined(separator: ", "))" }
         } catch APIClient.APIError.versionChanged {
             // the database was replaced on the server: what is on the device (the sample
             // order above all) belongs to the old one, so start this dataset afresh
             try await open(ds)
             status = "The database on the server was updated. The dataset was reloaded: choose the variables again."
-            return
+        }
+    }
+
+    /// Fetch `names` with `fill` and put them on the device. A fill that applies to none of the
+    /// names is refused by the service (400): they are fetched plain instead. When the service did
+    /// fill cells, the plain columns are fetched too (the device's URL cache usually has them) and the
+    /// filled samples are worked out by comparing the two. Returns the names the dataset lacks and
+    /// the fill that was really applied.
+    @discardableResult
+    private func loadValues(_ ds: String, _ names: [String], fill wanted: String) async throws -> (missing: [String], applied: String) {
+        var r: (columns: [Column], missing: [String], info: ValuesInfo)
+        var applied = wanted
+        if wanted != "na" {
+            do { r = try await api.values(ds, probes: names, version: meta?.version, fill: wanted) }
+            catch APIClient.APIError.http(let code, _) where code == 400 {
+                applied = "na"
+                r = try await api.values(ds, probes: names, version: meta?.version)
+            }
+        } else {
+            r = try await api.values(ds, probes: names, version: meta?.version)
         }
         filter.load(r.columns)
-        if !r.missing.isEmpty { status = "Not in this dataset: \(r.missing.joined(separator: ", "))" }
+        for c in r.columns { fillMasks[c.name] = nil }
+        if applied != "na", r.info.anyFilled {
+            let plain = try await api.values(ds, probes: r.columns.filter(\.isNumeric).map(\.name), version: meta?.version)
+            let before = Dictionary(plain.columns.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+            for c in r.columns {
+                guard let after = c.numbers, let was = before[c.name]?.numbers, was.count == after.count else { continue }
+                let mask = zip(was, after).map { $0.isNaN && !$1.isNaN }
+                if mask.contains(true) { fillMasks[c.name] = mask }
+            }
+        }
+        return (r.missing, applied)
+    }
+
+    /// the probes on the device (not the clinical columns): what a change of fill must fetch again
+    private var loadedProbes: [String] {
+        let clinical = Set(meta?.clinicalColumns ?? [])
+        return filter.columns.keys.filter { !clinical.contains($0) && filter.columns[$0]?.type != "virtual" && filter.columns[$0]?.type != "clinical" }.sorted()
+    }
+
+    /// The Select screen's "Not detected" control: fetch the probes again with the fill and plot them.
+    func setFill(_ f: String) async {
+        guard f != fill, fillOptions.contains(f) else { return }
+        await run("Loading") { try await self.applyFill(f) }
+    }
+    private func applyFill(_ f: String) async throws {
+        guard let ds = datasetName else { return }
+        let names = loadedProbes
+        if names.isEmpty { fill = f; return }
+        do {
+            let r = try await loadValues(ds, names, fill: f)
+            fill = r.applied
+            if f == "na" { fillMasks = [:] }
+        } catch APIClient.APIError.versionChanged {
+            try await open(ds)
+        }
+    }
+
+    /// What the service says the plotted variables allow (the values answer's `fill_options`), kept
+    /// per set of variables so that a repeated question costs nothing. If the fill in use is no longer
+    /// offered (the variable that had it was replaced), the plot goes back to missing values.
+    private func refreshFillOptions() async {
+        guard let ds = datasetName, let version = meta?.version else { fillOptions = ["na"]; return }
+        let clinical = Set(meta?.clinicalColumns ?? [])
+        let plotted = ([x, y, color, size, facet] + xMore + yMore + condition).filter {
+            !$0.isEmpty && !isTTE($0) && !clinical.contains($0) && filter.columns[$0] != nil
+                && filter.columns[$0]?.type != "virtual" && filter.columns[$0]?.type != "clinical"
+        }.uniqued().sorted()
+        if plotted.isEmpty { fillOptions = ["na"] }
+        else {
+            let key = version + "|" + plotted.joined(separator: ",")
+            if let known = fillOptionsMemo[key] { fillOptions = known }
+            else if let r = try? await api.values(ds, probes: plotted, version: version) {
+                fillOptionsMemo[key] = r.info.fillOptions
+                fillOptions = r.info.fillOptions
+            }
+        }
+        if fill != "na", !fillOptions.contains(fill) { try? await applyFill("na") }
     }
 
     enum Slot { case x, y, color, size, facet }
@@ -494,7 +591,7 @@ final class AppModel {
         let key = SceneKey(x: x, y: y, color: color, size: size, facet: facet, xMore: xMore, yMore: yMore, condition: condition,
                            conditionOn: conditionOn, kmGroups: kmGroups, kmMaxDays: kmMaxDays, zscoreY: zscoreY, flip: flip,
                            waterfall: waterfall, yIndividually: yIndividually, fitLine: fitLine,
-                           filterRevision: filter.revision, datasetRevision: datasetRevision)
+                           filterRevision: filter.revision, datasetRevision: datasetRevision, fill: fill)
         return sceneCache.get(key) {
             var request = PlotRequest(x: [x] + xMore, y: [y] + yMore, color: color, size: size, facet: facet)
             request.condition = condition
@@ -509,7 +606,7 @@ final class AppModel {
             // (the website also asks for the cohort and the sample type of a sample when it keeps only complete ones)
             let required = [m.cohortColumn, m.sampleTypeColumn].compactMap { $0 }
             let context = PlotBuilder.Context(datasetLabel: PlotBuilder.sourceWord(dataset: m.label, part: fixedPreset),
-                                              tte: m.tte, typeLabels: m.typeWords, handleColumns: required, filters: filterNote)
+                                              tte: m.tte, typeLabels: m.typeWords, handleColumns: required, filters: filterNote, fills: fillNote)
             return PlotBuilder.build(request, columns: filter.columns, keep: currentMask(), context: context)
         }
     }
@@ -606,6 +703,7 @@ final class AppModel {
         status = what + "\u{2026}"
         do {
             try await work()
+            if meta != nil { await refreshFillOptions() }
             if status == what + "\u{2026}" { status = "" }
         } catch {
             lastError = error

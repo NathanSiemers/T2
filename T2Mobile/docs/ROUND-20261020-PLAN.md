@@ -106,6 +106,20 @@ on-device cache key includes the fill; `PlotBuilder` caption line as the web app
 Accessibility id `fill-picker`; UI test on CPTAC (CLDN6 vs CLDN6.prot): picker present, pick Zero, n in the
 stats rises; on TCGA the picker is absent. Unit tests: decoding `fill_options`, caption text.
 
+### Clarification (Nathan, 2026-10-20 evening): "avoid special casing in the apps, make an api call resolve whether or not this should be an option"
+
+The apps do not look at types at all. **The values answer carries the decision**: every
+`/v1/{ds}/values` response gains `fill_options: [...]`, the union of the fill options of the probes it
+returned (`["na"]` when nothing but NA applies), and, when a fill was applied, `fill` and `filled` as above.
+Rule for both apps: show the "not detected" control iff the current plot's values answer lists more than
+`na`; offer exactly the options listed, in that order; otherwise show nothing. The per-type
+`types[].fill_options` in `/meta` remains the data-layer fact the service derives this from (and what the
+file-mode `gitr()` reads for the equivalence suite), but no app code reads it. A client that asks for a fill
+the answer did not list gets `400 fill not available for these variables`. The caption text is also
+api-driven where it can be: the service's `filled` counts and the number of tested samples for the type
+(`tested_n: {"CLDN6.prot": 1549}` in the same answer) give "set to 0 (1,357 of 1,549 proteome samples)"
+without the app knowing what a proteome is; the data type's label (`type_labels`) supplies the word.
+
 ### Order
 Queued behind the three running agents (they own the same files): the Go agent gets item 7 (api) as a
 follow-up when it reports; the R agent the data + web part; the iOS agent the phone part. Lead writes the

@@ -123,7 +123,13 @@ publish_tab_ui = function() {
                     sty('title_size'), sty('subtitle_size'), sty('axis_title_size'), sty('axis_text_size'),
                     sty('strip_size'), sty('legend_size'), sty('point_size'), sty('alpha'), sty('ncols')),
                 inline(checkboxInput("pub_show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
-                inline(checkboxInput("pub_source", "Show source line", value = TRUE)),
+                ## a switch per text element of the figure (all on by default)
+                div(class = "t2-pub-text", tags$b("Text on the figure: "),
+                    inline(checkboxInput("pub_show_title", "Title", value = TRUE)),
+                    inline(checkboxInput("pub_show_subtitle", "Subtitle", value = TRUE)),
+                    inline(checkboxInput("pub_show_caption", "Caption (filters)", value = TRUE)),
+                    inline(checkboxInput("pub_source", "Source line", value = TRUE)),
+                    inline(checkboxInput("pub_show_axis_titles", "Axis titles", value = TRUE))),
                 div(class = "t2-cite",
                     conditionalPanel("!input.pub_source",
                         tags$b("You have removed the source line."), " That is fine, but please cite T2 in any ",
@@ -155,6 +161,9 @@ publish_tab_ui = function() {
 ## data sources known at startup (every dataset and its parts): the Filter tab
 ## holds one (hidden) Thanos panel set per source, shown for whichever is selected
 T2_SOURCES = list_sources()
+## ...and every served source, hidden ones included: a hidden dataset (DEMO) is not offered in the
+## menu but still opens by name (the test suites, a deliberate link)
+T2_SOURCES_SERVED = list_sources(include_hidden = TRUE)
 
 ## the host of a link, for its label ("https://xenabrowser.net/datapages/" -> "xenabrowser.net")
 t2_url_host = function(url) {
@@ -215,7 +224,7 @@ filter_tab_ui = function() {
                  tags$i("other"), " filters, with this variable's own selection highlighted. ",
                  "The data set, cohort and sample choices on the Select tab decide which samples are shown here at all. ",
                  "Filters take effect on the plot when you press ", tags$b("Plot"), "."),
-        lapply(unname(T2_SOURCES), function(key) {
+        lapply(unname(T2_SOURCES_SERVED), function(key) {
             conditionalPanel(
                 condition = sprintf("input.dataset == %s",
                                     jsonlite::toJSON(key, auto_unbox = TRUE)),
@@ -261,6 +270,8 @@ ui = fluidPage(
         .t2-copy { font-size: 90%; }
         .t2-statement { font-size: 105%; margin: 8px 0 14px 0; padding: 10px 14px; background: #fff8e1;
             border-left: 4px solid #e08e0b; max-width: 1100px; }
+        .t2-survival-hint { margin: 0 0 12px 0; max-width: 1100px; }
+        .t2-survival-hint.t2-hint-x { font-size: 88%; color: #555; margin: 0 0 8px 0; }
         .t2-ref { margin: 0 0 8px 0; max-width: 1100px; }
         .t2-footer { font-size: 80%; color: #666; margin: 18px 0 8px 0; border-top: 1px solid #dce4ec; padding-top: 6px; }
     "))),
@@ -275,6 +286,7 @@ ui = fluidPage(
             inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE ) ),
             inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
             inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
+            uiOutput('x_survival_hint'),
             inline( selectizeInput('color', 'color', choices = NULL) ),
             inline( selectizeInput('size', 'size', choices = NULL )),
             inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
@@ -353,9 +365,11 @@ ui = fluidPage(
             h4(paste("About", T2_SITE)),
             div(class = "t2-statement", id = "t2_research_statement",
                 tags$b("T2 is a research tool for scientists in biomedical research. "),
-                "It shows public research data and statistics computed from them. It gives no medical advice ",
+                "It shows public research data as plots, with a few summary statistics. It gives no medical advice ",
                 "and must not be used for diagnosis or treatment decisions."),
-            tags$p("T2 is a database and plotting tool for large tumor-profiling compendia. Every measurement ",
+            ## the survival analysis is the heart of T2: point at it first (from /meta tte_variables)
+            uiOutput('about_survival_hint'),
+            tags$p("T2 is a database and plotting tool for TCGA (The Cancer Genome Atlas) and other genomic databases. Every measurement ",
                    "(expression, mutation, copy number, signatures, clinical annotation, survival) ",
                    "is stored per sample, so any variable can be plotted against any other."),
             ## the active data set's own words (from the service: /meta `about`)
@@ -379,8 +393,8 @@ ui = fluidPage(
             h5( Sys.Date() ),
             h4("Types of Data Available"),
             htmlOutput('datatypes'),
-            h4("Statistical methods"),
-            tags$p("The survival curves and tests in T2 use these methods:"),
+            h4("Survival analysis methods"),
+            tags$p("The survival analysis in T2 (Kaplan-Meier curves, log-rank test, Cox model) uses these methods:"),
             HTML(paste(vapply(T2_METHOD_REFERENCES, t2_reference_html, ""), collapse = "")),
             h4("Clinical variables"),
             htmlOutput('clinical_help'),
@@ -452,6 +466,9 @@ server = function(input, output, session) {
     })
 
     output$app_title = renderUI(h4(site_title(bundle()$title)))
+    ## the survival hint of the active data set (nothing when it has no time-to-event variable)
+    output$about_survival_hint = renderUI(t2_survival_hint(bundle()))
+    output$x_survival_hint = renderUI(t2_survival_hint(bundle(), "t2-survival-hint t2-hint-x"))
 
     ## (re)populate every dataset-dependent selectize from a bundle. The picks
     ## in `keep` (the previous source's) stay where the new source has them
@@ -498,7 +515,7 @@ server = function(input, output, session) {
     observeEvent(input$dataset, {
         req(input$dataset)
         if (identical(input$dataset, bundle()$key)) return()
-        if (!(input$dataset %in% T2_SOURCES)) return()
+        if (!(input$dataset %in% T2_SOURCES_SERVED)) return()
         b = load_source_bundle(input$dataset)
         old = isolate(selected_vars()$vars)
         prev = isolate(sanitize_t2_input(input, bundle()))   # the picks to carry over
@@ -531,7 +548,7 @@ server = function(input, output, session) {
     ## applied to another whose fields may not even exist.
     th_env = new.env(parent = emptyenv())
     th_for = function(b) {
-        if (!HAVE_THANOS || !(b$key %in% T2_SOURCES)) return(NULL)
+        if (!HAVE_THANOS || !(b$key %in% T2_SOURCES_SERVED)) return(NULL)
         if (!is.null(th_env[[b$key]])) return(th_env[[b$key]])
         be = backend_t2_shared(b)
         ds = b$key
@@ -591,20 +608,26 @@ server = function(input, output, session) {
     ##   note  one line for the plot summary (NULL when there is no Filter tab)
     filter_state = function(b) {
         h = th_for(b)
-        if (is.null(h)) return(list(keep = NULL, note = NULL))
+        if (is.null(h)) return(list(keep = NULL, note = NULL, active = character(0), n_kept = NA, n_base = NA))
         m = h$th$mask()
         base = h$base()
         base = if (is.null(base)) rep(TRUE, length(m)) else (base & !is.na(base))
         active = t2_describe_filters(h$th$filters(), h$backend)
         if (identical(m, base)) {
-            return(list(keep = NULL,
+            return(list(keep = NULL, active = character(0), n_kept = sum(m), n_base = sum(base),
                         note = sprintf("Filter tab: no additional filtering (%d samples).", sum(m))))
         }
-        list(keep = h$backend$samples[m],
+        list(keep = h$backend$samples[m], active = active, n_kept = sum(m), n_base = sum(base),
              note = sprintf("Filter tab: %d of %d samples pass. %s", sum(m), sum(base),
                             if (length(active)) paste0("Active filters: ", paste(active, collapse = "; "), ".")
                             else "Samples with missing values (NA) are excluded for at least one variable."))
     }
+
+    ## the caption line "Filtered: ..." for bundle b with the current Select-tab picks and Filter
+    ## tab (fs = filter_state(b)); "" when nothing is filtered
+    filter_caption_for = function(b, inp, samp, fs)
+        t2_filter_caption(samp = samp, b = b, cohort = inp$cohort, rules = fs$active,
+                          n_kept = fs$n_kept, n_base = fs$n_base)
 
     ## live count next to the Filter tab's Plot button
     output$filter_count = renderText({
@@ -661,9 +684,10 @@ server = function(input, output, session) {
         note = paste0("Samples: ", samp$label, ".", if (!is.null(fs$note)) paste0(" ", fs$note) else "")
         ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules)
         plot_snapshot <<- list(inp = inp, b = b, ctx = ctx, note = note, gg = gg)
+        fcap = filter_caption_for(b, inp, samp, fs)
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
-            fun_plot1(inp, reactive = FALSE, ctx = ctx, gg = gg)
+            fun_plot1(inp, reactive = FALSE, ctx = ctx, gg = gg, filter_caption = fcap)
         })
     })
     ## pressing Plot anywhere shows the result
@@ -733,14 +757,21 @@ server = function(input, output, session) {
         inp[names(st)] = st
         ## the preset's own defaults for unlisted settings, then the user's picks
         gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input, "pub_"))
-        list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = filter_state(b)$keep, rules = sanitize_t2_samples(input, b)$rules), gg = gg,
+        fs = filter_state(b)
+        samp = sanitize_t2_samples(input, b)
+        list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules), gg = gg,
              base_size = fig$base_size, family = fig$family, fig_width = fig$width,
-             caption = if (fig$source_line) T2_CITATION else "")
+             ## each text element of the figure has its own switch (Publish tab)
+             caption = if (fig$source_line) T2_CITATION else "",
+             filter_caption = if (fig$show_caption) filter_caption_for(b, inp, samp, fs) else "",
+             show = fig[c("show_title", "show_subtitle", "show_axis_titles")])
     })
     pub_draw = function(s) {
-        fun_plot1(s$inp, reactive = FALSE, ctx = s$ctx, gg = s$gg,
-                  base_size = s$base_size, base_family = s$family, caption = s$caption,
-                  fig_width = s$fig_width)
+        t2_apply_text_switches(
+            fun_plot1(s$inp, reactive = FALSE, ctx = s$ctx, gg = s$gg,
+                      base_size = s$base_size, base_family = s$family, caption = s$caption,
+                      fig_width = s$fig_width, filter_caption = s$filter_caption),
+            title = s$show$show_title, subtitle = s$show$show_subtitle, axis_titles = s$show$show_axis_titles)
     }
     ## redraw about a second after the last change, not on every keystroke
     pub_spec_d = debounce(pub_spec, 900)

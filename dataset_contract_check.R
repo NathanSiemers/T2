@@ -96,6 +96,10 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE) {
     o <- meta[["order"]]
     if (is.null(o)) P("not set") else if (grepl("^-?[0-9]+$", o)) P(o) else F(sprintf("order '%s' is not an integer", o))
   })
+  add("contract", "hidden (optional) is 0 or 1", function() {
+    h <- meta[["hidden"]]
+    if (is.null(h)) P("not set") else if (h %in% c("0", "1")) P(h) else F(sprintf("hidden '%s' is not 0 or 1", h))
+  })
   add("contract", "lists are |-separated (not comma-only)", function() {
     ## a value of a level-list key with a comma and no "|" is a comma-separated list, unless the
     ## whole value is itself a level of its column (levels such as "Acute Myeloid Leukemia, Induction ...")

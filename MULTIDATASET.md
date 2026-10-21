@@ -65,6 +65,7 @@ small **`dataset_meta(key, value)`** table naming its **role map**:
 | `heme_values` | comma-sep cohort values to drop for *Exclude heme* | `LAML,THYM,DLBC` |
 | `sampletype_levels` | ordered factor levels for the sample-type column | (7 TCGA levels) |
 | `default_x/y/color/size/condition` | initial selectize selections | `cohort` / `CD8A` / `sample_type` / … |
+| `hidden` | `1` = served but left out of the apps' dataset menus (DEMO); `0` or absent = listed | `1` |
 
 The canonical `tcga.db` predates this convention, so its role map is supplied as
 a hard-coded fallback in `dataset_registry.R`. Any column a dataset lacks simply

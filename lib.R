@@ -55,16 +55,30 @@ load_source_bundle = function(key) {
   b$key = if (i == 1) b$name else paste0(b$name, "|", src$label)
   b$source = src
   b$mycohorts = b$mycohorts[unname(b$mycohorts) %in% src$cohorts]
-  if (i > 1) { b$label = paste0(b$label, ": ", src$label); b$title = paste0(b$title, " \u2014 ", src$label) }
+  if (i > 1) {
+    b$label = paste0(b$label, ": ", src$label); b$title = paste0(b$title, " \u2014 ", src$label)
+    b$part_label = src$label     # the plot title names the part ("GTEx (Toil)"), not the whole collection
+  }
   b
+}
+
+## A dataset left out of the menu: `hidden` in /v1/datasets (dataset_meta key
+## hidden = 1; absent = listed). Documented fallback while the served data lack the
+## key (removed once they carry it): the name DEMO, or a title saying "not real data".
+## The dataset stays served and usable by name (the test suites use DEMO).
+t2_dataset_hidden = function(d) {
+  if (!is.null(d$hidden)) return(isTRUE(as.logical(d$hidden)[1]))
+  identical(d$name, "DEMO") || grepl("not real data", d$title %||% "", ignore.case = TRUE)
 }
 
 ## every data source of every dataset, for the "Data set" menu: a named
 ## vector, display name -> key (the whole collection first, then its parts).
 ## From /v1/datasets alone: no bundle is loaded until its dataset is opened.
-list_sources = function() {
+## include_hidden = TRUE: every served source (what the app accepts by name, the menu excludes hidden ones).
+list_sources = function(include_hidden = FALSE) {
   out = character(0)
   for (d in t2_api_datasets()) {
+    if (!include_hidden && t2_dataset_hidden(d)) next
     srcs = t2_api_need(d, "sources", "/v1/datasets")
     for (i in seq_along(srcs)) {
       key = if (i == 1) d$name else paste0(d$name, "|", srcs[[i]]$label)
@@ -86,10 +100,76 @@ list_sources = function() {
 ##   keep       the Filter tab's surviving sample ids (NULL = no restriction)
 ##   rules      the sample choice (source, group, exclusions) as preset rules
 t2_plot_ctx = function(bundle, keep = NULL, rules = list()) {
-  list(name = bundle$name, path = bundle$path, version = bundle$version, label = bundle$label,
+  ## label: the dataset word of the plot title -- the part's own label when a part of
+  ## a collection is chosen (GTEx within TCGA-TARGET-GTEx), else the dataset's
+  list(name = bundle$name, path = bundle$path, version = bundle$version,
+       label = if (!is.null(bundle$part_label)) bundle$part_label else bundle$label,
        roles = bundle$roles, handles = bundle$handles, tte = bundle$tte,
        type_labels = bundle$type_labels, menu = bundle$menu, keep = keep, rules = rules)
 }
+## The one-line pointer to the survival analysis, from the bundle's tte list
+## (/meta tte_variables): "Survival curves: choose OS, PFI, DSS or DFI as X
+## (Kaplan-Meier by groups of Y)", the labels of the variables in a smaller line
+## after it. NULL when the data set has no time-to-event variable. Shown on the
+## About tab and under the X selector.
+t2_survival_hint_text = function(tte) {
+    nm = names(tte)
+    paste0("Survival curves: choose ", if (length(nm) > 1) paste(paste(utils::head(nm, -1), collapse = ", "), "or", utils::tail(nm, 1))
+                                       else nm, " as X (Kaplan-Meier by groups of Y)")
+}
+t2_survival_hint = function(b, class = "t2-survival-hint") {
+    tte = b$tte
+    if (!length(tte)) return(NULL)
+    labs = vapply(tte, function(t) if (nzchar(t$label) && !identical(t$label, t$name)) paste0(t$name, ": ", t$label) else t$name, "")
+    div(class = class, tags$b(t2_survival_hint_text(tte)), ".",
+        if (any(grepl(":", labs, fixed = TRUE))) tags$small(" ", paste(labs, collapse = "; "), "."))
+}
+
+## The caption line "Filtered: ..." that says which samples a figure leaves out, so a
+## filtered plot never passes for the whole dataset. Built from what is active:
+##   samp     sanitize_t2_samples(): the part of a collection, the group and the exclusions
+##            (preset labels); b: the active bundle (its cohorts); cohort: the chosen cohorts
+##   rules    the Filter tab's active rules in words ("CD8A >= 2"); n_kept/n_base the surviving
+##            and starting sample counts. Plain words for up to 3 short rules, else "N of M
+##            samples kept"; nonormal/noheme: the classic switches.
+## "" when nothing is filtered. A pure function (no app state), tested on its own.
+t2_filter_caption = function(samp = list(), b = list(), cohort = "all", rules = character(0),
+                             n_kept = NA, n_base = NA, nonormal = FALSE, noheme = FALSE) {
+  parts = character(0)
+  ## the preset(s) by label; the part of a collection (not the whole one) counts as a filter
+  if (!is.null(b$part_label)) parts = c(parts, b$part_label)
+  parts = c(parts, samp$group, samp$exclusions)
+  if (isTRUE(nonormal)) parts = c(parts, "no normals")
+  if (isTRUE(noheme))   parts = c(parts, "no heme")
+  ## cohorts: all / N of M / the names when there are at most 3
+  cohort = setdiff(as.character(cohort), c("all", ""))
+  allco = unname(b$mycohorts)
+  if (length(cohort) && !(length(allco) && setequal(cohort, allco)))
+    parts = c(parts, if (length(cohort) <= 3) paste0("cohorts ", paste(cohort, collapse = ", "))
+                     else sprintf("%d of %d cohorts", length(cohort), max(length(allco), length(cohort))))
+  ## the Filter tab: the rules in words, or just the count when they are many or long
+  if (length(rules)) {
+    if (length(rules) <= 3 && sum(nchar(rules)) <= 90) parts = c(parts, paste(rules, collapse = " and "))
+    else if (is.finite(n_kept) && is.finite(n_base))
+      parts = c(parts, sprintf("%s of %s samples kept", format(n_kept, big.mark = ","), format(n_base, big.mark = ",")))
+    else parts = c(parts, sprintf("%d Filter-tab rules", length(rules)))
+  } else if (is.finite(n_kept) && is.finite(n_base) && n_kept < n_base) {
+    parts = c(parts, sprintf("%s of %s samples kept", format(n_kept, big.mark = ","), format(n_base, big.mark = ",")))
+  }
+  parts = parts[!is.na(parts) & nzchar(parts)]
+  if (length(parts)) paste0("Filtered: ", paste(parts, collapse = "; ")) else ""
+}
+
+## caption text of a plot: the "Filtered: ..." line and the source line, one under the
+## other, each wrapped to the figure (a screen plot is wrapped at 110 characters)
+t2_caption_text = function(filter_caption = "", source_line = "", fig_width = NULL, size = 9) {
+  one = function(x) if (length(x) == 1 && !is.na(x) && nzchar(x)) x else NULL
+  wrap = function(x) if (is.null(fig_width)) paste(strwrap(x, 110), collapse = "\n") else t2_wrap_text(x, fig_width, size)
+  fc = one(filter_caption)
+  out = c(if (!is.null(fc)) wrap(fc), one(source_line))
+  if (length(out)) paste(out, collapse = "\n") else ""
+}
+
 ## the context of the default dataset, for scripts and tests that plot without a bundle
 t2_default_ctx = function() t2_plot_ctx(load_dataset_bundle(t2_default_dataset()))
 
@@ -205,6 +285,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## legend keys follow it) and font; caption: the source line ("" = none)
     ## fig_width: a figure's width in inches; titles are wrapped to fit it
     base_size = 12, base_family = "sans", caption = "Nathan Siemers, Ph.D.", fig_width = NULL,
+    ## filter_caption: the "Filtered: ..." line (t2_filter_caption), above the source line
+    filter_caption = "",
     coordflip = FALSE, evaluate_vars = FALSE,
     condition = NULL, waterfall = FALSE, waterfall_flip = FALSE, noheme = FALSE, pcortype = 'none',
     multi_y = FALSE, zscore_y = FALSE,
@@ -697,7 +779,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if( coordflip ) {
         p = p + coord_flip()
     }
-    if (length(caption) == 1 && !is.na(caption) && nzchar(caption)) p = p + labs(caption = caption)
+    cap = t2_caption_text(filter_caption, caption, fig_width, 0.75 * base_size)
+    if (nzchar(cap)) p = p + labs(caption = cap)
     ## user-supplied titles / labels (drawn literally), then every other tweak
     user_labs = gg[grep('^labs\\.', names(gg), value = TRUE)]
     if (length(user_labs)) {
@@ -751,7 +834,8 @@ fun_table1 = function ( input, ctx = t2_default_ctx() ) {
 ## input: the browser's choices, already validated (sanitize_t2_input); ctx: the
 ## plot context (t2_plot_ctx) -- the active data source and the samples chosen
 fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list(),
-                     base_size = 12, base_family = "sans", caption = NULL, fig_width = NULL) {
+                     base_size = 12, base_family = "sans", caption = NULL, fig_width = NULL,
+                     filter_caption = "") {
     if( reactive ) {
         input = shiny::reactiveValuesToList(input)
     }
@@ -790,6 +874,7 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
     input$base_family = base_family
     if (!is.null(caption)) input$caption = caption
     if (!is.null(fig_width)) input$fig_width = fig_width
+    if (length(filter_caption) == 1 && !is.na(filter_caption) && nzchar(filter_caption)) input$filter_caption = filter_caption
 
     ## Survival mode: if X is one of the dataset's time-to-event variables (/meta
     ## `tte_variables`), draw a Kaplan-Meier plot of the Y marker's tertiles
@@ -815,7 +900,8 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
                         noheme = if (!is.null(input$noheme)) as.logical(input$noheme)[1] else FALSE,
                         base_size = base_size, base_family = base_family,
                         ctx = ctx),
-            style = km_style, gg = gg, caption = caption, fig_width = fig_width),
+            style = km_style, gg = gg, fig_width = fig_width,
+            caption = t2_caption_text(filter_caption, caption, fig_width, 0.75 * base_size)),
             error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))
     }
 

@@ -5,6 +5,7 @@
 suppressMessages({
   source("global.R")
   source("lib.R")                          # builds the default bundle + globals; stops without T2_API_URL
+  source("input_validation.R")
 })
 
 source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
@@ -15,7 +16,9 @@ cat("  datasets:", paste(ds, collapse = ", "), "\n")
 ok(all(c("TCGA", "DEMO") %in% ds), "TCGA and DEMO both listed")
 ok(t2_default_dataset() == "TCGA", "default dataset is TCGA")
 srcs <- list_sources()
-ok(all(ds %in% sub("\\|.*", "", srcs)), "the Data set menu is built from /v1/datasets and covers every dataset")
+hid <- vapply(t2_api_datasets(), function(d) t2_dataset_hidden(d), NA)
+ok(all(ds[!hid] %in% sub("\\|.*", "", srcs)) && !any(ds[hid] %in% sub("\\|.*", "", srcs)),
+   "the Data set menu is built from /v1/datasets and covers every dataset that is not hidden")
 
 cat("\n== Bundles: what the service declares ==\n")
 bt <- load_dataset_bundle("TCGA")
@@ -76,6 +79,16 @@ if ("cptac" %in% ds) {
 ## the title words come from the labels
 bw <- list(menu = bt$menu, type_labels = bt$type_labels)
 ok(identical(t2_title_name(c("TP53.mut", "CD8A", "TP53.cnv"), bw), c("TP53 mutation", "CD8A", "TP53 CNA")), "title words from type_labels (TP53.mut -> 'TP53 mutation', bare RNA unchanged)")
+
+## a part of a collection names itself in the plot title (not the whole collection)
+btg <- load_source_bundle("tcgatargetgtex|GTEx")
+whole <- load_source_bundle("tcgatargetgtex")
+ok(identical(t2_plot_ctx(btg)$label, btg$source$label) && !identical(t2_plot_ctx(btg)$label, whole$label) &&
+   identical(t2_plot_ctx(whole)$label, whole$label),
+   sprintf("source part: the title's dataset word is the part's label ('%s', not '%s')", t2_plot_ctx(btg)$label, whole$label))
+pg <- t2_figure_object(quiet(fun_plot1(list(x = "TP53", y = "CD8A", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(btg))))
+ok(grepl(paste0("across ", btg$source$label), pg$labels$title, fixed = TRUE) && !grepl(whole$label, pg$labels$title, fixed = TRUE),
+   "the plot title reads 'across <part label>'")
 
 cat("\n== gitr against TCGA ==\n")
 dt <- gitr(c("CD8A", "cohort", "sample_type"),

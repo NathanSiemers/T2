@@ -189,6 +189,58 @@ kf <- draw(list(x = "OS", y = "MKI67", cohort = c("LUAD", "LUSC"), facet = "coho
 f <- tmp("png"); t2_render_figure(kf, f, 7, 4.75, 300, "png")
 ok(png_info(f)$width == 2100 && png_info(f)$height == 1425, "faceted Kaplan-Meier figure: 7 x 4.75 in")
 
+cat("\n== text-element switches and the filter caption ==\n")
+sw <- sanitize_t2_figure(list())
+ok(all(unlist(sw[c("show_title", "show_subtitle", "show_caption", "source_line", "show_axis_titles")])), "every text element is on by default")
+sw <- sanitize_t2_figure(list(pub_show_title = FALSE, pub_show_subtitle = "FALSE", pub_show_caption = FALSE,
+                              pub_source = FALSE, pub_show_axis_titles = FALSE))
+ok(!any(unlist(sw[c("show_title", "show_subtitle", "show_caption", "source_line", "show_axis_titles")])), "each switch turns its element off")
+ok(sanitize_t2_figure(list(pub_show_title = "junk", pub_show_axis_titles = NA))$show_title, "a junk switch value means on")
+pf <- draw(list(x = "CD8A", y = "FOXP3", color = "sample_type"))
+ok(!is.null(pf$labels$title) && !is.null(pf$labels$subtitle) && !is.null(pf$labels$caption) && identical(pf$labels$caption, T2_CITATION),
+   "all on: title, subtitle and the source line are on the figure")
+pt <- t2_apply_text_switches(pf, title = FALSE, subtitle = TRUE, axis_titles = TRUE)
+ok(is.null(pt$labels$title) && !is.null(pt$labels$subtitle), "title off: no title, subtitle stays")
+ps <- t2_apply_text_switches(pf, title = TRUE, subtitle = FALSE, axis_titles = FALSE)
+ok(!is.null(ps$labels$title) && is.null(ps$labels$subtitle) && inherits(ps$theme$axis.title, "element_blank"),
+   "subtitle off, axis titles off (blank axis.title)")
+fa <- tmp("png"); t2_render_figure(ps, fa, 3.5, 3.2, 100, "png"); ok(file.exists(fa) && file.size(fa) > 1000, "a figure with switched-off elements renders")
+pn <- draw(list(x = "CD8A", y = "FOXP3"), source = FALSE)
+ok(is.null(pn$labels$caption), "source line off, nothing to put in the caption: no caption")
+fcap <- "Filtered: Primary tumors only; cohorts BRCA, LUAD"
+rr <- t2_figure_object(quiet(fun_plot1(utils::modifyList(list(cohort = "all", nonormal = FALSE, allComplete = TRUE, smooth = "TRUE", show_legend = TRUE),
+                                         c(T2_FIG_PRESETS$half_third$style, list(x = "CD8A", y = "FOXP3"))),
+                      reactive = FALSE, ctx = t2_plot_ctx(b), caption = "", filter_caption = fcap, fig_width = 3.5)))
+ok(grepl("Filtered: Primary tumors only", gsub("\n", " ", rr$labels$caption), fixed = TRUE) && !grepl(T2_CITATION, rr$labels$caption, fixed = TRUE),
+   "the Filtered line is the caption, without the source line when that is off")
+rr2 <- t2_figure_object(quiet(fun_plot1(list(x = "CD8A", y = "FOXP3", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(b),
+                       caption = T2_CITATION, filter_caption = fcap)))
+ok(grepl("Filtered: Primary", rr2$labels$caption, fixed = TRUE) && grepl(T2_CITATION, rr2$labels$caption, fixed = TRUE),
+   "Filtered line and source line together, one under the other")
+kmc <- quiet(fun_plot1(list(x = "OS", y = "MKI67", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(b),
+                       filter_caption = fcap, caption = ""))
+ok(grepl("Filtered: Primary", kmc$plot$labels$caption, fixed = TRUE), "the Kaplan-Meier plot carries the Filtered line too")
+kmt <- t2_apply_text_switches(kmc, title = FALSE, subtitle = FALSE, axis_titles = FALSE)
+ok(inherits(kmt, "ggsurvplot") && is.null(kmt$plot$labels$title) && is.null(kmt$plot$labels$subtitle) &&
+   inherits(kmt$plot$theme$axis.title, "element_blank") && inherits(kmt$table$theme$axis.title, "element_blank"),
+   "switches also strip the Kaplan-Meier curve and its risk table")
+fk <- tmp("png"); t2_render_figure(kmt, fk, 7, 4.75, 100, "png"); ok(file.size(fk) > 1000, "the stripped Kaplan-Meier figure renders")
+
+cat("\n== t2_filter_caption ==\n")
+bb <- list(mycohorts = c(a = "BRCA", b = "LUAD", c = "COAD", d = "OV", e = "GBM"))
+ok(identical(t2_filter_caption(list(group = NULL, exclusions = character(0)), bb, "all"), ""), "unfiltered: no caption")
+ok(identical(t2_filter_caption(list(group = "Primary tumors only", exclusions = "Tumor samples only"), bb, "all"),
+             "Filtered: Primary tumors only; Tumor samples only"), "presets by label")
+ok(identical(t2_filter_caption(list(), bb, c("BRCA", "LUAD")), "Filtered: cohorts BRCA, LUAD"), "up to 3 cohorts: the names")
+ok(identical(t2_filter_caption(list(), bb, c("BRCA", "LUAD", "COAD", "OV")), "Filtered: 4 of 5 cohorts"), "more cohorts: N of M")
+ok(identical(t2_filter_caption(list(), bb, unname(bb$mycohorts)), ""), "every cohort chosen is no filter")
+ok(identical(t2_filter_caption(list(), bb, "all", rules = c("CD8A >= 2", "tumtype: BRCA"), n_kept = 100, n_base = 1000),
+             "Filtered: CD8A >= 2 and tumtype: BRCA"), "a few Filter-tab rules in words")
+ok(identical(t2_filter_caption(list(), bb, "all", rules = paste("v", 1:5, ">= 1"), n_kept = 1234, n_base = 5000),
+             "Filtered: 1,234 of 5,000 samples kept"), "many rules: N of M samples kept")
+ok(identical(t2_filter_caption(list(), bb, "all", nonormal = TRUE, noheme = TRUE), "Filtered: no normals; no heme"), "nonormal / noheme")
+ok(identical(t2_filter_caption(list(), list(part_label = "GTEx (Toil)"), "all"), "Filtered: GTEx (Toil)"), "a part of a collection is named")
+
 cat("\n== presets ==\n")
 ok(all(vapply(T2_FIG_PRESETS, function(pr) {
      w <- .t2_to_in(pr$width, pr$units); h <- .t2_to_in(pr$height, pr$units)

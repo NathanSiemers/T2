@@ -112,10 +112,14 @@ sanitize_t2_figure = function(input) {
                        as.integer(dpi), w * h * dpi^2 / 1e6, as.integer(new), T2_FIG_MAX_PIXELS / 1e6)
         dpi = new
     }
-    src = suppressWarnings(as.logical(unlist(input$pub_source))[1])
-    list(preset = preset, width = w, height = h, units = units, dpi = dpi, format = format,
+    ## the switches of the figure's text elements: anything but a clean TRUE/FALSE means on
+    sw = function(v) { v = suppressWarnings(as.logical(unlist(v))[1]); if (length(v) == 1 && !is.na(v)) v else TRUE }
+    src = sw(input$pub_source)
+    list(show_title = sw(input$pub_show_title), show_subtitle = sw(input$pub_show_subtitle),
+         show_caption = sw(input$pub_show_caption), show_axis_titles = sw(input$pub_show_axis_titles),
+         preset = preset, width = w, height = h, units = units, dpi = dpi, format = format,
          family = one(input$pub_family, unname(T2_FIG_FAMILIES), unname(T2_FIG_FAMILIES)[1]),
-         source_line = if (length(src) == 1 && !is.na(src)) src else TRUE,
+         source_line = src,
          base_size = pr$base_size, note = note)
 }
 
@@ -135,6 +139,26 @@ t2_figure_object = function(res) {
     if (inherits(res, "ggsurvplot") || inherits(res, "ggplot")) return(res)
     if (is.list(res) && !is.null(res$plot)) return(res$plot)
     NULL
+}
+
+## Take title, subtitle and axis titles off a figure (Publish switches); a ggplot, a
+## ggsurvplot (curve and risk table) or whatever fun_plot1 returned (a message list
+## is left alone). The caption and source line are decided when the plot is drawn.
+t2_apply_text_switches = function(res, title = TRUE, subtitle = TRUE, axis_titles = TRUE) {
+    strip = function(p) {
+        if (!isTRUE(title))    p = p + ggplot2::labs(title = NULL)
+        if (!isTRUE(subtitle)) p = p + ggplot2::labs(subtitle = NULL)
+        if (!isTRUE(axis_titles)) p = p + ggplot2::theme(axis.title = ggplot2::element_blank())
+        p
+    }
+    if (isTRUE(title) && isTRUE(subtitle) && isTRUE(axis_titles)) return(res)
+    if (inherits(res, "ggsurvplot")) {
+        res$plot = strip(res$plot)
+        if (!is.null(res$table) && !isTRUE(axis_titles)) res$table = res$table + ggplot2::theme(axis.title = ggplot2::element_blank())
+    } else if (inherits(res, "ggplot")) {
+        res = strip(res)
+    }
+    res
 }
 
 ## Draw `obj` (a ggplot, or a ggsurvplot with its risk table) into `file`.

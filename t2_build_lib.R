@@ -15,7 +15,8 @@
 T2_META_KEYS <- c("title", "label", "cohort_col", "subtype_col", "sampletype_col", "sampletype_levels",
                   "normal_label", "heme_values", "default_x", "default_y", "default_color", "default_size",
                   "default_condition", "default_cohorts", "source_col", "sources", "source_labels",
-                  "source_descriptions", "tte_variables", "references", "about", "citation", "attribution", "about_url", "order")   # order: optional integer, ascending in the dataset list
+                  "source_descriptions", "tte_variables", "references", "about", "citation", "attribution", "about_url", "order",
+                  "hidden")   # order: optional integer, ascending in the dataset list; hidden: "1" = served but left out of the apps' menus (DEMO), "0"/absent = listed
 T2_TTE_FIELDS <- c("name", "label", "event_col", "time_col", "time_unit", "description")
 
 if (!exists("set_t2_sparse")) stop("source t2_views.R before t2_build_lib.R")

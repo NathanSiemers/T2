@@ -2,12 +2,13 @@
 ##   docker compose build        (see docker-compose.yml)
 FROM golang:1.23-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY cmd ./cmd
-## resolve + download dependencies (pure Go: no C compiler needed), then build static
-RUN go mod tidy && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/t2api ./cmd/t2api \
- && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/loadtest ./cmd/loadtest \
- && go vet ./...
+## go.sum pins the dependency set: -mod=readonly fails the build rather than change go.mod/go.sum
+## (pure Go: no C compiler needed)
+RUN CGO_ENABLED=0 go build -mod=readonly -trimpath -ldflags "-s -w" -o /out/t2api ./cmd/t2api \
+ && CGO_ENABLED=0 go build -mod=readonly -trimpath -ldflags "-s -w" -o /out/loadtest ./cmd/loadtest \
+ && go vet -mod=readonly ./...
 
 ## nothing in the final image but the two binaries: no shell, no package manager
 FROM scratch

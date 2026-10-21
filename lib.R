@@ -176,9 +176,19 @@ t2_caption_text = function(filter_caption = "", source_line = "", fig_width = NU
 ## list(options = the fills on offer (na first), fill = the one applied or NULL, filled, tested_n
 ## = named integer vectors of the probes with cells changed). The app shows its "Not-detected
 ## values" control iff `options` has more than "na", and offers exactly those.
-t2_fill_of = function(df)
-  list(options = attr(df, "fill_options") %||% "na", fill = attr(df, "fill", exact = TRUE),
-       filled = attr(df, "filled"), tested_n = attr(df, "tested_n"))
+t2_fill_of = function(df) {
+  info = list(options = attr(df, "fill_options") %||% "na", fill = attr(df, "fill", exact = TRUE),
+              filled = attr(df, "filled"), tested_n = attr(df, "tested_n"), basis = "dataset")
+  ## the counts of the PLOT: cells set among the rows of this frame (attr filled_rows), against the
+  ## samples shown with a value for the probe; the dataset-wide answer counts stay as the fallback
+  fr = attr(df, "filled_rows")
+  if (!is.null(fr) && !is.null(info$fill)) {
+    p = intersect(names(fr), colnames(df))
+    n = vapply(p, function(v) sum(fr[[v]]), 0L); shown = vapply(p, function(v) sum(!is.na(df[[v]])), 0L)
+    info$filled = n[n > 0]; info$tested_n = shown[n > 0]; info$basis = "shown"
+  }
+  info
+}
 
 ## the fill info of a plot result (a plotter list, or a ggsurvplot / ggplot with attr t2fill); NULL if none
 t2_result_fill = function(res) {
@@ -205,9 +215,10 @@ t2_fill_caption = function(info, ctx) {
   n = function(x) format(x, big.mark = ",", trim = TRUE)
   p = names(info$filled)
   words = unique(Filter(nzchar, vapply(p, t2_type_word, "", ctx = ctx)))
+  unit = if (identical(info$basis, "shown")) "samples shown" else "tested samples"
   noun = paste0("Not-detected ", if (length(words)) paste0(paste(words, collapse = "/"), " "), "values")
   if (length(p) == 1)
-    return(sprintf("%s set to %s (%s of %s tested samples)", noun, how, n(info$filled[[1]]), n(info$tested_n[[p]])))
+    return(sprintf("%s set to %s (%s of %s %s)", noun, how, n(info$filled[[1]]), n(info$tested_n[[p]]), unit))
   if (length(p) == 2)
     return(sprintf("%s set to %s: %s", noun, how, paste(sprintf("%s (%s of %s)", p, n(info$filled[p]), n(info$tested_n[p])), collapse = ", ")))
   sprintf("%s not-detected values set to %s (%d variables)", n(sum(info$filled)), how, length(p))
@@ -216,9 +227,11 @@ t2_fill_caption = function(info, ctx) {
 ## one Data Summary line per filled probe
 t2_fill_summary = function(info) {
   if (is.null(info) || is.null(info$fill) || !length(info$filled)) return(character(0))
-  p = names(info$filled)
-  sprintf("%s: %s not-detected values set to %s (%s tested samples)", p, format(info$filled, big.mark = ",", trim = TRUE),
-          if (identical(info$fill, "zero")) "0" else "the detection floor of the cohort", format(info$tested_n[p], big.mark = ",", trim = TRUE))
+  p = names(info$filled); n = function(x) format(x, big.mark = ",", trim = TRUE)
+  how = if (identical(info$fill, "zero")) "0" else "the detection floor of the cohort"
+  if (identical(info$basis, "shown"))
+    sprintf("%s: %s not-detected values set to %s among %s samples shown", p, n(info$filled), how, n(info$tested_n[p]))
+  else sprintf("%s: %s not-detected values set to %s (%s tested samples)", p, n(info$filled), how, n(info$tested_n[p]))
 }
 
 ## the context of the default dataset, for scripts and tests that plot without a bundle

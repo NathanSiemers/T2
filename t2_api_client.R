@@ -228,7 +228,11 @@ t2_api_values = function(ds, probes, fill = "na") {
     fl = vapply(out, function(x) attr(x, "t2filled") %||% 0L, 0L)
     tn = vapply(out, function(x) attr(x, "t2tested") %||% NA_integer_, 0L)
     fl = fl[fl > 0]
-    return(structure(out, fill_options = opts, fill = fill, filled = fl, tested_n = tn[names(fl)]))
+    ## the samples whose cell the fill set: missing in the na frame, a value in the filled one
+    nacols = fetch("na")$cols
+    smp = t2_api_clinical(ds)$sample
+    ids = lapply(stats::setNames(names(fl), names(fl)), function(p) smp[is.na(nacols[[p]]) & !is.na(out[[p]])])
+    return(structure(out, fill_options = opts, fill = fill, filled = fl, tested_n = tn[names(fl)], filled_ids = ids))
   }
   if (is.null(base)) base = fetch("na")
   structure(base$cols, fill_options = opts)
@@ -314,6 +318,7 @@ gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   attr(out, "fill_options") = attr(vals, "fill_options") %||% "na"
   if (!is.null(attr(vals, "fill", exact = TRUE))) {
     attr(out, "fill") = attr(vals, "fill", exact = TRUE); attr(out, "filled") = attr(vals, "filled"); attr(out, "tested_n") = attr(vals, "tested_n")
+    attr(out, "filled_rows") = lapply(attr(vals, "filled_ids"), function(i) as.character(out$sample) %in% as.character(i))   # after the filters, as gitr()
   }
   out
 }

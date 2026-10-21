@@ -120,7 +120,8 @@ for (ds in intersect(t2_datasets(), names(files))) {
       ga <- quiet(do.call(gitr, c(list(fp, dbfile = ba$path, roles = ba$roles, fill = fl), extra)))
       gf <- with_files(quiet(do.call(gitr, c(list(fp, dbfile = fi$path, roles = fi$roles, fill = fl), extra))))
       r <- same_frame(ga, gf, c("sample", fp))
-      ok(isTRUE(r) && identical(fattr(ga), fattr(gf)),
+      ok(isTRUE(r) && identical(fattr(ga), fattr(gf)) && identical(attr(ga, "filled_rows"), attr(gf, "filled_rows")) &&
+         all(vapply(names(attr(ga, "filled_rows")), function(p) length(attr(ga, "filled_rows")[[p]]) == nrow(ga) && sum(attr(ga, "filled_rows")[[p]]) <= attr(ga, "filled")[[p]], NA)),
          paste("fill =", fl, if (length(extra)) paste("with", names(extra)) else "", "identical (frame, filled, tested_n):",
                if (isTRUE(r)) sprintf("filled %s of %s", paste(attr(ga, "filled"), collapse = ","), paste(attr(ga, "tested_n"), collapse = ",")) else r))
     }

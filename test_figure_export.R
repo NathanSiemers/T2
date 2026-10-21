@@ -249,6 +249,18 @@ pz2 <- t2_figure_object(quiet(fun_plot1(list(x = "CLDN6", y = "CLDN6.prot", coho
                                         ctx = t2_plot_ctx(bc, fill = "zero"), caption = "", fill_caption = FALSE)))
 ok(is.null(pz2$labels$caption), "Publish with the Caption switch off: no not-detected line either")
 
+ok(identical(t2_fill_caption(list(fill = "zero", filled = c(A.prot = 387L), tested_n = c(A.prot = 404L), basis = "shown"), cx),
+             "Not-detected protein values set to 0 (387 of 404 samples shown)"), "plot counts: 'N of M samples shown'")
+ok(identical(t2_fill_summary(list(fill = "zero", filled = c(A.prot = 387L), tested_n = c(A.prot = 404L), basis = "shown")),
+             "A.prot: 387 not-detected values set to 0 among 404 samples shown"), "Data Summary line with plot counts")
+fdf <- data.frame(sample = letters[1:5], A.prot = c(0, 0, 3, NA, 0))
+attr(fdf, "fill_options") <- c("na", "zero"); attr(fdf, "fill") <- "zero"; attr(fdf, "filled") <- c(A.prot = 99L); attr(fdf, "tested_n") <- c(A.prot = 999L)
+attr(fdf, "filled_rows") <- list(A.prot = c(TRUE, TRUE, FALSE, FALSE, FALSE))
+fi <- t2_fill_of(fdf)
+ok(identical(unname(fi$filled), 2L) && identical(unname(fi$tested_n), 4L) && fi$basis == "shown", "t2_fill_of: counts from the frame's own rows (2 set, 4 with a value), not the dataset's")
+attr(fdf, "filled_rows") <- NULL
+ok(t2_fill_of(fdf)$basis == "dataset" && unname(t2_fill_of(fdf)$filled) == 99L, "no frame attribute: the answer's dataset-wide counts are the fallback")
+
 cat("\n== t2_filter_caption ==\n")
 bb <- list(mycohorts = c(a = "BRCA", b = "LUAD", c = "COAD", d = "OV", e = "GBM"))
 ok(identical(t2_filter_caption(list(group = NULL, exclusions = character(0)), bb, "all"), ""), "unfiltered: no caption")

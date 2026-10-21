@@ -40,9 +40,9 @@ testServer(shiny::shinyAppDir("."), {
   session$setInputs(not_detected = "zero")
   rz <- plot_result()
   cap <- rz$plot$labels$caption
-  ok(grepl("Not-detected protein values set to 0 \\([0-9,]+ of [0-9,]+ tested samples\\)", cap), paste("Zero: the caption says so:", gsub("\n", " / ", cap)))
+  ok(grepl("Not-detected protein values set to 0 \\([0-9,]+ of [0-9,]+ samples shown\\)", cap), paste("Zero: the caption says so:", gsub("\n", " / ", cap)))
   n_z <- as.integer(sub(".*Samples with data for both X and Y: (\\d+).*", "\\1", rz$summary))
-  ok(n_z > n_na && grepl("CLDN6.prot: [0-9,]+ not-detected values set to 0", rz$summary), sprintf("Zero: more samples have data (%d, was %d) and the Data Summary has a line", n_z, n_na))
+  ok(n_z > n_na && grepl("CLDN6.prot: [0-9,]+ not-detected values set to 0 among [0-9,]+ samples shown", rz$summary), sprintf("Zero: more samples have data (%d, was %d) and the Data Summary has a line", n_z, n_na))
   session$setInputs(not_detected = "floor")
   rf <- plot_result()
   ok(grepl("set to the detection floor, per cohort", rf$plot$labels$caption), "Floor: the caption says 'the detection floor, per cohort'")

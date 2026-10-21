@@ -146,7 +146,7 @@ gitr_clinpheno = function(conn, dbfile) {
 ## options the union of the fills the probes' types offer (na, zero, floor), filled / tested_n named
 ## integer vectors of the probes with cells changed (only when a fill was applied).
 gitr_fill_numeric = function(conn, num_result, db_probes, fill, cohort) {
-  out = list(rows = num_result, options = "na", fill = NULL, filled = integer(0), tested_n = integer(0))
+  out = list(rows = num_result, options = "na", fill = NULL, filled = integer(0), tested_n = integer(0), ids = list())
   if (!nrow(num_result) || !("fill_options" %in% dbListFields(conn, "types"))) return(out)
   ty = dbGetQuery(conn, sprintf("SELECT pr.probe, pt.type FROM probes pr JOIN probe_types pt ON pt.probekey = pr.key
                                  WHERE pr.probe IN (%s) ORDER BY pt.rowid", paste(rep('?', length(db_probes)), collapse = ", ")),
@@ -182,7 +182,7 @@ gitr_fill_numeric = function(conn, num_result, db_probes, fill, cohort) {
     }
     keep = !is.na(new)
     rows$value[todo[keep]] = new[keep]
-    if (any(keep)) { out$filled[p] = sum(keep); out$tested_n[p] = length(ix) }
+    if (any(keep)) { out$filled[p] = sum(keep); out$tested_n[p] = length(ix); out$ids[[p]] = rows$sample[todo[keep]] }
   }
   out$rows = rows
   out
@@ -382,7 +382,11 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   out = out %>% droplevels %>% data.frame(check.names = FALSE)
   ## what the service's values answer says: the fills on offer and what the applied one changed
   attr(out, "fill_options") = fl$options
-  if (!is.null(fl$fill)) { attr(out, "fill") = fl$fill; attr(out, "filled") = fl$filled; attr(out, "tested_n") = fl$tested_n }
+  if (!is.null(fl$fill)) {
+    attr(out, "fill") = fl$fill; attr(out, "filled") = fl$filled; attr(out, "tested_n") = fl$tested_n
+    ## which rows of THIS frame (after the filters) had a not-detected cell set: list(probe = logical per row)
+    attr(out, "filled_rows") = lapply(fl$ids, function(i) as.character(out$sample) %in% as.character(i))
+  }
   out
 }
 

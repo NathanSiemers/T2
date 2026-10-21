@@ -55,6 +55,10 @@ option stays a note (Nathan: "leave it for now").
   after reviewing the PR. NOT released: production frozen while iOS build 2 is in App Review. Release order after the
   freeze: `deploy.sh service`; `dataset_meta.R type-fill` on a staged copy of the served cptac.db + `hidden=1` on DEMO,
   `data-stage`, `data`; `code`, `check`; listing texts with asc.py; next iOS build (1.0 build 3 or 1.1).
+- 2026-10-21 03:30 PDT: `ops/test.sh all` at HEAD (277edc8) on the dev stack, all green: go; equiv 76; app suites 30/40/16/18/61/74/70/31/20
+  with 0 FAIL; app-service (109 over the service); browser-service 37; fuzz-api 6, abuse 29, fuzz-shiny 12, contact ALL PASS;
+  swift 87/0. Dev spot checks: DEMO hidden, cptac values carry `fill_options` and (with fill=zero) `filled`/`tested_n`, TCGA
+  fill=zero → 400, `/statz usage` present. Logs `/scratch/nathan/R/T2-devdata/logs/all-20261021`. PR #14 ready for review.
 
 ## Item 7 (added 2026-10-20 evening): not-detected values as zero or the detection floor, as an option
 

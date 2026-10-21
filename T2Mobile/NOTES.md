@@ -1410,6 +1410,22 @@ build (`logs/matrix/unit.log` on the Mac, a `unit passed:`/`FAILED: unit tests` 
 Logs: `/scratch/nathan/R/T2-devdata/logs/20261020-1027/ios.log`. The contract round is now verified on
 every layer; nothing is uploaded to App Store Connect while 1.0 is in review.
 
+**Host security review, 2026-10-20 (Sonnet agent, sudo authorized by Nathan).** Prompted by the request-path
+diagram (claude.ai artifact "T2 Request Path"). Done: the `xena` container (published 0.0.0.0:3839 to the internet
+without TLS or limits) is stopped with restart=no (rollback `docker update --restart=always xena && docker start
+xena`); the stale ufw allows 3838, 3839, 9022, 8788, 32400 deleted (ufw now: deny in; allow 80/tcp, 443, 22/tcp,
+all of eno2). Staged, not applied: removing the dead publish `9087:9087` from `/scratch/Docker/Nginx/docker-compose.yml`
+(backup `docker-compose.yml.pre-9087-20261020`); applying recreates nginx-nginx-1 and resets live Shiny sessions, so
+do it at a quiet moment: `cd /scratch/Docker/Nginx && sed -i '/- 9087:9087/d' docker-compose.yml && docker compose up -d`.
+Findings (no critical): DOCKER-USER chain empty, so any `-p 0.0.0.0:X` bypasses ufw (proposed conntrack rules in the
+agent report; not persistent, test from outside first); sshd keys-only, ~9,400 failed guesses / 7 days (fail2ban
+would quiet it; optional AllowUsers/MaxAuthTries drop-in); reboot pending (kernel -198 installed, -194 running;
+stops the whole stack); `%sudo NOPASSWD: ALL` for nathan, nathan2 (Nathan's call); root has 3 authorized keys (audit);
+LAN-reachable via the eno2 allow-all: open-webui :8080 (root, host net), ollama :11434 unauthenticated, samba, rslsync;
+cert www.fiveprime.org expires 2027-04-04 (GoDaddy, manual renewal); no world-writable files in the served dirs
+(depth 3). TODO for the next quiet moment: 9087 edit + nginx recreate; GOMAXPROCS=8 for t2api (Go 1.23 ignores the
+cgroup quota); api hardening ideas from the same review: Nginx proxy_cache for `?v=` answers, a total (not per-IP)
+limit_req zone, upstream keepalive, a second t2api instance for the pool.
 **Citations round, 2026-10-20 (App Review 1.4.1 rejection of iOS 1.0).** Plan `docs/CITATIONS-PLAN.md`.
 Data: `references` key (JSON records: group, title, authors, journal, year, pmid, doi, url, note; full
 titles for non-scientists, verified against PubMed/CrossRef by an agent) in `<dataset>/references.json`,

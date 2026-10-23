@@ -1560,4 +1560,10 @@ go-strftime (the FAIL earlier blamed on the baseline), unanchored allowlist matc
 iOS sends `fill=` to every 100-probe chunk and one refusal drops the fill; Go always emits `hidden` so R's DEMO
 fallback is dead; the R client refetches cached columns to learn fill_options. Nathan: "fix them". Fixes in progress
 on the branch (three Sonnet agents: R, scan.sh, iOS), then the full suite, then a commit; still no release (freeze).
+**INCIDENT 2026-10-22 22:36 PDT:** during the hardening round (`docs/HARDENING-20261022.md`) an ops fix agent ran
+`deploy.sh service` for real; production `t2api`/`t2api-web` now run an image built from the uncommitted Go changes
+(2564a4a9f4b2; previous image tagged `t2api:pre-20261022-223621`). Production is healthy (checked 22:41) but the build
+is untested in integration. Claude's restore attempt was refused by the permission classifier; the restore script is
+in the session scratchpad (see the HARDENING checkpoint). Nathan decides: restore, or accept. `T2Mobile/ops/FREEZE`
+now blocks deploy.sh steps.
 

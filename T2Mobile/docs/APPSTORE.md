@@ -246,6 +246,20 @@ MEDICAL → EDUCATION, secondary REFERENCE unchanged; read back 200). The reply 
    data access policy pages, the GTEx consent/ethics statement (gtexportal.org, "Documentation"); Nathan
    (TCGA was his field) can add the words of someone who worked within these policies. Request an App Review
    appointment (Meet with Apple, Tuesdays/Thursdays) if the reply does not resolve it within a few days.
+   **Document URLs (checked 2026-10-22, all 200; paste these in the reply if attachments are awkward):**
+   - NCI/NHGRI "TCGA Human Subjects Protection and Data Access Policies" (PDF, Jan 2014):
+     https://www.cancer.gov/ccg/research/structural-genomics/tcga/history/policies/tcga-human-subjects-data-policies.pdf
+     and the TCGA ethics & policies page that lists it: https://www.cancer.gov/ccg/research/genome-sequencing/tcga/history/ethics-policies
+   - NIH Genomic Data Sharing Policy, NOT-OD-14-124 (CPTAC, TARGET, TCGA): https://grants.nih.gov/grants/guide/notice-files/NOT-OD-14-124.html
+   - NCI Genomic Data Commons, Data Access Policies (open vs controlled access; "not attempt to identify"):
+     https://gdc.cancer.gov/access-data/data-access-policies
+   - NCI Proteomic Data Commons (CPTAC): "all proteomic data in the PDC are open access":
+     https://datacommons.cancer.gov/repository/proteomic-data-commons (FAQ: https://pdc.cancer.gov/pdc/faq)
+   - GTEx: NHGRI sample informed consent (PDF): https://www.genome.gov/Pages/PolicyEthics/InformedConsent/5_GTEx_ENCODE_Sample_Consent.pdf;
+     NIH Common Fund GTEx program page: https://commonfund.nih.gov/gtex; NCI BBRB SOP library with the GTEx donor and
+     next-of-kin consent templates: https://biospecimens.cancer.gov/resources/sops/library.asp
+   - TARGET program (data at the GDC, same policies): https://www.cancer.gov/ccg/research/genome-sequencing/target/using-target-data
+   Local PDF copies of the first five were gathered in the session scratchpad (`apple-docs/`) and sent to Nathan.
 2. If Apple accepts the clarification, the same build 2 can be resubmitted (no upload). If they ask for
    in-app wording, build 3 from PR #14 with the notice reworded ("a tool for scientists", "published data"),
    after the freeze is lifted.

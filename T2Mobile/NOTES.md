@@ -1530,6 +1530,13 @@ takes full `/v1/...` paths (a bare path builds a bad host name and fails with "n
 **Step 0 result: build 2 REJECTED again** — reviewSubmission 635f739b `UNRESOLVED_ISSUES`, version 1.0 `REJECTED`,
 item `REJECTED`, build 2 VALID (read-only API, 18:30 PDT). The message is only in the Resolution Center (no mail in
 Gmail); Nathan pastes it; then Path B of `docs/IOS-RELEASE-AFTER-APPLE.md`. The freeze still holds until he lifts it.
+**The message (2026-10-22, Nathan pasted it):** guideline 5.1.3(iv), "conducting health-related human subject
+research" without consent disclosures or IRB approval (asks for a consent form, a login for consented
+participants, proof of ethics-board approval), and 5.1.1(ix), the account must be an organization, not an
+individual. Assessment and the draft reply: `docs/APPSTORE.md`, "Second rejection". In short: a misreading
+(the app performs no research on anyone and collects nothing; the data are public, de-identified, consented at
+source); recommended answer = reply in the thread + change the category Medical → Education/Reference; no
+organization account, no login, no cancel of the submission; build 3 only if Apple asks for in-app wording.
 **Acceptance of the new Mac, 2026-10-22 18:24-18:50 PDT:** `T2_MAC=10.1.0.9 ops/test.sh ios` from a cold toolchain
 (XcodeGen, first build, simulator first boot) passed: 9 UI tests, 0 failures, 74 screenshots, iPhone 18 Pro light,
 against the dev service through the ssh tunnel. The MacBook Pro is the iOS machine from now on.

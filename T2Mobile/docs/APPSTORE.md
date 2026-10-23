@@ -166,3 +166,71 @@ log-rank, Cox, Pearson, Spearman, Kruskal–Wallis). Under the statistics of eve
 therefore one tap from the plot and from About, and the notice points to them from the first
 launch. Please let us know if anything further is needed.
 
+
+## Second rejection of 1.0 (build 2), 2026-10-22: guidelines 5.1.3(iv) and 5.1.1(ix)
+
+Apple's message (verbatim, reviewed on an iPad Air 11-inch M3): "The app is conducting health-related human
+subject research, but we were unable to locate all of the required consent disclosures and you have not
+demonstrated approval from an independent ethics review board" (5.1.3(iv): consent form, login for consented
+participants, proof of IRB approval), and "The account that submits the app must be enrolled in the Apple
+Developer Program as an organization, and not as an individual" (5.1.1(ix), apps in highly regulated fields or
+handling sensitive user data; cannot be resolved with documentation of permission to publish on behalf of an
+institution).
+
+### Assessment (Claude, 2026-10-22)
+
+Both findings rest on one misreading: the reviewer took "a research tool for scientists in biomedical research"
+plus the Medical category for an app that *performs* research on its users or delivers a healthcare service.
+T2 enrolls nobody, asks nothing, stores nothing about the user, has no account and no health input; it draws
+plots of public, de-identified consortium data that were consented and IRB-approved at their source and are
+distributed by the NCI for unrestricted reuse. Neither guideline fits, and the answer is a clarification, not
+a consent form, an IRB letter or an organization account. The Medical category is the likely trigger of
+5.1.1(ix) ("highly regulated fields such as ... healthcare") and should go: **Education** (primary) +
+**Reference** (secondary) describes the app truthfully. The word "research" in the first-launch notice and the
+description is accurate but invites the misreading; a build 3 can say "a tool for scientists" and "published
+data" instead, if Apple asks for in-app changes after the reply.
+
+What NOT to do: convert the account to an organization (D-U-N-S number, legal entity, weeks; and it would
+concede that the app is a regulated-services app), or add a login (there is nothing to gate). Keep the
+submission alive: reply in the thread first (lesson of 2026-10-20), do not cancel.
+
+### Reply to the 5.1.3(iv) / 5.1.1(ix) rejection (draft for Nathan; 2,860 characters)
+
+Thank you for the review. We believe both issues rest on a misunderstanding of what the app does, and we
+would like to clarify.
+
+T2 Cancer Genomics does not conduct human-subject research and collects no health data. It is a viewer for
+published, de-identified data that public research consortia (The Cancer Genome Atlas, CPTAC, GTEx, TARGET)
+released years ago for unrestricted reuse. The app has no participants: it does not enroll anyone, asks no
+questions, records nothing about the user, and has no account and no health input of any kind. Our App
+Privacy answers reflect this: nothing is collected except the name and email a user chooses to type into the
+optional contact form.
+
+Guideline 5.1.3(iv) addresses apps that conduct health-related human subject research by collecting data
+from their users. The data T2 displays were collected by the consortia named above under their own informed
+consent procedures and institutional review board approvals, and are distributed by the US National Cancer
+Institute under its data-sharing policies (the open-access tiers of the Genomic Data Commons and the
+Proteomic Data Commons, and the UCSC Xena hub). The app is in the same class as a chart in a journal article
+or a textbook: it draws summary plots of these public tables. There is no participant from whom consent
+could be obtained, no study to approve, and no data of the user to protect.
+
+Guideline 5.1.1(ix): the app provides no regulated service and requires no sensitive user information. It is
+not used in healthcare delivery. It states at first launch and on its About screen that it gives no medical
+advice and must not be used for diagnosis or treatment decisions. Its audience is scientists in biomedical
+research, as the description says.
+
+We recognise that our choice of the Medical category may have suggested a healthcare or clinical-research
+product. We have changed the primary category to Education (secondary: Reference), which describes the app
+better, and we will gladly adjust the wording of the listing or of the in-app notice if you advise.
+
+We would welcome a review appointment if that would help resolve this quickly.
+
+### Steps (Nathan decides; none taken yet)
+
+1. In App Store Connect, change the categories to Education / Reference (App Information; allowed on a rejected
+   version), and paste the reply in the Resolution Center thread of submission 635f739b. Request an App Review
+   appointment (Meet with Apple, Tuesdays/Thursdays) if the reply does not resolve it within a few days.
+2. If Apple accepts the clarification, the same build 2 can be resubmitted (no upload). If they ask for
+   in-app wording, build 3 from PR #14 with the notice reworded ("a tool for scientists", "published data"),
+   after the freeze is lifted.
+3. Record the outcome in NOTES.md Status and `docs/IOS-RELEASE-AFTER-APPLE.md`.

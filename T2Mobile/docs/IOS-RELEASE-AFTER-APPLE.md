@@ -23,18 +23,24 @@ Written 2026-10-22 for a session that starts cold. Read `T2Mobile/NOTES.md` Stat
   served; plain copies, not hard links, 77 GB). Not Nathan's intent to serve it. Use a later date for the new
   stage (`data-stage` refuses an existing directory) and delete the leftover when convenient (Nathan's call; it is
   under a served path, so Claude does not remove it unasked).
-- The Mac (`nathan@10.0.0.110`) timed out on ssh at 2026-10-22 early hours (asleep or on the VPN address
-  10.13.13.4). `T2_MAC=<address> ops/test.sh ios` takes the address.
+- **The Mac is the MacBook Pro `nathan@10.1.0.9`** (ethernet on eno2, since 2026-10-22; the old MacBook 10.0.0.110 travels
+  with Nathan for weeks). Its setup state is in NOTES.md ("MacBook Pro takes over"). `T2_MAC=<address> ops/test.sh ios`
+  overrides the address.
 
 ## Step 0: find out what Apple said (read-only, from the Mac)
 
-    ssh nathan@10.0.0.110 '~/.appstoreconnect/asc.py get reviewSubmissions/635f739b-cb12-4e66-bacd-9f1f07d428e9'
-    ssh nathan@10.0.0.110 '~/.appstoreconnect/asc.py get appStoreVersions/20c097c4-ef8e-4c30-8519-f7f3894dfc4b'
+    ssh nathan@10.1.0.9 '~/.appstoreconnect/asc.py get /v1/reviewSubmissions/635f739b-cb12-4e66-bacd-9f1f07d428e9'   # paths start with /v1/
+    ssh nathan@10.1.0.9 '~/.appstoreconnect/asc.py get /v1/appStoreVersions/20c097c4-ef8e-4c30-8519-f7f3894dfc4b'
 
 States: `WAITING_FOR_REVIEW` / `IN_REVIEW` = still pending (do nothing, freeze holds); `COMPLETE` with the version
 `READY_FOR_SALE` or `PROCESSING_FOR_DISTRIBUTION` = approved; `UNRESOLVED_ISSUES` / version `REJECTED` = rejected
 (message in the Resolution Center; Nathan pastes it). Nathan lifts the freeze explicitly; that sentence is the
 start signal for everything below.
+
+**Result of Step 0 on 2026-10-22 18:30 PDT (from the new Mac): REJECTED AGAIN.** reviewSubmission state
+`UNRESOLVED_ISSUES`, version 1.0 `appStoreState: REJECTED`, the submission item `REJECTED`; build 2 is VALID. The
+message is only in the Resolution Center (App Store Connect web; no API; no mail in Gmail): Nathan reads and pastes
+it. Then Path B.
 
 ## Path A: APPROVED (1.0 build 2 is live)
 
@@ -63,9 +69,9 @@ start signal for everything below.
    `CURRENT_PROJECT_VERSION = 3`; ASC numbers the build), update "What's New (1.1)" in `docs/APPSTORE.md` (the
    not-detected option, the "Filtered:" caption, Publish text switches, the survival hint, hidden demo data, the
    source part in the title), commit.
-   - Simulator against the DEV service: `T2_MAC=10.0.0.110 T2Mobile/ops/test.sh ios` (rsyncs `ios/`, 8 unit +
+   - Simulator against the DEV service: `T2_MAC=10.1.0.9 T2Mobile/ops/test.sh ios` (rsyncs `ios/`, 8 unit +
      9 UI expected).
-   - Simulator against the LIVE service (the pre-upload check): `ssh nathan@10.0.0.110 'cd ~/Claude/T2Mobile &&
+   - Simulator against the LIVE service (the pre-upload check): `ssh nathan@10.1.0.9 'cd ~/Claude/T2Mobile &&
      ./ios/tools/sim_matrix.sh "iPhone 18 Pro":light'` (no `TEST_RUNNER_T2_SERVICE` = the app's default
      https://www.fiveprime.org/api/t2). Test09 needs the live cptac.db with `fill_options`, so run it after step 3.
    - Upload: Nathan unlocks the keychain in HIS terminal on the Mac

@@ -20,6 +20,12 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 
 ## Checkpoints (newest first)
 
+### 2026-10-22 23:25 PDT: Go rounds A + 2 committed after a green run on t2api-hard
+- `devstack.sh up hard 3870` + `test hard equiv fuzz-api abuse app-service`: equiv 76, fuzz 6, abuse 29, app-service
+  117/30/19/24, all pass (counts above the round-0 numbers because agents B and C had already added tests to the
+  shared tree). Committed as the Go hardening commit. Findings A1, A3, A4, A6, A7, A8, A9, A12 and D10 (service
+  side) are FIXED; A2, A5, A11 stay OPEN decisions.
+- Still running: agent B (Shiny), agent C (data layer), the Mac build + UI suite of the iOS round.
 ### 2026-10-22 23:15 PDT: production RESTORED to the released image (manual mode, Nathan's instruction)
 - Nathan: "in manual mode now, make sure the api is the version the current iOS release candidate uses, continue
   with a separate development environment." The restore script ran: t2api and t2api-web back on 79459df33aa4
@@ -151,18 +157,18 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 ### Review D: iOS + ops (2026-10-22)
 | # | file | sev | finding | status |
 |---|---|---|---|---|
-| D1 | deploy.sh:50,85 | HIGH | data-dir regex stops at `b`: stale staging, no-op `data` | fixing (agent D-ops) |
+| D1 | deploy.sh:50,85 | HIGH | data-dir regex stops at `b`: stale staging, no-op `data` | fixed (ops commit fa8dbf5) |
 | D2 | /scratch/Docker/Nginx/nginx.conf API locations | medium (prod) | X-Real-IP not inherited: contact limit global, usage one client | patch prepared in ops/pending/, apply after the freeze |
 | D3 | Stats.swift:145-169 | HIGH | chi-square upper tail = 1-(1-Q) underflows to 0 | fixing (agent D-iOS) |
 | D4 | PlotBuilder.swift | med-high | no T2_LIMITS category caps | fixing |
 | D5 | AppModel.loadValues | medium | filled columns shown as unfilled when the plain fetch fails | fixing |
 | D6 | AppModel open/run | medium | no generation token; half-applied state; reopen loses the source part | fixing |
-| D7 | deploy.sh rollback-service | medium | t2api-web keeps the bad image; minute-resolution tag | fixing |
-| D8 | deploy.sh api-mode off | med-high | restores the OLDEST backup, no backup first | fixing |
-| D9 | service/test.sh | medium | defaults to production; load test hits live users | fixing |
-| D10 | nginx cache key | med-low | junk params fill the 4 GB cache | service 400 on unknown params (Go-2) + key from known args in the pending patch |
-| D11 | deploy.sh nginx/rollback-nginx | medium | backup from the image, empty-file hazard, prefix clash | fixing |
-| D12 | ops/allow-deploy.py | medium | allows every deploy.sh step without a prompt | fixing (status/check only) + FREEZE file guard in deploy.sh |
+| D7 | deploy.sh rollback-service | medium | t2api-web keeps the bad image; minute-resolution tag | fixed (fa8dbf5) |
+| D8 | deploy.sh api-mode off | med-high | restores the OLDEST backup, no backup first | fixed (fa8dbf5) |
+| D9 | service/test.sh | medium | defaults to production; load test hits live users | fixed (fa8dbf5) |
+| D10 | nginx cache key | med-low | junk params fill the 4 GB cache | fixed service-side (400 on unknown/repeated/malformed params); key from known args in ops/pending/ |
+| D11 | deploy.sh nginx/rollback-nginx | medium | backup from the image, empty-file hazard, prefix clash | fixed (fa8dbf5) |
+| D12 | ops/allow-deploy.py | medium | allows every deploy.sh step without a prompt | fixed (fa8dbf5): status/check rules only; FREEZE guard |
 | D13-16, D19-21, D24 | iOS | low-medium | LocalizedError/offline text; live-bound baseURL; KM median minmin; 0/1 numeric marker; URLCache; User-Agent; Column validation; ForEach ids; CSV formula escaping; contact byte cap; kmMaxDays unit; PrivacyInfo.xcprivacy; NSAllowsLocalNetworking Release | fixing |
 | D17-18 | Nginx container/network | low-med (prod) | error_log file in container; no cap_drop/read_only/pids/mem limits; flat network | README in ops/pending/ for Nathan's decision |
 | D22-23 | contact mail, pool.sh, testflight.sh | low | sendmail `.`, STATE races; pool restart timing; upload-only version check | fixing the mail + testflight items; pool.sh is production (after the freeze) |
@@ -170,15 +176,15 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 ### Review A: Go service (2026-10-22)
 | # | file | sev | finding | status |
 |---|---|---|---|---|
-| A1 | main.go handleProbes | medium | full sort of all matches before cut to limit; ~55 ms per q="" on TCGA; distinct q bypass the Nginx cache | fixing (agent A) |
+| A1 | main.go handleProbes | medium | full sort of all matches before cut to limit; ~55 ms per q="" on TCGA; distinct q bypass the Nginx cache | fixed (Go hardening commit) |
 | A2 | cache.go LRU | medium | no scan resistance: a client walking distinct probes evicts the hot set (512 MB ~ 5-6k TCGA columns) | OPEN decision: 2Q/segmented LRU, or accept (Nginx per-IP limits bound the rate) |
-| A3 | main.go middleware | medium (latent) | recovered(gzipped(mux)): a panic commits 200 + gzip header before fail(500) | fixing |
-| A4 | main.go gzipped | low-med | new gzip.Writer per request incl. 304/errors; 304 carries Content-Encoding | fixing |
+| A3 | main.go middleware | medium (latent) | recovered(gzipped(mux)): a panic commits 200 + gzip header before fail(500) | fixed |
+| A4 | main.go gzipped | low-med | new gzip.Writer per request incl. 304/errors; 304 carries Content-Encoding | fixed |
 | A5 | compose -cache-mb per dataset | low-med | 3 datasets x 512 MB cache + 48 conns x 3 x 4 MB page cache can exceed the 4g limit; SetMemoryLimit does not see sqlite memory; dev pids_limit 256 tight for 144 blocked conns | OPEN decision (compose change = after the freeze): lower -db-conns or cache_size, verify production pids_limit |
-| A6 | dataset.go:144 version | low | size+mtime seconds not collision-proof; /v1/datasets has no ETag and never runs unchanged() | fixing (change counter; ETag on /v1/datasets) |
-| A7 | main.go probes search | low | Cache-Control public 86400 ignores v: stale search hits up to a day after a swap | fixing |
-| A8 | main.go:258 | low | panic log prints the raw path (%s) | fixing (%q) |
-| A9 | contact.go | low | honeypot early return before the limiter (unbounded log lines); oneLine keeps U+2028/9 and bidi controls; XFF first vs last between contact.go and usage.go | fixing |
+| A6 | dataset.go:144 version | low | size+mtime seconds not collision-proof; /v1/datasets has no ETag and never runs unchanged() | fixed |
+| A7 | main.go probes search | low | Cache-Control public 86400 ignores v: stale search hits up to a day after a swap | fixed |
+| A8 | main.go:258 | low | panic log prints the raw path (%s) | fixed |
+| A9 | contact.go | low | honeypot early return before the limiter (unbounded log lines); oneLine keeps U+2028/9 and bidi controls; XFF first vs last between contact.go and usage.go | fixed (bot hits: per-IP budget only) |
 | A10 | cache.go key | low | `name|fill` key could collide with a probe literally named so; sparse+fill caches a duplicate copy | rejected (unrealistic names; duplicate only if such data exists) |
 | A11 | Dockerfile/go.mod | low | Go 1.23 out of support since 2025-08; sqlite bump needed for a newer toolchain | OPEN decision for Nathan (dependency bump + perf re-check; not under the freeze) |
-| A12 | main.go | low | /v1/datasets re-marshalled per request; no graceful shutdown | fixing |
+| A12 | main.go | low | /v1/datasets re-marshalled per request; no graceful shutdown | fixed |

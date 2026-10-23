@@ -85,14 +85,14 @@ T2_FIG_MAX_PIXELS = 60e6
 sanitize_t2_figure = function(input) {
     one = function(v, allowed, default) {
         v = as.character(unlist(v))[1]
-        if (length(v) == 1 && !is.na(v) && v %in% allowed) v else default
+        if (!is.na(v) && v %in% allowed) v else default
     }
     preset = one(input$pub_preset, names(T2_FIG_PRESETS), T2_FIG_DEFAULT_PRESET)
     pr = T2_FIG_PRESETS[[preset]]
     units = one(input$pub_units, T2_FIG_UNITS, pr$units)
     side = function(v, default) {
         v = suppressWarnings(as.numeric(unlist(v))[1])
-        if (length(v) != 1 || !is.finite(v) || v <= 0) v = default
+        if (!is.finite(v) || v <= 0) v = default
         min(max(.t2_to_in(v, units), T2_FIG_MIN_IN), T2_FIG_MAX_IN)
     }
     ## a size typed in other units than the preset's still means "the preset"
@@ -113,7 +113,7 @@ sanitize_t2_figure = function(input) {
         dpi = new
     }
     ## the switches of the figure's text elements: anything but a clean TRUE/FALSE means on
-    sw = function(v) { v = suppressWarnings(as.logical(unlist(v))[1]); if (length(v) == 1 && !is.na(v)) v else TRUE }
+    sw = function(v) { v = suppressWarnings(as.logical(unlist(v))[1]); if (!is.na(v)) v else TRUE }
     src = sw(input$pub_source)
     list(show_title = sw(input$pub_show_title), show_subtitle = sw(input$pub_show_subtitle),
          show_caption = sw(input$pub_show_caption), show_axis_titles = sw(input$pub_show_axis_titles),

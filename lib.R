@@ -338,8 +338,6 @@ t2_plot_refusal = function(data, x, y = NULL, color = NULL, size = NULL, facet =
 ################################################################
 ## make a plotter function
 ################################################################
-interactive_plotter = function(...) { plotter( ... ) }
-
 
 plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet = NULL, nonormal = TRUE,
     cohort = 'all', extra = NULL,  facet.formula = NULL, smooth = FALSE, allComplete = FALSE,
@@ -374,15 +372,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("ribbon", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 0.5) )
-    ##
-    ##myargs = as.list(match.call())
-    ##cat(file = stderr(), paste(names(myargs), myargs, collapse =','), '\n')
-    ## SET VARIABLES - INTERACTIVE TESTING ONLY
-    if(FALSE){ # for testing
-        x = 'CD8A';  y = 'FOXP3'; color = 'blue'; shape = NULL; size = 'FOXP3'; facet = 'KRAS.mut'; cohort = NULL; db = tcga; extra = NULL; facet.formula = NULL; smooth = FALSE; alpha = 0.5; static.size = 9; static.strip = 10; static.labels = 10; static.titles = 10
-    }
     ## retrieve tcga data  HELP
-    ##list.of.markers = sapply( c( x, y, color, shape, size, facet, c(extra) ), as.name)
     ## only include conditioning variables if actually being used
     active_condition = if (!is.null(condition) && pcortype != 'none') condition else NULL
     list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(active_condition)  )
@@ -415,7 +405,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     summary_lines = c(summary_lines, t2_fill_summary(fill_info))
     ## per-variable completeness
     all_vars = unique(c(x, y, color, shape, size, facet, active_condition))
-    all_vars = all_vars[!is.null(all_vars) & all_vars != "" & all_vars %in% colnames(data)]
+    all_vars = all_vars[all_vars != "" & all_vars %in% colnames(data)]
     var_counts = sapply(all_vars, function(v) {
         if (v %in% colnames(data)) sum(!is.na(data[, v])) else NA
     })
@@ -437,7 +427,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     }
     ## all aesthetic variables
     all_aes_vars = unique(c(x, y, color, size, facet))
-    all_aes_vars = all_aes_vars[!is.null(all_aes_vars) & all_aes_vars != "" & all_aes_vars %in% colnames(data)]
+    all_aes_vars = all_aes_vars[all_aes_vars != "" & all_aes_vars %in% colnames(data)]
     if (length(all_aes_vars) > length(plot_vars)) {
         complete_all = sum(complete.cases(data[, all_aes_vars, drop = FALSE]))
         summary_lines = c(summary_lines,
@@ -550,7 +540,6 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         ## the median over the X probes of their z-scores, per sample (NA-aware)
         data[ , newvar]  = t2_row_medians(scale(as.matrix(data[, x, drop = FALSE])))
         x = newvar
-        ##x = paste(x, sep = '.', collapse = '.')
     }
     ## z-score Y probes if requested (useful for putting different-magnitude probes on same scale)
     if (zscore_y) {
@@ -580,7 +569,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             ## user has a different color variable — facet by probe, fill boxes by probe
             multi_y_fill = TRUE
             facet = c("probe", facet)
-            facet = facet[!is.null(facet) & facet != ""]
+            facet = facet[facet != ""]
         } else {
             ## color by probe identity, no auto-faceting
             color = "probe"
@@ -609,9 +598,6 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                               n_probes = if (isTRUE(multi_y)) length(orig_y) else 0)
     if (!is.null(refusal)) return(t2_message_plot(refusal$msg, summary = plot_summary, hint = refusal$hint,
                                                   fig_width = fig_width, title_size = title_size))
-    ##if ( nrow(data) != 0 & is.factor( data[ , x] ) & length(levels( data[ , x] )) < 1 )  {
-    ##    return( ggplot() + ggtitle("Sorry, your x variable seems to be categorical and there seems to be less than two categories to plot") )
-    ##}
     ## I really need to deal with formulae generally
     if( evaluate_vars ) {
         list.of.markersxy = unlist(strsplit( c(x,y), split = " " ))
@@ -949,16 +935,12 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
     ## only whitelisted plotter arguments (see input_validation.R); anything a
     ## client invents (facet.formula, extra, evaluate_vars, ...) is dropped
     input = input[ names(input) %in% T2_INPUT_ARGS ]
-    if(FALSE){
-    input =   list(x='ABCA1',y='HLA-E',shape = "",size=NULL,color="",static.size="5")
-}
     ## remove empty input variables and names
     input = input[ ! sapply(input, is.null) ]
    input = input[ input != 'none']
     input = input[ input != '']
     input = input[ names(input) != '']
-    numeric_vars = T2_STYLE_ARGS
-    input[ which(names(input) %in% numeric_vars) ] = as.numeric( input[ names(input) %in% numeric_vars ] )
+    input[ which(names(input) %in% T2_STYLE_ARGS) ] = as.numeric( input[ names(input) %in% T2_STYLE_ARGS ] )
     ## drop the dataset selector itself (not a plotter argument) and inject the
     ## plot context (the active data source, its roles, the chosen samples) AFTER
     ## the scalar-cleaning filters above (ctx is a list and must not hit `input != ''`).
@@ -1018,67 +1000,4 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
     }
 
     do.call(plotter, input)
-}
-
-if(FALSE) {
-    test_plot1 = function(input) {
-        input = input[ input != 'none']
-        input = input[ input != '']
-        print(input)
-        ##if( input$cohort[[1]] == 'all' ) input$cohort = mycohorts
-        plotter(
-            x = input$x,
-            y = input$y,
-            coordflip = input$coordflip,
-            color = input$color,
-            shape = input$shape,
-            size = input$size,
-            static.size = as.numeric(input$static.size),
-            static.labels = as.numeric(input$static.labels),
-            static.titles = as.numeric(input$static.titles),
-            ncols = as.numeric(input$ncols),
-            alpha = as.numeric(input$alpha),
-            facet = input$facet,
-            cohort = input$cohort,
-            extra = input$extra,
-            facet.formula = input$facet.formula,
-            smooth = input$smooth,
-            scales = input$fscales,
-            nonormal = input$nonormal   )
-    }
-
-
-
-    ftest = function(...){
-        arglist = as.list(  sys.call()  )
-        print(arglist)
-        arglist = arglist[names(arglist) != ""]
-        arglist = arglist[arglist != ""]
-        print(arglist)
-    }
-
-    input = list(x = 'CDKN2A', y = 'CD8A')
-    do.call(ftest, input)
-
-
-    input = shiny::isolate(shiny::reactiveValues(x = 'CDKN2B.mut', y = 'CD8A', cohort = "", ncols = "2"))
-
-    input = shiny::isolate(shiny::reactiveValues(
-        coordflip = FALSE,
-        facet =  'subtype',
-        cohort =  NULL,
-        static.titles = 13,
-        alpha = 0.65,
-        static.labels = 14,
-        color = 'CD274',
-        smooth = TRUE,
-        fscales = 'fixed',
-        x = 'PIK3CA.mut',
-        y = 'CD8A',
-        static.strip = 10,
-        static.size = 12,
-        ncols = 12 ) )
-    fun_plot1(input)
-
-
 }

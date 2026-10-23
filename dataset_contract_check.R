@@ -93,6 +93,8 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE, deep = TRUE) 
     meta <- setNames(as.list(m$value), m$key)
   }
   getm <- function(k) { v <- meta[[k]]; if (is.null(v) || is.na(v)) "" else as.character(v) }
+  levels_of <- function(col) if (nzchar(col) && col %in% clin)
+    as.character(DBI::dbGetQuery(con, sprintf("SELECT DISTINCT %s AS v FROM clinpheno WHERE %s IS NOT NULL", qi(col), qi(col)))$v) else NULL
   req <- c("title", "label", "cohort_col", "tte_variables", "about")
   add("contract", "dataset_meta: required keys present", function() {
     if (!has("dataset_meta")) return(F("no dataset_meta table"))
@@ -128,13 +130,12 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE, deep = TRUE) 
     ## whole value is itself a level of its column (levels such as "Acute Myeloid Leukemia, Induction ...")
     lk <- c(default_cohorts = "cohort_col", heme_values = "cohort_col", sampletype_levels = "sampletype_col",
             normal_label = "sampletype_col", sources = "source_col")
-    clin0 <- cols("clinpheno"); bad <- character(0)
+    bad <- character(0)
     for (k in names(lk)) {
       v <- getm(k)
       if (!grepl(",", v, fixed = TRUE) || grepl("|", v, fixed = TRUE)) next
       cc <- getm(lk[[k]])
-      lv <- if (nzchar(cc) && cc %in% clin0) DBI::dbGetQuery(con, sprintf("SELECT DISTINCT %s AS v FROM clinpheno", qi(cc)))$v else character(0)
-      if (!v %in% as.character(lv)) bad <- c(bad, k)
+      if (!v %in% levels_of(cc)) bad <- c(bad, k)
     }
     if (length(bad)) F(paste("comma-separated, use '|':", paste(bad, collapse = ", "))) else P()
   })
@@ -147,15 +148,14 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE, deep = TRUE) 
     bad <- character(0)
     for (k in rc) { v <- getm(k); if (nzchar(v) && !v %in% clin) bad <- c(bad, sprintf("%s=%s", k, v)) }
     if (length(bad)) F(paste("not a clinpheno column:", paste(bad, collapse = ", ")))
-    else P(paste(sprintf("%s=%s", rc[nzchar(vapply(rc, getm, ""))], vapply(rc, getm, "")[nzchar(vapply(rc, getm, ""))]), collapse = " "))
+    else { vals <- vapply(rc, getm, ""); P(paste(sprintf("%s=%s", rc[nzchar(vals)], vals[nzchar(vals)]), collapse = " ")) }
   })
   add("contract", "default_cohorts are cohort levels", function() {
     dc <- splitl(getm("default_cohorts"))
     if (!length(dc)) return(P("none declared"))
     cc <- getm("cohort_col")
     if (!nzchar(cc) || !cc %in% clin) return(F("default_cohorts set but cohort_col is not a clinpheno column"))
-    lv <- DBI::dbGetQuery(con, sprintf("SELECT DISTINCT %s AS v FROM clinpheno WHERE %s IS NOT NULL", qi(cc), qi(cc)))$v
-    bad <- setdiff(dc, as.character(lv))
+    bad <- setdiff(dc, levels_of(cc))
     if (length(bad)) F(paste("not levels of", cc, ":", paste(bad, collapse = ", "))) else P(paste(length(dc), "cohorts"))
   })
 
@@ -177,7 +177,7 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE, deep = TRUE) 
   if (length(tte)) for (v in tte) local({
     v <- v; nm <- v$name %||% "?"
     add("contract", sprintf("tte %s: well-formed", nm), function() {
-      f <- c("name", "label", "event_col", "time_col", "time_unit", "description")
+      f <- T2_TTE_FIELDS
       miss <- f[!vapply(f, function(k) is.character(v[[k]]) && length(v[[k]]) == 1 && nzchar(v[[k]]), logical(1))]
       miss <- setdiff(miss, "description")   # description is advisory
       if (length(miss)) F(paste("missing/empty fields:", paste(miss, collapse = ", "))) 
@@ -329,8 +329,6 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE, deep = TRUE) 
     }
     if (length(bad)) F(paste("not a variable of the dataset:", paste(bad, collapse = ", "))) else P()
   })
-  levels_of <- function(col) if (nzchar(col) && col %in% clin)
-    as.character(DBI::dbGetQuery(con, sprintf("SELECT DISTINCT %s AS v FROM clinpheno WHERE %s IS NOT NULL", qi(col), qi(col)))$v) else NULL
   add("contract", "sampletype_levels cover every sample type", function() {
     lv <- splitl(getm("sampletype_levels")); act <- levels_of(getm("sampletype_col"))
     if (!length(lv)) return(P("none declared"))
@@ -351,8 +349,9 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE, deep = TRUE) 
   })
 
   ## ---- the fact tables, row by row (deep only: one pass each) ---------------------
-  if (!deep) add("integrity", "tcgai / tcgacati row scans (NULL, orphan, duplicate)", function() SKIP("deep = FALSE"))
-  if (deep) {
+  if (!deep) {
+    add("integrity", "tcgai / tcgacati row scans (NULL, orphan, duplicate)", function() SKIP("deep = FALSE"))
+  } else {
     add("integrity", "tcgai: no NULL or orphan keys/types, no duplicate fact", function() {
       if (!have_cols("tcgai", c("samplekey", "probekey", "type"))) return(P("schema check says"))
       r <- DBI::dbGetQuery(con, "SELECT COUNT(*) n, COALESCE(SUM(samplekey IS NULL OR probekey IS NULL OR type IS NULL), 0) nul,

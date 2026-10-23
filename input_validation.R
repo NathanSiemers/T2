@@ -10,7 +10,6 @@
 ## UI default.
 ## ============================================================================
 
-## (cohort: "all" among several picks reduces the choice to "all"; see .t2_cohort_pick)
 ## plotter() arguments that may come from the browser (the plot context --
 ## dataset, roles, label, Filter-tab samples, sample rules -- is injected by the
 ## server afterwards).
@@ -51,19 +50,19 @@ T2_CONTROLS = list(
 ## single value from `allowed`, else default
 .t2_one = function(v, allowed, default) {
     v = as.character(unlist(v))[1]
-    if (length(v) == 1 && !is.na(v) && v %in% allowed) v else default
+    if (!is.na(v) && v %in% allowed) v else default
 }
 
 ## single logical, else default
 .t2_flag = function(v, default = FALSE) {
     v = suppressWarnings(as.logical(unlist(v))[1])
-    if (length(v) == 1 && !is.na(v)) v else default
+    if (!is.na(v)) v else default
 }
 
 ## nearest value from a numeric choice list, else default
 .t2_num = function(v, choices, default) {
     v = suppressWarnings(as.numeric(unlist(v))[1])
-    if (length(v) != 1 || is.na(v)) return(default)
+    if (is.na(v)) return(default)
     choices[which.min(abs(choices - v))]
 }
 

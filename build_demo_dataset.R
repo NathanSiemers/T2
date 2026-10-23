@@ -130,15 +130,6 @@ tested <- rbind(
   data.frame(sample = samples, value = 1L, type = "driver", stringsAsFactors = FALSE)
 )
 
-## probe_types lookup (probekey, type) — distinct, built from the NUMERIC
-## fact table only, exactly as 250-create_views.R does
-## (SELECT DISTINCT probekey, type FROM tcgai). Categorical (driver) probes
-## live only in tcgacati and must NOT appear here, otherwise the dense numeric
-## tcgas view would surface them with the CASE-ELSE-0 default and gitr would
-## never fall through to the categorical tcgacats view.
-probe_types <- unique(data.frame(
-  probekey = probe_key[expr_probes], type = "expr", stringsAsFactors = FALSE))
-
 ## cohorts table from tissue origins
 co <- sort(unique(tissues))
 cohorts_tbl <- data.frame(
@@ -185,7 +176,6 @@ dbWriteTable(con, "allprobes",    allprobes_tbl, overwrite = TRUE)
 dbWriteTable(con, "tested",       tested,        overwrite = TRUE)
 dbWriteTable(con, "tcgai",        tcgai,         overwrite = TRUE)
 dbWriteTable(con, "tcgacati",     tcgacati,      overwrite = TRUE)
-dbWriteTable(con, "probe_types",  probe_types,   overwrite = TRUE)
 dbWriteTable(con, "clinpheno",    clinpheno,     overwrite = TRUE)
 dbWriteTable(con, "cohorts",      cohorts_tbl,   overwrite = TRUE)
 t2_write_types(con, type_spec)

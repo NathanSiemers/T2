@@ -50,8 +50,8 @@ if (!exists("check_dataset_contract")) source(file.path(.HROOT, "dataset_contrac
   if (nzchar(api)) { assign("T2_API_URL", "", envir = globalenv()); on.exit(assign("T2_API_URL", api, envir = globalenv()), add = TRUE) }
   r <- tryCatch(.resolve_roles(name, dbpath),
                 error = function(e) { message("sql_tests: could not resolve roles for ", name, " (", conditionMessage(e),
-                                              "); using the canonical TCGA map")
-                                      list(roles = gitr_default_roles, defaults = list(), title = name, label = name) })
+                                              "); using no roles")
+                                      list(roles = NULL, defaults = list(), title = name, label = name) })
   list(name = name, roles = r$roles, defaults = r$defaults)
 }
 

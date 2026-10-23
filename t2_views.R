@@ -154,14 +154,12 @@ drop_t2_dataless_probes <- function(con) {
   gone <- DBI::dbGetQuery(con, "SELECT probe FROM probes p WHERE NOT EXISTS (SELECT 1 FROM withdata w WHERE w.probekey = p.key)")$probe
   if (length(gone)) {
     ## the probes delete and the allprobes delete go together: allprobes loses a name only when its probes row went
-    ndel <- DBI::dbExecute(con, "DELETE FROM probes WHERE NOT EXISTS (SELECT 1 FROM withdata w WHERE w.probekey = probes.key)")
-    if (ndel > 0) {
-      DBI::dbExecute(con, "DROP TABLE IF EXISTS gone")
-      DBI::dbExecute(con, "CREATE TEMP TABLE gone(probe TEXT)")
-      DBI::dbWriteTable(con, "gone", data.frame(probe = gone, stringsAsFactors = FALSE), append = TRUE, temporary = TRUE)
-      DBI::dbExecute(con, "DELETE FROM allprobes WHERE probe IN (SELECT probe FROM gone)")
-      DBI::dbExecute(con, "DROP TABLE gone")
-    }
+    DBI::dbExecute(con, "DELETE FROM probes WHERE NOT EXISTS (SELECT 1 FROM withdata w WHERE w.probekey = probes.key)")
+    DBI::dbExecute(con, "DROP TABLE IF EXISTS gone")
+    DBI::dbExecute(con, "CREATE TEMP TABLE gone(probe TEXT)")
+    DBI::dbWriteTable(con, "gone", data.frame(probe = gone, stringsAsFactors = FALSE), append = TRUE, temporary = TRUE)
+    DBI::dbExecute(con, "DELETE FROM allprobes WHERE probe IN (SELECT probe FROM gone)")
+    DBI::dbExecute(con, "DROP TABLE gone")
   }
   DBI::dbExecute(con, "DROP TABLE withdata")
   length(gone)

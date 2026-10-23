@@ -77,7 +77,7 @@ automatically.
 
 | File | Change |
 |---|---|
-| `dataset_registry.R` | **new** — discovers datasets (`tcga.db` + `datasets/*.db`), resolves each one's role map (TCGA fallback → `dataset_meta` → generic introspection), exposes `list_datasets()`, `dataset_info()`, `dataset_db_path()`. |
+| `dataset_registry.R` | **new** — discovers datasets (`tcga.db` + `datasets/*.db`), resolves each one's role map (TCGA fallback → `dataset_meta` → generic introspection), exposes `discover_datasets()`, `dataset_info()`. |
 | `database_connection_shiny.R` | added `open_dataset_con(dbfile)`; default `con` still points at `tcga.db` for startup. |
 | `gitr.R` | added `dbfile` + `roles` params; the TCGA-specific clinical synthesis (`subtype`/`cohort`/`lcohort`), the nonormal/noheme filters, and sample-type factoring are now driven by the role map and guarded by column presence. |
 | `lib.R` | added `load_dataset_bundle(name)` — opens the chosen db and computes every dataset-anchored object (probe lists, cohorts, role map, defaults, title); `plotter`/`fun_plot1`/`fun_table1` thread `dbfile`/`roles`/`dataset_label`; de-hardcoded the TCGA-only `complete.cases` columns and plot caption. |

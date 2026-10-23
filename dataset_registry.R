@@ -45,7 +45,6 @@ DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
   setNames(as.list(m$value), m$key)
 }
 
-## comma-separated meta value -> character vector (empty string -> character(0))
 ## A list stored in dataset_meta. Values can contain commas ("Acute Myeloid
 ## Leukemia, Induction Failure Subproject"), so builders separate with "|"; a
 ## string without "|" is split on "," (databases built before October 2026).
@@ -67,7 +66,7 @@ DATASETS_DIR <- Sys.getenv("T2_DATASETS_DIR", "datasets")
   roles <- list(
     cohort_col        = meta$cohort_col     %||% NA_character_,
     subtype_col       = meta$subtype_col    %||% NA_character_,
-    sampletype_col    = (meta$sampletype_col %||% ""),
+    sampletype_col    = meta$sampletype_col %||% "",
     ## normal_label may be a LIST of non-tumor sample types
     normal_label      = .split_meta(meta$normal_label),
     heme_values       = .split_meta(meta$heme_values),
@@ -121,15 +120,6 @@ discover_datasets <- function() {
   out[order(ord, names(out))]
 }
 
-## Names of available datasets.
-list_datasets <- function() names(discover_datasets())
-
-## The default dataset name (TCGA if present, else the first discovered).
-default_dataset <- function() {
-  d <- list_datasets()
-  if ("TCGA" %in% d) "TCGA" else if (length(d)) d[1] else stop("No datasets found")
-}
-
 ## Full descriptor for one dataset file: name, path, roles, defaults, title.
 dataset_info <- function(name) {
   d <- discover_datasets()
@@ -139,9 +129,6 @@ dataset_info <- function(name) {
   list(name = name, path = path, roles = r$roles,
        defaults = r$defaults, title = r$title, label = r$label)
 }
-
-## Convenience: db path for a dataset name.
-dataset_db_path <- function(name) dataset_info(name)$path
 
 ## The roles of a database FILE (what gitr(roles = NULL) uses): dataset_meta, verbatim.
 dataset_roles <- function(path) .resolve_roles(.dataset_name_of(path), path)$roles

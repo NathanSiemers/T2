@@ -79,7 +79,6 @@ fmtp <- function(p) {
 ## list(grp = factor, n = number of groups).
 t2_quantile_groups <- function(m, n_groups, min_n = 5L) {
   br <- unique(stats::quantile(m, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE))
-  if (length(br) < 2) return(NULL)
   made <- length(br) - 1L
   if (made < 2) return(NULL)
   labs <- if (made == 2) c("Low", "High") else if (made == 3) c("Low", "Mid", "High") else paste0("Q", seq_len(made))
@@ -227,12 +226,12 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
       ggtitle(title %||% sprintf("%s by %s %s-groups (within panel) — faceted by %s",
                                  elabel, ylab, n_made, paste(facet, collapse = " × ")))
     g <- .km_strip_ci_border(g)                      # no outline on CI bands
-    attr(g, "t2summary") <- sprintf(
+    attr(g, "t2summary") <- paste0(sprintf(
       "Faceted KM: %s by %s %d-groups computed WITHIN each %s panel (n=%d%s%s%s). Per-panel log-rank p shown.",
       endpoint, ylab, n_made, paste(facet, collapse = " x "), nrow(df),
       if (capped) sprintf(", ≤%d%s", as.integer(max_time), unit$short) else "", cond_note,
-      if (dropped) sprintf(", %d small panel(s) dropped", dropped) else "")
-    attr(g, "t2summary") <- paste0(attr(g, "t2summary"), if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
+      if (dropped) sprintf(", %d small panel(s) dropped", dropped) else ""),
+      if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
     attr(g, "km_data") <- df                          # sample, grp, facet — for tests
     attr(g, "t2fill") <- t2_fill_of(d, rows = as.character(d[["sample"]]) %in% df$sample)   # the answer's word on not-detected values (lib.R)
     return(g)
@@ -307,18 +306,13 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                            cox_p = cp, medians = medv, n_groups = n_groups,
                            max_time = if (capped) max_time else NA,
                            markers = y, adjusted_for = if (do_cond) cond_cols else NULL)
-  attr(g, "t2summary") <- sprintf(
+  attr(g, "t2summary") <- paste0(sprintf(
     "%s ~ %s %s (n=%d%s%s).  Median %s: %s.  Log-rank p=%s.  Cox HR/SD=%.2f (%.2f-%.2f), p=%s.",
     endpoint, ylab, grp_desc, nrow(df), if (capped) sprintf(", ≤%d%s", as.integer(max_time), unit$short) else "",
-    cond_note, endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp))
-  attr(g, "t2summary") <- paste0(attr(g, "t2summary"), if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
+    cond_note, endpoint, med_txt, fmtp(lp), hr, lo, hi, fmtp(cp)),
+    if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
   attr(g, "km_data") <- df                            # sample, grp - for tests
   attr(g, "t2fill") <- t2_fill_of(d, rows = as.character(d[["sample"]]) %in% df$sample)   # the answer's word on not-detected values (lib.R)
   g
 }
 
-## save a ggsurvplot (curve + risk table) or faceted plot to a file
-save_km <- function(g, file, width = 950, height = 840, res = 110) {
-  grDevices::png(file, width = width, height = height, res = res); print(g); grDevices::dev.off()
-  invisible(file)
-}

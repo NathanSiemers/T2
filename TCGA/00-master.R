@@ -8,7 +8,6 @@ mysql  = FALSE
 mysqldb = 'prod'
 download = FALSE
 optimize = FALSE
-xena.force = FALSE
 Sys.setenv("VROOM_CONNECTION_SIZE" = 1e9)
 ## Run from THIS script's own directory (TCGA/) so pipeline-relative paths —
 ## sibling scripts, Data/, ../tcga.db, ../gitr.R — all resolve. Works for

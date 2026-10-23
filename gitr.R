@@ -55,9 +55,6 @@ T2_LIMITS = list(
 ## column or filter. There is NO default map: gitr() over a database file reads
 ## the roles verbatim from that file's dataset_meta (dataset_roles() in
 ## dataset_registry.R); over the service they come from /meta (t2_api_resolve).
-## The object below stays only so that older scripts that mention it fail soft
-## (NULL = "look the roles up in the file").
-gitr_default_roles = NULL
 
 ## Synthesise the virtual columns (subtype / cohort / lcohort) on a clinpheno
 ## frame from the dataset's role map, guarded by column presence so datasets
@@ -218,6 +215,7 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 
   clinpheno = gitr_clinpheno(gitrconn, dbfile)
   clinpheno_cols = colnames(clinpheno)
+  clin_virtual = t2_add_virtual_cols(clinpheno, roles)   # clinpheno + subtype / cohort / lcohort, used below twice
   ## synthetic columns created by the phenos=TRUE mutate below
   virtual_cols = c('subtype', 'cohort', 'lcohort')
 
@@ -234,10 +232,8 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## start with clinpheno sample list
   rout = clinpheno[, 'sample', drop = FALSE]
 
-  ## fetch clinpheno columns directly
-  if (length(clin_probes) > 0) {
-    rout = clinpheno[, c('sample', clin_probes), drop = FALSE]
-  }
+  ## fetch clinpheno columns directly (no clinical probes: the 'sample' column alone)
+  rout = clinpheno[, c('sample', clin_probes), drop = FALSE]
 
   ## fetch db probes in a single query using the dense views
   if (length(db_probes) > 0) {
@@ -251,7 +247,7 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     ## not-detected values: the fill, and what the answer would say about it (attributes at the end)
     fill = if (fill %in% c("zero", "floor")) fill else "na"
     fl = gitr_fill_numeric(gitrconn, num_result, db_probes, fill,
-                           setNames(t2_add_virtual_cols(clinpheno, roles)$cohort %||% rep(NA, nrow(clinpheno)), clinpheno$sample))
+                           setNames(clin_virtual$cohort %||% rep(NA, nrow(clinpheno)), clinpheno$sample))
     num_result = fl$rows
 
     ## try categorical view for any probes not found in numeric
@@ -296,7 +292,7 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## too. phenos = TRUE returns this frame; phenos = FALSE returns only the requested columns (rout)
   ## of the rows the filters keep. Both are in clinpheno row order, so `keep` indexes either.
   probe_cols = setdiff(colnames(rout), clinpheno_cols)
-  full = t2_add_virtual_cols(clinpheno, roles) %>%
+  full = clin_virtual %>%
     left_join(rout[, c('sample', probe_cols), drop = FALSE], by = 'sample')
   out = if (phenos) full else rout
   if (nrow(out) != nrow(full)) stop("gitr: internal error, the filter frame and the result differ in length")
@@ -412,17 +408,4 @@ gitr_memo = function(probes, ..., ctx) {
   if (!is.null(hit)) return(hit)
   .gitr_memo$put(key, gitr(probes, ..., dbfile = ctx$path, roles = ctx$roles,
                            keep_samples = ctx$keep, rules = ctx$rules, fill = ctx$fill %||% "na"))
-}
-
-test_gitr = function(n, phenos = TRUE){
-  testconn = RSQLite::dbConnect(RSQLite::SQLite(), dbname = gitrdb, flags = RSQLite::SQLITE_RO )
-  allprobes = tbl(testconn, 'allprobes')
-  sampled = allprobes %>% pull(probe) %>% sample(n)
-  time1 = Sys.time()
-  out = gitr(sampled, phenos = phenos)
-  time2 = Sys.time()
-  print(head(out,1))
-  print(time1)
-  print(time2)
-  dbDisconnect(testconn)
 }

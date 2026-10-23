@@ -359,7 +359,7 @@ t2_tweak_menu = function(tw, default = tw$default) {
 t2_validate_tweak = function(tw, raw) {
     if (is.null(tw) || is.null(raw)) return(NULL)
     raw = as.character(unlist(raw))[1]
-    if (length(raw) != 1 || is.na(raw)) return(NULL)
+    if (is.na(raw)) return(NULL)
     if (tw$kind == "text") {
         raw = gsub("[[:cntrl:]]", " ", raw)
         raw = substr(raw, 1, 200)
@@ -427,9 +427,6 @@ t2_tweak_theme = function(gg) {
     do.call(theme, args)
 }
 
-## Lay the Appearance settings over a Kaplan-Meier result (a ggsurvplot, whose
-## curve is $plot, or the faceted variant, a plain ggplot): fonts, legend
-## visibility and theme tweaks. Layer settings do not apply to survival plots.
 ## Wrap a title to the width of a figure: a character is about 0.55 em wide,
 ## and a title has the panel's width (roughly 85% of the figure) to itself.
 t2_wrap_text = function(txt, fig_width, font_size) {
@@ -439,6 +436,9 @@ t2_wrap_text = function(txt, fig_width, font_size) {
                  function(l) paste(strwrap(l, width = n), collapse = "\n"), ""), collapse = "\n")
 }
 
+## Lay the Appearance settings over a Kaplan-Meier result (a ggsurvplot, whose
+## curve is $plot, or the faceted variant, a plain ggplot): fonts, legend
+## visibility and theme tweaks. Layer settings do not apply to survival plots.
 t2_style_survival = function(res, style = list(), gg = list(), caption = NULL, fig_width = NULL) {
     th = do.call(t2_font_theme, style[intersect(names(style), names(formals(t2_font_theme)))]) +
         t2_tweak_theme(gg)

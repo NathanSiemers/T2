@@ -940,7 +940,6 @@ server = function(input, output, session) {
             survival_note
         )
     })
-    ## the data set's own About prose (/meta about): description, citation, attribution, link
     ## the dataset's bibliography: full titles, authors, journal, year and links, grouped
     output$about_references = renderUI({
         refs = bundle()$about$references
@@ -951,6 +950,7 @@ server = function(input, output, session) {
                 if (nzchar(g)) h5(g),
                 HTML(paste(vapply(refs[grp == g], t2_reference_html, ""), collapse = "")))))
     })
+    ## the data set's own About prose (/meta about): description, citation, attribution, link
     output$about_dataset = renderUI({
         a = bundle()$about
         if (!any(nzchar(unlist(a)))) return(NULL)

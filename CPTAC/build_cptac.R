@@ -141,7 +141,7 @@ STUDY <- c(BRCA="CPTAC-2", COAD="CPTAC-2", OV="CPTAC-2")
 study_of <- function(C) ifelse(C %in% names(STUDY), STUDY[C], "CPTAC-3")
 
 t0 <- Sys.time()
-say <- function(...) cat(sprintf("[%s] ", format(Sys.time(), "%H:%M:%S")), ..., "\n"); flush.console()
+say <- function(...) cat(sprintf("[%s] ", format(Sys.time(), "%H:%M:%S")), ..., "\n")
 DROPS <- list()
 drop_log <- function(rule, n, detail = "") {
   DROPS[[length(DROPS) + 1L]] <<- data.frame(rule = rule, n = n, detail = detail, stringsAsFactors = FALSE)
@@ -170,7 +170,6 @@ FILES <- function(C) {
 FL <- setNames(lapply(COH, FILES), COH)
 GENEMAP_F <- file.path(DIR$prot, "README", "Gene_annotation_and_representable_isoform_mapping_table.txt")
 stopifnot(file.exists(GENEMAP_F))
-need <- c(meta = "meta", rna = "tpm", cnv = "cnv", mut = "mut", fmut = "maf")
 for (C in COH) for (f in unlist(FL[[C]][c("meta", if ("rna" %in% TYPES) "tpm", if ("cnv" %in% TYPES) "cnv",
                                            if ("mut" %in% TYPES) "mut", if ("fmut" %in% TYPES) "maf")]))
   stopifnot(!is.na(f), file.exists(f))
@@ -245,10 +244,9 @@ add_cols <- function(type, C, fkey, kind) {
   f <- FL[[C]][[fkey]]
   if (is.na(f) || !file.exists(f)) return(NULL)
   ids <- head_ids(f)$ids
-  ids <- sub("\r$", "", ids)
   bare_ok <- NULL
   if (kind == "tpm" && !any(grepl("_[TA]$", ids))) {       # bare-id TPM file (BRCA, COAD, OV)
-    stopifnot(file.exists(FL[[C]]$rna_uq)); bare_ok <- sub("\r$", "", head_ids(FL[[C]]$rna_uq)$ids)
+    stopifnot(file.exists(FL[[C]]$rna_uq)); bare_ok <- head_ids(FL[[C]]$rna_uq)$ids
   }
   m <- sample_ids_for(ids, kind, CASES[[C]], bare_ok)
   nd <- sum(!m$keep)
@@ -348,7 +346,7 @@ cohort_matrix <- function(type, C, fkeys, rd) {
   if (!length(parts)) return(NULL)
   ## row ids can differ between a cohort's tumor and normal file
   ids <- unique(unlist(lapply(parts, `[[`, "ids")))
-  M <- do.call(cbind, lapply(parts, function(r) { x <- r$M[match(ids, r$ids), , drop = FALSE]; x }))
+  M <- do.call(cbind, lapply(parts, function(r) r$M[match(ids, r$ids), , drop = FALSE]))
   stopifnot(!anyDuplicated(colnames(M)))
   list(ids = ids, M = M, nonfinite = sum(sapply(parts, `[[`, "nonfinite")))
 }

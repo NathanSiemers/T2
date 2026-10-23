@@ -56,10 +56,13 @@ guarded = function(write) {
   invisible(DBI::dbExecute(con, "RELEASE dataset_meta_cli"))
 }
 
+## every argument of a key=value mode must hold an "="
+need_kv = function(kv, fmt) if (any(!grepl("=", kv, fixed = TRUE))) stop("not ", fmt, ": ", paste(kv[!grepl("=", kv, fixed = TRUE)], collapse = " "), call. = FALSE)
+
 if (mode == "set") {
   if (length(args) < 3) stop("set: need key=value ...")
   kv = args[-(1:2)]
-  if (any(!grepl("=", kv, fixed = TRUE))) stop("not key=value: ", paste(kv[!grepl("=", kv, fixed = TRUE)], collapse = " "))
+  need_kv(kv, "key=value")
   m = setNames(as.list(sub("^[^=]*=", "", kv)), sub("=.*", "", kv, perl = TRUE))   # values verbatim (lists: a|b|c)
   guarded(function() t2_write_meta(con, meta = m))
 } else if (mode == "set-json") {
@@ -73,7 +76,7 @@ if (mode == "set") {
 } else if (mode == "type-label") {
   if (length(args) < 3) stop("type-label: need type=label ...")
   kv = args[-(1:2)]
-  if (any(!grepl("=", kv, fixed = TRUE))) stop("not type=label: ", paste(kv[!grepl("=", kv, fixed = TRUE)], collapse = " "))
+  need_kv(kv, "type=label")
   guarded(function() t2_write_types(con, data.frame(type = sub("=.*", "", kv), label = sub("^[^=]*=", "", kv), stringsAsFactors = FALSE), allow_new = FALSE))
   m = DBI::dbGetQuery(con, "SELECT type, label FROM types ORDER BY key")
   for (i in seq_len(nrow(m))) cat(sprintf("%-18s \"%s\"\n", m$type[i], m$label[i]))
@@ -82,7 +85,7 @@ if (mode == "set") {
 if (mode == "type-fill") {
   if (length(args) < 3) stop("type-fill: need type=na|zero|floor ...")
   kv = args[-(1:2)]
-  if (any(!grepl("=", kv, fixed = TRUE))) stop("not type=fills: ", paste(kv[!grepl("=", kv, fixed = TRUE)], collapse = " "))
+  need_kv(kv, "type=fills")
   ty = sub("=.*", "", kv); fo = vapply(sub("^[^=]*=", "", kv), t2_fill_options_check, "", USE.NAMES = FALSE)   # validated words, canonical order
   sp = if ("sparse" %in% DBI::dbListTables(con)) DBI::dbGetQuery(con, "SELECT type, sparse FROM sparse") else data.frame(type = character(0), sparse = integer(0))
   unk = setdiff(ty, DBI::dbGetQuery(con, "SELECT type FROM types")$type)

@@ -15,9 +15,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"mime"
 	"net"
 	"net/http"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -134,29 +137,80 @@ type contactMessage struct {
 	App         string `json:"app,omitempty"`
 }
 
-// clientIP: the visitor's address as our own proxy states it. The service is reachable
-// only through Nginx (or, on the Docker network, the Shiny app), so these headers are ours:
-// X-Real-IP is set by replacement (a visitor cannot forge it) but is only trustworthy behind
-// Nginx; X-Forwarded-For is appended to, so only its LAST entry is the proxy's word: the
-// first entries are whatever the client sent, and taking the first would let a visitor pick
-// the address the per-address limit counts. Used by the contact limiter and by usage.go.
+// trustedProxies: networks whose X-Real-IP / X-Forwarded-For are believed (-trusted-proxies).
+// Empty by default: then the TCP peer is always the client.
+var trustedProxies []*net.IPNet
+
+func parseTrustedProxies(list string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, p := range strings.Split(list, ",") {
+		if p = strings.TrimSpace(p); p == "" {
+			continue
+		}
+		_, n, err := net.ParseCIDR(p)
+		if err != nil {
+			return nil, fmt.Errorf("bad CIDR %q", p)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// validClientIP: a header value is used only if it is a plain IP address (no port, no text).
+func validClientIP(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || len(s) > 45 || net.ParseIP(s) == nil {
+		return "", false
+	}
+	return s, true
+}
+
+// clientIP: the visitor's address. The trust model: the TCP peer (r.RemoteAddr) cannot be
+// forged, the headers can. Only when the peer is inside -trusted-proxies (our Nginx) are its
+// headers believed: X-Real-IP is set by replacement there (a visitor cannot forge it);
+// X-Forwarded-For is appended to, so only its LAST entry is the proxy's word (the first
+// entries are whatever the client sent). A value that is not a plain IP of at most 45
+// characters is ignored. With no trusted proxy (the default, and the dev/direct case) the
+// answer is always the peer's address, so a client that reaches the service past Nginx cannot
+// pick the address the per-address limit counts. Used by the contact limiter and by usage.go.
 func clientIP(r *http.Request) string {
-	if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
-		return real
-	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if i := strings.LastIndex(xff, ","); i >= 0 {
-			xff = xff[i+1:]
-		}
-		if xff = strings.TrimSpace(xff); xff != "" {
-			return xff
-		}
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if len(trustedProxies) > 0 {
+		if peer := net.ParseIP(host); peer != nil {
+			for _, n := range trustedProxies {
+				if !n.Contains(peer) {
+					continue
+				}
+				if ip, ok := validClientIP(r.Header.Get("X-Real-IP")); ok {
+					return ip
+				}
+				if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+					if i := strings.LastIndex(xff, ","); i >= 0 {
+						xff = xff[i+1:]
+					}
+					if ip, ok := validClientIP(xff); ok {
+						return ip
+					}
+				}
+				break
+			}
+		}
 	}
 	return host
+}
+
+// validEmail: net/mail must parse a bare address (no display name), and the domain may not
+// hold empty labels ("a@b..cc"); the strict pattern still applies on top.
+func validEmail(s string) bool {
+	a, err := mail.ParseAddress(s)
+	if err != nil || a.Address != s || a.Name != "" {
+		return false
+	}
+	at := strings.LastIndex(s, "@")
+	return at > 0 && !strings.Contains(s[at+1:], "..") && emailPattern.MatchString(s)
 }
 
 func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +219,7 @@ func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, http.StatusNotFound, "the contact form is not enabled on this server")
 		return
 	}
-	if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		s.fail(w, http.StatusUnsupportedMediaType, "send JSON")
 		return
 	}
@@ -182,6 +236,10 @@ func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil {
+		s.fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if _, err := dec.Token(); err != io.EOF { // trailing data after the object
 		s.fail(w, http.StatusBadRequest, "bad request")
 		return
 	}
@@ -206,7 +264,7 @@ func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {
 		Email: oneLine(in.Email, contactMaxEmail), Message: paragraphs(in.Message, contactMaxMessage),
 		App: oneLine(in.App, 60),
 	}
-	if m.Name == "" || m.Message == "" || !emailPattern.MatchString(m.Email) {
+	if m.Name == "" || m.Message == "" || !validEmail(m.Email) {
 		s.fail(w, http.StatusBadRequest, "name, a valid email address and a message are needed")
 		return
 	}

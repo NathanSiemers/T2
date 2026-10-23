@@ -78,6 +78,7 @@ func TestClientKindAndStatus(t *testing.T) {
 }
 
 func TestClientAddr(t *testing.T) {
+	trustTestPeers(t)
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "10.0.0.9:5555"
 	if a := clientAddr(r); a != "10.0.0.9" {
@@ -96,6 +97,7 @@ func TestClientAddr(t *testing.T) {
 // the middleware end to end: statuses, bytes, busy refusals, per-minute client numbers, ring
 // rollover, and that no address reaches the JSON.
 func TestUsageMiddlewareAndRing(t *testing.T) {
+	trustTestPeers(t)
 	clk := &fakeClock{time.Date(2026, 10, 21, 1, 59, 30, 0, time.UTC)}
 	s := &server{inflight: make(chan struct{}, 1)}
 	s.usage = newUsage([]string{"TCGA"}, clk.now)

@@ -187,6 +187,7 @@ func TestOneLineStripsSeparatorsAndBidi(t *testing.T) {
 }
 
 func TestClientIPOrder(t *testing.T) {
+	trustTestPeers(t)
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "10.0.0.9:1"
 	if a := clientIP(r); a != "10.0.0.9" {
@@ -225,6 +226,7 @@ func TestDatasetsListPrecomputed(t *testing.T) {
 }
 
 func TestContactBotCountsAgainstLimiter(t *testing.T) {
+	trustTestPeers(t)
 	s := &server{contact: contactConfig{dir: t.TempDir()}}
 	post := func() int {
 		r := httptest.NewRequest("POST", "/v1/contact", strings.NewReader(`{"website":"x","started":10}`))

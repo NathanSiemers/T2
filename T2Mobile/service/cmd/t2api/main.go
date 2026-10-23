@@ -52,6 +52,7 @@ type server struct {
 	nReq         atomic.Int64
 	nErr         atomic.Int64
 	stopOnce     sync.Once
+	cache        *columnCache // one budget for every dataset's columns (keys carry the dataset name)
 	contact      contactConfig
 	contactLimit contactLimiter
 	inflight     chan struct{} // one token per request being answered (-max-inflight)
@@ -66,7 +67,8 @@ func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	tcga := flag.String("tcga", "/data/tcga.db", "transitional: a TCGA database outside -datasets (served as \"TCGA\" unless datasets/TCGA.db exists); optional, ignored if absent")
 	dir := flag.String("datasets", "/data/datasets", "directory of additional <name>.db datasets; empty to skip")
-	cacheMB := flag.Int("cache-mb", 512, "memory for cached probe columns, per dataset, in MB")
+	cacheMB := flag.Int("cache-mb", 512, "memory for cached probe columns, in MB: ONE budget shared by all datasets (not per dataset)")
+	trusted := flag.String("trusted-proxies", "", "comma-separated CIDRs of reverse proxies whose X-Real-IP / X-Forwarded-For are believed (the Nginx container's network); empty = never: the TCP peer is the client")
 	conns := flag.Int("db-conns", 48, "database connections per dataset (concurrent uncached lookups)")
 	memMB := flag.Int("mem-limit-mb", 3072, "soft memory limit for the Go runtime, in MB (keep below the container limit)")
 	inflight := flag.Int("max-inflight", 256, "requests answered at once; beyond it a request is refused at once with 503 (a flood then costs no memory and no disk time). 256 x a 100-probe answer is under 2 GB; a small standby takes 32")
@@ -76,6 +78,13 @@ func main() {
 	debug.SetMemoryLimit(int64(*memMB) << 20)
 
 	s := &server{datasets: map[string]*Dataset{}, started: time.Now(), inflight: make(chan struct{}, max(1, *inflight))}
+	nets, err := parseTrustedProxies(*trusted)
+	if err != nil {
+		log.Fatalf("-trusted-proxies: %v", err)
+	}
+	trustedProxies = nets
+	log.Printf("trusted proxies: %d network(s); cache budget: %d MB in total, shared by all datasets", len(nets), *cacheMB)
+	s.cache = newColumnCache(int64(*cacheMB) << 20)
 	s.contact = contactConfigFromEnv()
 	if s.contact.dir != "" {
 		log.Printf("contact form: messages are kept in %s", s.contact.dir)
@@ -83,7 +92,7 @@ func main() {
 	// same discovery rule as discover_datasets() in dataset_registry.R
 	add := func(name, path string) {
 		t0 := time.Now()
-		d, err := openDataset(name, path, int64(*cacheMB)<<20)
+		d, err := openDataset(name, path, s.cache)
 		if err != nil {
 			log.Printf("dataset %s (%s): NOT loaded: %v", name, path, err)
 			return
@@ -237,6 +246,7 @@ func gzipped(next http.Handler) http.Handler {
 func (s *server) fail(w http.ResponseWriter, code int, msg string) {
 	s.nErr.Add(1)
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Del("ETag")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
@@ -265,6 +275,7 @@ func (s *server) routes() *http.ServeMux {
 // before the dataset lookup, so it costs nothing and touches no database.
 func (s *server) strictQuery(h http.HandlerFunc, allowed ...string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff") // every GET answer, JSON or text
 		if r.URL.RawQuery != "" {
 			// a malformed query (bad escape, ';', empty pieces such as "?&&") is dropped by the
 			// parser but still varies the cache key, so it is refused too
@@ -329,16 +340,25 @@ func (s *server) withDataset(h func(http.ResponseWriter, *http.Request, *Dataset
 // A client that passes the dataset version it knows (?v=<version from /v1/datasets>) gets a
 // response that may be kept for good: the URL then names one database build. If that version
 // is no longer the one served, the answer is 409 and the client reloads /v1/datasets.
+// canonical: the request is already in the one form that names its answer (see handleProbes /
+// handleValues); only such a request gets the year-long immutable header.
 // Without ?v= the response must be revalidated (ETag, answered 304) before it is reused:
 // that is how a client learns the current version, so it must never come from a cache
 // unchecked (a cached /meta naming a version that is gone would make every ?v= request fail).
-func (s *server) cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, etagKey string) (done bool) {
+func (s *server) cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, etagKey string, canonical bool) (done bool) {
 	if v := r.URL.Query().Get("v"); v != "" {
 		if v != d.version {
 			s.fail(w, http.StatusConflict, "dataset version changed: reload /v1/datasets (current version "+d.version+")")
 			return true
 		}
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		if canonical {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			// a spelling that is not the canonical one (duplicate or odd-case names, a limit over the
+			// cap): the same answer as the canonical URL, but kept briefly, so spelling variants
+			// cannot each pin a cache entry for a year
+			w.Header().Set("Cache-Control", "public, max-age=300")
+		}
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
@@ -394,6 +414,7 @@ func (s *server) recovered(next http.Handler) http.Handler {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	json.NewEncoder(w).Encode(v)
 }
 
@@ -408,11 +429,9 @@ func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"busy_refusals": s.nBusy.Load(),
 		"max_inflight":  cap(s.inflight),
 	}
-	ds := map[string]any{}
-	for name, d := range s.datasets {
-		ds[name] = d.cache.stats()
+	if s.cache != nil {
+		out["cache"] = s.cache.stats() // shared by all datasets
 	}
-	out["datasets"] = ds
 	if s.usage != nil {
 		out["usage"] = s.usage.snapshot()
 	}
@@ -448,7 +467,7 @@ func (s *server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleMeta(w http.ResponseWriter, r *http.Request, d *Dataset) {
-	if s.cacheable(w, r, d, "meta") {
+	if s.cacheable(w, r, d, "meta", true) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -456,7 +475,7 @@ func (s *server) handleMeta(w http.ResponseWriter, r *http.Request, d *Dataset) 
 }
 
 func (s *server) handleClinical(w http.ResponseWriter, r *http.Request, d *Dataset) {
-	if s.cacheable(w, r, d, "clinical") {
+	if s.cacheable(w, r, d, "clinical", true) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -467,8 +486,14 @@ func (s *server) handleClinical(w http.ResponseWriter, r *http.Request, d *Datas
 // that START with the query first, then names that contain it.
 func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset) {
 	// ?all=1: the whole list (about 1.5 MB for TCGA, 300 KB gzipped), cacheable by version
+	// value rules (one canonical, cacheable spelling per answer): all is "1" or absent; limit, when
+	// present, is a positive integer; anything else is a 400, not a silent fallback
+	if av, ok := r.URL.Query()["all"]; ok && av[0] != "1" {
+		s.fail(w, http.StatusBadRequest, "all must be 1")
+		return
+	}
 	if r.URL.Query().Get("all") == "1" {
-		if s.cacheable(w, r, d, "probes-all") {
+		if s.cacheable(w, r, d, "probes-all", true) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -480,12 +505,23 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 		s.fail(w, http.StatusBadRequest, "query too long")
 		return
 	}
-	limit := 50
-	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
-		limit = min(v, maxSearchLimit)
+	limit, canonical := 50, true
+	if lv, ok := r.URL.Query()["limit"]; ok {
+		v, err := strconv.Atoi(lv[0])
+		if err != nil || v <= 0 {
+			s.fail(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		if v > maxSearchLimit {
+			v, canonical = maxSearchLimit, false
+		}
+		limit = v
+	}
+	if q != strings.TrimSpace(r.URL.Query().Get("q")) || strings.ToLower(r.URL.Query().Get("q")) != r.URL.Query().Get("q") {
+		canonical = false
 	}
 	// same caching rules as the other endpoints: long with a matching ?v=, else revalidate
-	if s.cacheable(w, r, d, "probes-q="+strconv.Itoa(limit)+"|"+q) {
+	if s.cacheable(w, r, d, "probes-q="+strconv.Itoa(limit)+"|"+q, canonical) {
 		return
 	}
 	res, total := d.search(q, limit)
@@ -556,10 +592,16 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 	var names []string
 	seen := map[string]bool{}
 	q := r.URL.Query()
+	canonical := true
 	for _, part := range append(q["probes"], q["probe"]...) {
 		for _, n := range strings.Split(part, ",") {
-			n = strings.TrimSpace(n)
-			if n == "" || seen[n] {
+			// an empty part or a padded name is a different URL for the same answer: refused
+			if n == "" || n != strings.TrimSpace(n) {
+				s.fail(w, http.StatusBadRequest, "bad probe list: empty or space-padded name")
+				return
+			}
+			if seen[n] {
+				canonical = false // a repeated name: served, but not immutable
 				continue
 			}
 			if len(n) > maxProbeNameLen || strings.ContainsAny(n, "\x00\r\n") {
@@ -596,9 +638,9 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 	}
 	// fill: how a sample tested for a probe's type but without a stored value is served (see
 	// fetchProbe). The key of the na answer is unchanged, so existing clients see no difference.
-	fill := strings.ToLower(strings.TrimSpace(q.Get("fill")))
-	if fill == "" {
-		fill = "na"
+	fill := "na"
+	if fv, ok := q["fill"]; ok {
+		fill = fv[0] // exact: na, zero or floor (no case folding, no padding)
 	}
 	if fill != "na" && fill != "zero" && fill != "floor" {
 		s.fail(w, http.StatusBadRequest, "fill must be na, zero or floor")
@@ -608,7 +650,7 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 	if fill != "na" {
 		etagKey += "|fill=" + fill
 	}
-	if s.cacheable(w, r, d, etagKey) {
+	if s.cacheable(w, r, d, etagKey, canonical) {
 		return
 	}
 	cols := make([][]byte, 0, len(names))

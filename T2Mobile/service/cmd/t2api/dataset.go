@@ -19,8 +19,8 @@ package main
 //     dataset's declared level order; a value outside it is missing.
 
 import (
-	"encoding/binary"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -123,7 +123,7 @@ type TTEVariable struct {
 // database connections per dataset (set from -db-conns)
 var dbConns = 48
 
-func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
+func openDataset(name, path string, cache *columnCache) (*Dataset, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 	d := &Dataset{Name: name, Path: path, db: db, known: map[string]struct{}{},
 		fileSize: fi.Size(), fileMtime: fi.ModTime(), fileIno: inode(fi),
 		version: fileVersion(path, fi),
-		cache:   newColumnCache(cacheBytes)}
+		cache:   cache}
 	steps := []func() error{d.loadRoles, d.loadClinical, d.loadTTE, d.loadReferences, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.loadSources, d.buildMeta}
 	for _, f := range steps {
 		if err := f(); err != nil {
@@ -1057,11 +1057,11 @@ func (d *Dataset) columnFill(name, fill string) (col []byte, aux colAux, err err
 	if _, ok := d.known[name]; !ok {
 		return nil, colAux{}, nil // not a variable of this dataset: no query, no cache entry
 	}
-	col, aux, err = d.cache.get(name, func() ([]byte, colAux, error) { return d.fetchProbe(name, "na") })
+	col, aux, err = d.cache.get(d.Name+"\x00"+name, func() ([]byte, colAux, error) { return d.fetchProbe(name, "na") })
 	if err != nil || col == nil || fill == "na" || aux.typ == "" || !d.fillOffers(aux.typ, fill) {
 		return col, aux, err
 	}
-	return d.cache.get(name+"|"+fill, func() ([]byte, colAux, error) { return d.fetchProbe(name, fill) })
+	return d.cache.get(d.Name+"\x00"+name+"|"+fill, func() ([]byte, colAux, error) { return d.fetchProbe(name, fill) })
 }
 
 // fetchProbe reads one variable. fill is "na", "zero" or "floor": for a numeric probe of a

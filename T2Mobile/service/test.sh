@@ -55,7 +55,7 @@ if [ "$what" = all ] || [ "$what" = abuse ]; then
     chk "first 10 names all unknown: the call is refused" "$(code "$u/v1/TCGA/values?probes=$(seq -s, -f 'junk%g' 1 10),CD8A")" 400
     chk "9 unknown names, then a real one: answered" "$(code "$u/v1/TCGA/values?probes=$(seq -s, -f 'junk%g' 1 9),CD8A")" 200
     chk "a real name among the first 10: answered" "$(code "$u/v1/TCGA/values?probes=CD8A,$(seq -s, -f 'junk%g' 1 12)")" 200
-    entries() { curl -s "$u/statz" | tr ',{' '\n\n' | grep -A8 '"TCGA"' | grep '"entries"' | head -1 | tr -dc '0-9'; }
+    entries() { curl -s "$u/statz" | tr ',{' '\n\n' | grep -A8 '"cache"' | grep '"entries"' | head -1 | tr -dc '0-9'; }
     e0=$(entries); for i in $(seq 1 40); do code "$u/v1/TCGA/values?probes=CD8A,$(seq -s, -f "nonsense${i}_%g" 1 50)" >/dev/null; done; e1=$(entries)
     chk "2,000 made-up names add nothing to the cache (entries $e0 -> $e1)" "$([ "$e1" -le "$((e0 + 1))" ] && echo same || echo grew)" same
     long=$(for i in $(seq 1 60); do printf 'CD8A_%0150d,' $i; done)

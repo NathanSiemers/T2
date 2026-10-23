@@ -165,6 +165,27 @@ twice is a `400` too (`repeated query parameter: probes`; list several names in 
 query string (bad `%` escape, `;`, empty pieces such as `?&&`) is also a `400`
 (`malformed query string`).
 
+**Value rules (one canonical spelling per answer).** `all` is `1` or absent (`all=2`, `all=`:
+`400`). `limit`, when present, is a positive integer (`limit=abc`, `0`, empty: `400`; above the
+cap it is clamped). `fill` is exactly `na`, `zero` or `floor` (`NA`, a padded or empty value:
+`400`). A `probes` / `probe` list with an empty part (`A,,B`, a trailing comma) or a
+space-padded name is a `400`; repeated names are still dropped. The long
+`Cache-Control: public, max-age=31536000, immutable` (with a matching `v`) is sent only for a
+request already in canonical form; a request that is not (a repeated name, an upper-case or
+padded `q`, a `limit` above the cap) gets `public, max-age=300` instead. Every GET answer and
+every JSON error carries `X-Content-Type-Options: nosniff`.
+
+**Client address.** The contact limiter and the usage metrics key on the TCP peer. The
+`X-Real-IP` / last `X-Forwarded-For` header is believed only when the peer is inside a network
+given with `-trusted-proxies` (comma-separated CIDRs; default none), and only if it is a plain
+IP address of at most 45 characters. The contact form also requires `Content-Type`
+`application/json` exactly (parameters such as `charset` are fine; `application/jsonx` is a
+`415`), a single JSON object with nothing after it, and an address that `net/mail` parses with
+no empty label in the domain.
+
+**Cache memory.** `-cache-mb` is ONE budget shared by all datasets (keys carry the dataset
+name); `/statz` reports it once under `cache` (it no longer lists a cache per dataset).
+
 `400` bad request (no probes, more than 100, a name over 200 characters, or **none of the
 first 10 names is a variable of the dataset**), `404` unknown dataset or path, `405` not
 GET, `409` the `v` given is not the version served, `500` internal error, `503` the dataset

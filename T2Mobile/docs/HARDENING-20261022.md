@@ -20,6 +20,15 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 
 ## Checkpoints (newest first)
 
+### 2026-10-22 ~23:35 PDT: review B in, fix agent B launched (five fix agents now running: C, D-ops, D-iOS, Go-2, B)
+- Review B (Shiny): no SQL/shell/HTML/regex injection (all user text whitelisted or fixed=TRUE; download names
+  restricted). HIGH: renderPlot size comes from forgeable clientData (30000x16000 px = 48 s, ~2 GB in a 3 GB
+  container); loess fit allowed on 110k points (87 s) because T2_LIMITS$loess_points is never enforced. MEDIUM: KM
+  quantile labels positional after unique() (sparse marker -> "Low","Mid" with Mid = high); hyphenated categorical X
+  names lose the boxplot (`grepl('\\+|\\-', x)`); residualize_on silently returns unadjusted y but the summary says
+  "adj:"; cohort c("all","BRCA") = BRCA only while the subtitle lists both. LOW: KM table keeps normals; URLencode
+  no-op on `%XX`; raw input flags of length != 1 kill a session; api error texts (URLs) reach the browser; 30 s
+  retry loop; HTML() of reference text; pub_spec evaluated in every tab.
 ### 2026-10-22 ~23:20 PDT: round 0 committed (ca81c2b); reviews C and D in; fix agents C, D-ops, D-iOS, Go-2 running
 - Round 0 (the nine ultrareview fixes) committed as ca81c2b after `ops/test.sh all` all green (go, equiv 76, app 0 FAIL,
   app-service 109, browser-service, fuzz-api 6, abuse 29, fuzz-shiny 12, contact, swift 89).
@@ -62,6 +71,23 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 - Review agents A-D launched (read-only). Findings land in this file under "Findings" when verified.
 
 ## Findings log (verified by the lead; status: open / fixed <commit> / rejected <why>)
+
+### Review B: Shiny app + api client (2026-10-22)
+| # | file | sev | finding | status |
+|---|---|---|---|---|
+| B1 | app.R:728 renderPlot | HIGH | client-reported plot size unclamped (DoS/OOM of a pool container) | fixing (agent B; clamp 200..3000) |
+| B2 | lib.R:802 / gitr.R:49 | HIGH | loess fit on >5000 points (loess_points never enforced) | fixing (force lm + warning) |
+| B3 | survival_prototype.R:166-170 | medium | positional quantile labels after unique(): wrong group names | fixing |
+| B4 | lib.R:752 | medium | hyphen in a categorical X name drops the boxplot | fixing (verified: `grepl('\\+|\\-', x[1])`) |
+| B5 | marker_ops.R:42-49 | medium | silent unadjusted result labelled "adj:" | fixing |
+| B6 | input_validation.R / gitr.R:103 | med-low | "all" + cohort = cohort only, subtitle says both | fixing in sanitize_t2_input |
+| B7 | lib.R:898 fun_table1 | low | KM table keeps normal samples | fixing |
+| B8 | t2_api_client.R:187 | low latent | URLencode no-op when `%XX` present; URL echoed in errors | fixing (repeated=TRUE, truncate) |
+| B9 | app.R:513, dataset observer, t2_contact.R | low | raw input flags of length != 1 kill the session; contact fields uncapped | fixing |
+| B10 | lib.R:920, app.R notifications | low (leak) | api error texts with URLs shown to the user; re-shown on resize | fixing |
+| B11 | t2_api_client.R:62-70 | low | ~30 s worker hold during a service restart | fixing (3 s connect, 2 attempts) |
+| B12 | app.R:884 | low | HTML() of reference text; href without scheme check | fixing |
+| B13 | app.R:766 | low | pub_spec evaluated in every tab | fixing |
 
 ### Review C: R data layer (2026-10-22)
 | # | file | sev | finding | status |

@@ -116,8 +116,9 @@ public struct APIClient: Sendable {
         // every chunk refused: the fill is not available for this set; the caller decides
         if !chunks.isEmpty, refusals.count == chunks.count { throw refusals[0] }
         var columns: [Column] = [], missing: [String] = []
-        for r in answers.compactMap({ $0 }) { columns += r.columns; missing += r.missing }
-        return (columns, missing, ValuesInfo.merge(answers.compactMap { $0 }))
+        let got = answers.compactMap { $0 }
+        for r in got { columns += r.columns; missing += r.missing }
+        return (columns, missing, ValuesInfo.merge(got))
     }
 
     /// A message to the owner through the server (the recipient's address stays on the

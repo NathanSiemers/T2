@@ -79,7 +79,6 @@ struct VariablePicker: View {
     var choose: (String) -> Void = { _ in }
     var chooseMany: ([String]) -> Void = { _ in }
 
-    @Environment(AppModel.self) private var model
     @State private var open = false
 
     var body: some View {
@@ -241,8 +240,7 @@ struct VariableSearch: View {
                     if let kind = kindLine(name) { Text(kind).font(.caption2).foregroundStyle(.secondary) }
                 }
                 Spacer()
-                if multiple, chosen.contains(name) { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
-                else if name == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                if (multiple && chosen.contains(name)) || name == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
             }
         }
         .accessibilityIdentifier(name)
@@ -326,11 +324,8 @@ struct SelectView: View {
     }
     @State private var about = false
 
-    private var variablesHelp: String {
-        var s = "Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. Two numbers give a scatter plot; a category on X gives box plots."
-        // (the survival hint has its own line under the X picker)
-        return s
-    }
+    // (the survival hint has its own line under the X picker)
+    private let variablesHelp = "Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. Two numbers give a scatter plot; a category on X gives box plots."
 
     /// the words of the "Not detected" control (the service's option names)
     private static func fillName(_ option: String) -> String {

@@ -90,7 +90,7 @@ extension PlotBuilder {
             let asked = max(2, request.kmGroups)
             // a marker with no more distinct values than groups (a 0/1 mutation call, a
             // copy-number class): the values ARE the groups, as in survival_prototype.R
-            let vals = Array(Set(m.filter { !$0.isNaN })).sorted()
+            let vals = Set(m.filter { !$0.isNaN }).sorted()
             if vals.count >= 2 && vals.count <= asked {
                 let index = Dictionary(uniqueKeysWithValues: vals.enumerated().map { ($1, $0) })
                 group = m.map { $0.isNaN ? -1 : (index[$0] ?? -1) }
@@ -118,7 +118,7 @@ extension PlotBuilder {
         // one curve per group
         let colors = Palette.survival(count: labels.count)
         // yearly ticks only where the unit is days; otherwise (or when they would be too many or too few) round numbers
-        var ticks: [Double] = entry.timeUnit == "days" ? stride(from: 0.0, through: xMax, by: 365).map { $0 } : []
+        var ticks: [Double] = entry.timeUnit == "days" ? Array(stride(from: 0.0, through: xMax, by: 365)) : []
         if ticks.count > 8 || ticks.count < 3 { ticks = PlotFormat.ticks(0, xMax) }
         let xAxis = PlotAxis(kind: .numeric, lo: 0, hi: xMax * 1.02, ticks: ticks, labels: ticks.map(PlotFormat.tickLabel), title: "Time (\(entry.timeUnit))")
         let yTicks = [0, 0.25, 0.5, 0.75, 1.0]

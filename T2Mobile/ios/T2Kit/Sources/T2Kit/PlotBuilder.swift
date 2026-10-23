@@ -158,20 +158,20 @@ public enum PlotBuilder {
         // the website's T2_LIMITS: an ID-like column (11,081 patients) is no X, Y or colour
         let axisLimits: [(Variable, Int)] = [(x, maxXLevels), (y, maxYLevels)]
         for (v, limit) in axisLimits where !v.isNumeric {
-            let k = Set(rows.map { v.codes[$0] }.filter { $0 >= 0 }).count
+            let k = distinctCount(codes: v.codes, rows: rows)
             if k > limit {
                 return .empty("\(v.name) has \(k) categories; the limit is \(limit). Filter the samples or choose another variable.",
                               summary: summary, warnings: warnings)
             }
         }
-        if let c = color, !c.isNumeric {
+        if let c = color {
             let k = distinctCount(c, rows: rows)
-            if k > maxColourLevels {
+            if !c.isNumeric && k > maxColourLevels {
                 return .empty("\(request.color) has \(k) categories; the limit is \(maxColourLevels). Filter the samples or choose another variable.",
                               summary: summary, warnings: warnings)
             }
+            if k < 2 { color = nil }
         }
-        if let c = color, distinctCount(c, rows: rows) < 2 { color = nil }
         if let s = size, Set(rows.map { s[$0] }.filter { !$0.isNaN }).count < 2 { size = nil }
 
         // colours and sizes are decided once, over every sample drawn, so that they mean the
@@ -274,11 +274,10 @@ public enum PlotBuilder {
             let both = "\(probeVariable) / \(request.facet)"
             var lv: [String] = [], cd: [Int] = []
             cd.reserveCapacity(n * k)
-            for (p, probe) in use.enumerated() {
+            for probe in use {
                 let base = lv.count
                 lv += levels.map { "\(probe) / \($0)" }
                 for i in 0..<n { cd.append(codes[i] < 0 ? -1 : base + codes[i]) }
-                _ = p
             }
             stackedColumns[both] = Column(name: both, type: "factor", data: .categorical(levels: lv, codes: cd))
             sub.facet = both
@@ -303,7 +302,7 @@ public enum PlotBuilder {
                             message: (String) -> String) -> [String] {
         let dropped = names.filter { !(columns[$0]?.isNumeric ?? false) }
         if !dropped.isEmpty { warnings.append(message(dropped.joined(separator: ", "))) }
-        return dropped.isEmpty ? names : names.filter { !dropped.contains($0) }
+        return names.filter { !dropped.contains($0) }
     }
 
     /// One variable, or several numeric ones as the median of their z-scores.
@@ -374,8 +373,12 @@ public enum PlotBuilder {
     static func distinctCount(_ c: Column, rows: [Int]) -> Int {
         switch c.data {
         case .numeric(let v): return Set(rows.map { v[$0] }.filter { !$0.isNaN }).count
-        case .categorical(_, let codes): return Set(rows.map { codes[$0] }.filter { $0 >= 0 }).count
+        case .categorical(_, let codes): return distinctCount(codes: codes, rows: rows)
         }
+    }
+
+    static func distinctCount(codes: [Int], rows: [Int]) -> Int {
+        Set(rows.map { codes[$0] }.filter { $0 >= 0 }).count
     }
 
     // MARK: colour and size of points
@@ -400,11 +403,10 @@ public enum PlotBuilder {
                 let order = Column.levelsPresent(codes: codes, levelCount: levels.count, rows: rows)
                 let colors = Palette.discrete(count: order.count)
                 var byCode = [RGB?](repeating: nil, count: levels.count)
-                for (k, code) in order.enumerated() { byCode[code] = colors[k] }
+                var slotOf = [Int](repeating: -1, count: levels.count)
+                for (k, code) in order.enumerated() { byCode[code] = colors[k]; slotOf[code] = k }
                 d.legend.entries = order.enumerated().map { PlotLegend.Entry(label: levels[$1], color: colors[$0]) }
                 d.color = { i in codes[i] >= 0 ? (byCode[codes[i]] ?? Palette.missing) : Palette.missing }
-                var slotOf = [Int](repeating: -1, count: levels.count)
-                for (k, code) in order.enumerated() { slotOf[code] = k }
                 d.groupOf = codes.map { $0 >= 0 ? slotOf[$0] : -1 }
                 d.groupColors = colors
             case .numeric(let v):
@@ -507,7 +509,7 @@ public enum PlotBuilder {
             }
         }
         panel.points = rows.map { r in
-            let g = dodged ? (d.groupOf![r]) : -1
+            let g = dodged ? d.groupOf![r] : -1
             let along = Double(slot[codes[r]]!) + 0.5 + (g >= 0 ? offset(g) : 0) + jitter(r) * (dodged ? slotWidth * 0.3 : 0.2)
             return horizontal ? PlotPoint(x: v[r], y: along, color: d.color(r), size: d.size(r), sample: r)
                               : PlotPoint(x: along, y: v[r], color: d.color(r), size: d.size(r), sample: r)

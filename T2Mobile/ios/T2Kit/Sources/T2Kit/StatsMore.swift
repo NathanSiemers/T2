@@ -6,6 +6,8 @@ import Foundation
 // survival::survfit / coxph, lm); see Tests/T2KitTests/StatsMoreTests.swift.
 
 public extension Stats {
+    /// the 97.5th percentile of the standard normal (a 95% interval)
+    static let z95 = 1.959963984540054
 
     // MARK: distributions
 
@@ -139,7 +141,7 @@ public extension Stats {
         /// how many are still at risk at time `t` (observation time >= t)
         public func atRisk(at t: Double) -> Int { observed.reduce(0) { $0 + ($1 >= t ? 1 : 0) } }
     }
-    static func kaplanMeierBand(time: [Double], event: [Double], z: Double = 1.959963984540054) -> KMBand {
+    static func kaplanMeierBand(time: [Double], event: [Double], z: Double = Stats.z95) -> KMBand {
         let obs = zip(time, event).filter { !$0.0.isNaN && !$0.1.isNaN }.sorted { $0.0 < $1.0 }
         var times: [Double] = [], surv: [Double] = [], se: [Double] = [], lo: [Double] = [], hi: [Double] = [], risk: [Int] = []
         var s = 1.0, greenwood = 0.0, i = 0, nEvents = 0
@@ -247,7 +249,7 @@ public extension Stats {
         }
         let info = derivatives(beta).info
         guard info > 0, info.isFinite else { return nil }
-        let se = 1 / info.squareRoot(), z = 1.959963984540054
+        let se = 1 / info.squareRoot(), z = Stats.z95
         return Cox(coef: beta, se: se, hazardRatio: exp(beta), lower: exp(beta - z * se), upper: exp(beta + z * se),
                    p: normalTwoSided(beta / se), n: rows.count, events: nEvents)
     }

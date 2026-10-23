@@ -77,7 +77,7 @@ struct AboutView: View {
                             if !about.description.isEmpty { Text(about.description).font(.callout) }
                             if !about.citation.isEmpty { Text("Please cite: \(about.citation)").font(.footnote) }
                             if !about.attribution.isEmpty { Text(about.attribution).font(.footnote).foregroundStyle(.secondary) }
-                            if let link = URL(string: about.url), !about.url.isEmpty, link.scheme == "https" || link.scheme == "http" {
+                            if let link = webURL(about.url) {
                                 Link(destination: link) { Label("About this data set", systemImage: "link") }
                             }
                         } header: {

@@ -99,8 +99,7 @@ public struct FillNote: Sendable, Equatable {
         }
         guard !counts.isEmpty else { return ("", []) }
         let n = rows.count
-        var words: [String] = []
-        for (p, _) in counts where !p.word.isEmpty && !words.contains(p.word) { words.append(p.word) }
+        let words = counts.map { $0.0.word }.filter { !$0.isEmpty }.uniqued()
         let kind = words.isEmpty ? "Not-detected values" : "Not-detected \(words.joined(separator: "/")) values"
         let caption: String
         if counts.count == 1 {

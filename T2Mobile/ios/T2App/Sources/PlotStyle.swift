@@ -1,6 +1,3 @@
-import SwiftUI
-import T2Kit
-
 /// How a plot is drawn. Sizes are in points, as on the T2 website's Appearance tab
 /// (0 = do not show that item).
 struct PlotStyle: Equatable {

@@ -133,7 +133,7 @@ final class AppModel {
     var lastError: Error?
     /// what to tell the user when the service could not be reached: their phone, or our server
     var outageText: String {
-        if lastError is ServiceTooOld { return (lastError as? ServiceTooOld)?.errorDescription ?? "" }
+        if let e = lastError as? ServiceTooOld { return e.errorDescription ?? "" }
         // (APIClient keeps the URLError's code in `.transport`: it is the offline codes that say "your phone")
         if (lastError as? APIClient.APIError)?.isOffline == true || (lastError as? URLError).map({ APIClient.APIError.offlineCodes.contains($0.code) }) == true {
             return "Your phone seems to be offline. T2 needs an internet connection to fetch its data."
@@ -181,7 +181,6 @@ final class AppModel {
         return parts + m.presets.filter { !partLabels.contains($0.label) }
     }
     var sourceID: String { meta.map { m in fixedPreset.map { "\(m.dataset)|\($0)" } ?? m.dataset } ?? "" }
-    var sourceLabel: String { sources.first { $0.id == sourceID }?.label ?? (meta?.label ?? "") }
 
     func select(source id: String) async {
         guard id != sourceID, let src = sources.first(where: { $0.id == id }) else { return }
@@ -287,7 +286,7 @@ final class AppModel {
         let x0 = first("x", "t2X"), y0 = first("y", "t2Y"), color0 = first("color", "t2Color"), size0 = first("size", "t2Size")
         let facet0 = (launch ? UserDefaults.standard.string(forKey: "t2Facet") : nil) ?? ""
         func needed(_ names: [String]) -> [String] {
-            Array(Set(names.filter { n in !n.isEmpty && cf.columns[n] == nil && !m.tte.contains { t in t.name == n } })).sorted()
+            Set(names.filter { n in !n.isEmpty && cf.columns[n] == nil && !m.tte.contains { t in t.name == n } }).sorted()
         }
         var pendingMissing: String? = nil
         do {
@@ -324,7 +323,7 @@ final class AppModel {
         presetMasks = Dictionary(presets.map { ($0.label, $0.mask(columns: cf.columns, sampleCount: cf.sampleCount)) }, uniquingKeysWith: { a, _ in a })
         fixedPreset = preset.flatMap { label in presets.contains { $0.label == label } ? label : nil }
         datasetRevision += 1
-        if preset != nil && fixedPreset == nil { status = "This dataset has no part called \u{201C}\(preset ?? "")\u{201D}; showing all of it." }
+        if let preset, fixedPreset == nil { status = "This dataset has no part called \u{201C}\(preset)\u{201D}; showing all of it." }
         if let note = pendingMissing { status = note; pendingMissing = nil }
         activePresets = Set(presets.filter(\.isDefault).map(\.label)).union(fixedPreset.map { [$0] } ?? [])
         x = x0
@@ -380,14 +379,10 @@ final class AppModel {
         }
     }
 
-    func select(dataset name: String) async {
-        await select(source: name)
-    }
-
     /// fetch any of these variables that are not on the device yet
     func ensureLoaded(_ names: [String]) async throws {
         guard let ds = datasetName else { return }
-        let need = Array(Set(names.filter { !$0.isEmpty && filter.columns[$0] == nil && !isTTE($0) })).sorted()
+        let need = Set(names.filter { !$0.isEmpty && filter.columns[$0] == nil && !isTTE($0) }).sorted()
         guard !need.isEmpty else { return }
         let part = fixedPreset
         do {
@@ -408,7 +403,6 @@ final class AppModel {
     /// filled samples are worked out by comparing the two. Both answers are fetched BEFORE anything
     /// is applied, so a failure of the second leaves the device as it was. Returns the names the
     /// dataset lacks and the fill that was really applied.
-    @discardableResult
     private func loadValues(_ ds: String, _ names: [String], fill wanted: String) async throws -> (missing: [String], applied: String) {
         let g = generation
         let version = meta?.version
@@ -546,7 +540,6 @@ final class AppModel {
     /// what the Color row shows: the probe, while individual Y probes are told apart by colour
     var colorLabel: String { color.isEmpty && yIndividually && !yMore.isEmpty ? "Y probe" : color }
 
-    func addFilterColumn(_ name: String) async { await addFilterColumns([name]) }
     /// several at once: one request for all of them, then a panel each
     func addFilterColumns(_ names: [String]) async {
         let wanted = names.filter { !$0.isEmpty }
@@ -575,9 +568,6 @@ final class AppModel {
     // The dataset's presets are of two kinds, groups and exclusions (T2Kit's PresetChoices has
     // the rules and says what each is). They are worked out once per dataset and chosen
     // group, not on every redraw.
-
-    /// a preset that only removes samples
-    static func isExclusion(_ p: Preset) -> Bool { PresetChoices.isExclusion(p) }
 
     /// the samples of the data source: the fixed preset's, or all of them
     private var sourceMask: Mask {
@@ -667,7 +657,7 @@ final class AppModel {
     /// what is filtered, for the figure's "Filtered: ..." caption: the group and exclusions in
     /// use, the cohorts, and the Filter screen's other rules (the data source is named in the title)
     var filterNote: FilterNote {
-        let exclusions = Set(allPresets.filter(Self.isExclusion).map(\.label))
+        let exclusions = Set(allPresets.filter(PresetChoices.isExclusion).map(\.label))
         let used = activePresets.filter { $0 != fixedPreset }
         let cohortCol = meta?.cohortColumn
         return FilterNote(groups: used.filter { !exclusions.contains($0) }.sorted(),
@@ -699,9 +689,7 @@ final class AppModel {
         wanted.append(contentsOf: filter.filters.map(\.column))
         wanted.append(contentsOf: filter.columns.keys.filter { !clinical.contains($0) }.sorted())
         wanted.append(contentsOf: m.clinicalColumns)
-        var names: [String] = []
-        for v in wanted where !v.isEmpty && filter.columns[v] != nil && !names.contains(v) { names.append(v) }
-        return names
+        return wanted.filter { !$0.isEmpty && filter.columns[$0] != nil }.uniqued()
     }
 
     /// how many of the table's columns are probes (not clinical columns)

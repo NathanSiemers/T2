@@ -57,9 +57,7 @@ public struct PlotRequest: Sendable, Equatable {
 
     /// every variable this request needs loaded
     public var variables: [String] {
-        var seen = Set<String>(), out: [String] = []
-        for v in x + y + [color, size, facet] + condition where !v.isEmpty && seen.insert(v).inserted { out.append(v) }
-        return out
+        (x + y + [color, size, facet] + condition).filter { !$0.isEmpty }.uniqued()
     }
 }
 

@@ -58,7 +58,9 @@ public struct APIClient: Sendable {
         let chunks = stride(from: 0, to: names.count, by: Self.maxProbesPerRequest).map {
             Array(names[$0..<min($0 + Self.maxProbesPerRequest, names.count)])
         }
-        func fetchChunk(_ chunk: [String]) async throws -> Values {
+        // A chunk whose types offer no such fill is refused with a 400; only that chunk is
+        // asked again without `fill` (as the R client does). `refused` records the first refusal.
+        func fetchChunk(_ chunk: [String], fill: String) async throws -> Values {
             var query = ["probes": chunk.joined(separator: ",")]
             if let version { query["v"] = version }
             if fill != "na" { query["fill"] = fill }
@@ -66,16 +68,28 @@ public struct APIClient: Sendable {
             if let version, let served = r.version, served != version { throw APIError.versionChanged }
             return r
         }
-        // one request: no task overhead. Several: all at once, put back in the order asked.
-        var answers: [Values?] = Array(repeating: nil, count: chunks.count)
-        if chunks.count == 1 {
-            answers[0] = try await fetchChunk(chunks[0])
-        } else if chunks.count > 1 {
-            try await withThrowingTaskGroup(of: (Int, Values).self) { group in
-                for (i, chunk) in chunks.enumerated() { group.addTask { (i, try await fetchChunk(chunk)) } }
-                for try await (i, r) in group { answers[i] = r }
+        func fetchOrRetry(_ chunk: [String]) async throws -> (Values, APIError?) {
+            do { return (try await fetchChunk(chunk, fill: fill), nil) } catch let e as APIError {
+                if fill != "na", case .http(400, let msg) = e, msg.contains("fill not available") {
+                    return (try await fetchChunk(chunk, fill: "na"), e)
+                }
+                throw e
             }
         }
+        // one request: no task overhead. Several: all at once, put back in the order asked.
+        var answers: [Values?] = Array(repeating: nil, count: chunks.count)
+        var refusals: [APIError] = []
+        if chunks.count == 1 {
+            let (r, refusal) = try await fetchOrRetry(chunks[0])
+            answers[0] = r; if let refusal { refusals.append(refusal) }
+        } else if chunks.count > 1 {
+            try await withThrowingTaskGroup(of: (Int, Values, APIError?).self) { group in
+                for (i, chunk) in chunks.enumerated() { group.addTask { let (r, e) = try await fetchOrRetry(chunk); return (i, r, e) } }
+                for try await (i, r, e) in group { answers[i] = r; if let e { refusals.append(e) } }
+            }
+        }
+        // every chunk refused: the fill is not available for this set; the caller decides
+        if !chunks.isEmpty, refusals.count == chunks.count { throw refusals[0] }
         var columns: [Column] = [], missing: [String] = []
         for r in answers.compactMap({ $0 }) { columns += r.columns; missing += r.missing }
         return (columns, missing, ValuesInfo.merge(answers.compactMap { $0 }))

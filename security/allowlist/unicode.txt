@@ -1,2 +1,2 @@
 # the contact-mail sanitiser strips U+2028 / U+2029 (line/paragraph separators) from untrusted text: the characters are in its regexes on purpose
-t2-contact-mail\.py$
+(~/bin|T2Mobile/ops/contact)/t2-contact-mail\.py$

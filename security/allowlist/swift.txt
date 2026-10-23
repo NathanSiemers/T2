@@ -1,14 +1,14 @@
 # the app's only network client: URLSession in T2Kit's APIClient (docs/API.md, read-only queries + the contact POST)
-T2Kit/Sources/T2Kit/APIClient\.swift:[0-9]+:.*URLSession
+T2Mobile/ios/T2Kit/Sources/T2Kit/APIClient\.swift:[0-9]+:.*URLSession
 # links to the author's site / data-source URLs the server returns (https/http only, opened in Safari by the user's tap)
-T2App/Sources/(AboutView|SourcesView)\.swift:[0-9]+:.*URL\(string:
+T2Mobile/ios/T2App/Sources/(AboutView|SourcesView)\.swift:[0-9]+:.*URL\(string:
 # the service address is the default fiveprime.org/api/t2; the user may change it in About (documented dev feature)
-T2App/Sources/AppModel\.swift:[0-9]+:.*URL\(string: (baseURL|t2DefaultService)
+T2Mobile/ios/T2App/Sources/AppModel\.swift:[0-9]+:.*URL\(string: (baseURL|t2DefaultService)
 # UserDefaults keys the app uses: baseURL, t2Tab, t2Dataset, t2Facet, t2ResearchNoticeSeen (launch-argument overrides for UI tests); nothing else is stored
-T2App/Sources/AppModel\.swift:[0-9]+:.*UserDefaults.*(baseURL|t2Dataset|t2Facet|argument)|T2App/Sources/AppModel\.swift:16:
-T2App/Sources/(T2App|ResearchNoticeView)\.swift:[0-9]+:.*UserDefaults
+T2Mobile/ios/T2App/Sources/AppModel\.swift:[0-9]+:.*UserDefaults.*(baseURL|t2Dataset|t2Facet|argument)|T2Mobile/ios/T2App/Sources/AppModel\.swift:16:
+T2Mobile/ios/T2App/Sources/(T2App|ResearchNoticeView)\.swift:[0-9]+:.*UserDefaults
 # smoke tool and unit tests
-T2Kit/Sources/t2smoke/main\.swift:[0-9]+:
-T2Kit/Tests/
+T2Mobile/ios/T2Kit/Sources/t2smoke/main\.swift:[0-9]+:
+T2Mobile/ios/T2Kit/Tests/
 # local-network exemption for a dev tunnel (https only for the public service)
-T2App/project\.yml:[0-9]+:\s+NSAppTransportSecurity:
+T2Mobile/ios/T2App/project\.yml:[0-9]+:\s+NSAppTransportSecurity:

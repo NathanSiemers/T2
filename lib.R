@@ -65,9 +65,11 @@ load_source_bundle = function(key) {
 ## A dataset left out of the menu: `hidden` in /v1/datasets (dataset_meta key
 ## hidden = 1; absent = listed). Documented fallback while the served data lack the
 ## key (removed once they carry it): the name DEMO, or a title saying "not real data".
+## The service always emits `hidden` (false when the key is absent), so the two are
+## combined as in the iOS app: hidden when the field is true OR the fallback matches.
 ## The dataset stays served and usable by name (the test suites use DEMO).
 t2_dataset_hidden = function(d) {
-  if (!is.null(d$hidden)) return(isTRUE(as.logical(d$hidden)[1]))
+  if (isTRUE(as.logical(d$hidden)[1])) return(TRUE)
   identical(d$name, "DEMO") || grepl("not real data", d$title %||% "", ignore.case = TRUE)
 }
 
@@ -176,7 +178,7 @@ t2_caption_text = function(filter_caption = "", source_line = "", fig_width = NU
 ## list(options = the fills on offer (na first), fill = the one applied or NULL, filled, tested_n
 ## = named integer vectors of the probes with cells changed). The app shows its "Not-detected
 ## values" control iff `options` has more than "na", and offers exactly those.
-t2_fill_of = function(df) {
+t2_fill_of = function(df, rows = NULL) {
   info = list(options = attr(df, "fill_options") %||% "na", fill = attr(df, "fill", exact = TRUE),
               filled = attr(df, "filled"), tested_n = attr(df, "tested_n"), basis = "dataset")
   ## the counts of the PLOT: cells set among the rows of this frame (attr filled_rows), against the
@@ -184,7 +186,9 @@ t2_fill_of = function(df) {
   fr = attr(df, "filled_rows")
   if (!is.null(fr) && !is.null(info$fill)) {
     p = intersect(names(fr), colnames(df))
-    n = vapply(p, function(v) sum(fr[[v]]), 0L); shown = vapply(p, function(v) sum(!is.na(df[[v]])), 0L)
+    ## rows: optional logical mask of the frame's rows actually plotted (complete cases of the plotted variables)
+    if (is.null(rows)) { n = vapply(p, function(v) sum(fr[[v]]), 0L); shown = vapply(p, function(v) sum(!is.na(df[[v]])), 0L) }
+    else { n = vapply(p, function(v) sum(fr[[v]][rows]), 0L); shown = vapply(p, function(v) sum(!is.na(df[[v]][rows])), 0L) }
     info$filled = n[n > 0]; info$tested_n = shown[n > 0]; info$basis = "shown"
   }
   info
@@ -403,7 +407,11 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## build data summary before any transformations
     summary_lines = c()
     summary_lines = c(summary_lines, sprintf("Total samples after filters: %d", nrow(data)))
-    fill_info = t2_fill_of(data)               # the values answer's word on not-detected values
+    ## samples with a value for every plotted x and y: the rows the plot shows
+    plot_vars = unique(c(x, y))
+    plot_vars = plot_vars[plot_vars %in% colnames(data)]
+    complete_xy = if (length(plot_vars) > 0) complete.cases(data[, plot_vars, drop = FALSE]) else NULL
+    fill_info = t2_fill_of(data, rows = complete_xy)   # the values answer's word on not-detected values, among the rows shown
     summary_lines = c(summary_lines, t2_fill_summary(fill_info))
     ## per-variable completeness
     all_vars = unique(c(x, y, color, shape, size, facet, active_condition))
@@ -420,10 +428,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                                                   vname, ifelse(is.na(n), "?", n), nrow(data), pct))
     }
     ## intersection: samples with non-NA for all plotted variables (x + y at minimum)
-    plot_vars = unique(c(x, y))
-    plot_vars = plot_vars[plot_vars %in% colnames(data)]
     if (length(plot_vars) > 0) {
-        complete_xy = complete.cases(data[, plot_vars, drop = FALSE])
         n_complete = sum(complete_xy)
         n_missing = nrow(data) - n_complete
         summary_lines = c(summary_lines, "",

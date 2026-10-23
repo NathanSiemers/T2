@@ -157,6 +157,8 @@ t2_apply_text_switches = function(res, title = TRUE, subtitle = TRUE, axis_title
         if (!is.null(res$table) && !isTRUE(axis_titles)) res$table = res$table + ggplot2::theme(axis.title = ggplot2::element_blank())
     } else if (inherits(res, "ggplot")) {
         res = strip(res)
+    } else if (is.list(res) && inherits(res$plot, "ggplot")) {     # plotter()'s list (fun_plot1)
+        res$plot = strip(res$plot)
     }
     res
 }

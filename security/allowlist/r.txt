@@ -21,10 +21,10 @@ TCGA/290-record_environment\.R:[0-9]+:.*(Sys\.getenv\(\)|devtools::)
 # test harness: eval of a fixed local prototype file; evil-input strings of the fuzzers (payloads, never executed by us)
 Testing/benchmark_queries\.R:20:
 (Testing/)?test_[A-Za-z_]+\.R:[0-9]+:.*system\('id'\)
-test_[A-Za-z_]+\.R:[0-9]+:.*(rm -rf|file\.remove)
+(Testing/)?test_[A-Za-z_]+\.R:[0-9]+:.*(rm -rf|file\.remove)
 # `.First`-like names inside comments or data (Frame_Shift etc.) are not hooks
 # a commented-out line and an error message that tells the operator to install packages (not calls)
 TCGA/270-estimate\.R:69:##try
-/app\.R:15:.*install\.packages\(c\(
+app\.R:15:.*install\.packages\(c\(
 # root copy of the benchmark harness: evaluates the first lines of a fixed local prototype file
-/benchmark_queries\.R:20:
+benchmark_queries\.R:20:

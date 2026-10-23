@@ -30,8 +30,9 @@ testServer(shiny::shinyAppDir("."), {
   ok(t2_dataset_hidden(list(name = "x", title = "t", hidden = TRUE)) && !t2_dataset_hidden(list(name = "x", title = "t", hidden = FALSE)) &&
      !t2_dataset_hidden(list(name = "x", title = "t")) && t2_dataset_hidden(list(name = "DEMO", title = "t")) &&
      t2_dataset_hidden(list(name = "z", title = "Foo (Not Real Data)")) &&
-     !t2_dataset_hidden(list(name = "DEMO", title = "t", hidden = FALSE)),
-     "hidden: the field wins; without it the name DEMO or 'not real data' in the title hides")
+     t2_dataset_hidden(list(name = "DEMO", title = "t", hidden = FALSE)) &&
+     t2_dataset_hidden(list(name = "x", title = "t", hidden = TRUE)) && !t2_dataset_hidden(list(name = "x", title = "t", hidden = FALSE)),
+     "hidden: the field true hides; so do the name DEMO or 'not real data' in the title, even when the field is false (the service always emits it)")
   ok(identical(load_source_bundle("DEMO")$name, "DEMO"), "a hidden dataset still loads by name")
 
   ## ------------------------------------------------- TCGA: groups and exclusions

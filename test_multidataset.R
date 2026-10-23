@@ -146,4 +146,18 @@ if (!"cptac" %in% ds) {
   ok(is.numeric(dc$OS.time) && all(dc$OS %in% c(0, 1, NA)), "survival columns OS / OS.time")
 }
 
+## t2_write_meta / t2_write_types round trip on a throwaway file (dataset_meta + types.fill_options)
+cat("\n== t2_write_meta / t2_write_types ==\n")
+if (!exists("T2_META_KEYS")) { if (!exists("set_t2_sparse")) source("t2_views.R"); source("t2_build_lib.R") }
+wf <- tempfile(fileext = ".db"); wc <- DBI::dbConnect(RSQLite::SQLite(), wf)
+invisible(quiet(t2_write_types(wc, data.frame(type = c("expr", "mut"), fill_options = c("na|zero|floor", "na"), stringsAsFactors = FALSE))))
+ok(identical(t2_write_meta(wc, list(hidden = 1, title = "round trip")), c("hidden", "title")), "t2_write_meta runs (no error, returns the keys written)")
+dm <- DBI::dbGetQuery(wc, "SELECT key, value FROM dataset_meta"); ok(identical(dm$value[dm$key == "hidden"], "1") && identical(dm$value[dm$key == "title"], "round trip"), "dataset_meta read back")
+ty <- DBI::dbGetQuery(wc, "SELECT type, fill_options FROM types ORDER BY type")
+ok(identical(ty$fill_options, c("na|zero|floor", "na")), "types.fill_options read back")
+invisible(quiet(t2_write_types(wc, data.frame(type = "expr", fill_options = "na|zero", stringsAsFactors = FALSE), allow_new = FALSE)))
+ok(DBI::dbGetQuery(wc, "SELECT fill_options f FROM types WHERE type = 'expr'")$f == "na|zero", "t2_write_types updates fill_options on an existing type")
+ok(inherits(try(t2_write_types(wc, data.frame(type = "expr", fill_options = "zero"), allow_new = FALSE), silent = TRUE), "try-error"), "a bad fill_options is refused")
+DBI::dbDisconnect(wc); unlink(wf)
+
 finish("test_multidataset")

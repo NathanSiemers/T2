@@ -212,15 +212,22 @@ t2_api_values = function(ds, probes, fill = "na") {
       }
       for (p in as.character(unlist(res$missing))) .t2_api$values$put(key(p, f1), "missing")
     }
-    list(cols = out, options = opts)
+    list(cols = out, options = opts, fresh = length(todo) == length(probes))
   }
   ## the options the answer gave for this exact set of probes: asked once per set, then remembered
   setkey = paste0(ds, "|", v, "|set|", paste(sort(probes), collapse = ","))
   opts = .t2_api$fillopts$get(setkey)
   base = NULL
   if (is.null(opts)) {
-    base = fetch("na", force = TRUE)
-    opts = c("na", "zero", "floor")[c("na", "zero", "floor") %in% c("na", base$options)]
+    ## the cached columns carry their type (attr t2type) and the meta says which fills a type offers; only
+    ## when the meta says nothing is the answer asked (once, forced if some columns came from the cache)
+    base = fetch("na")
+    mt = tryCatch(t2_api_meta(ds)$types, error = function(e) NULL)
+    tf = list(); for (t in mt) tf[[t$type]] = as.character(unlist(t$fill_options))
+    if (!any(lengths(tf) > 0) && !base$fresh) base = fetch("na", force = TRUE)
+    tys = unique(unlist(lapply(base$cols, function(x) attr(x, "t2type"))))
+    say = unlist(tf[intersect(tys, names(tf))])
+    opts = c("na", "zero", "floor")[c("na", "zero", "floor") %in% c("na", say, base$options)]
     .t2_api$fillopts$put(setkey, opts)
   }
   if (fill != "na" && fill %in% opts) {

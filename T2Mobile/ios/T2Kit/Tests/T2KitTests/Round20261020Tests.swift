@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import T2Kit
 
 /// The 2026-10-20 round: hidden datasets, the title's source word, the "Filtered: ..." caption,
@@ -187,5 +190,67 @@ final class Round20261020Tests: XCTestCase {
         cols["X"] = Column(name: "X", type: "rna", data: .numeric([1, 2, 3, 5]))
         var req = PlotRequest(x: ["X"], y: ["A", "B", "C"]); req.yIndividually = true
         _ = PlotBuilder.build(req, columns: cols, keep: Mask(repeating: true, count: 4))
+    }
+}
+
+/// Answers /values: with `fill`, the chunk that starts at p0 is refused (400) when `refuseFirst`,
+/// and the chunk that starts at p100 when `refuseSecond`; the others are filled.
+final class FillStub: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var refuseFirst = true
+    nonisolated(unsafe) static var refuseSecond = false
+    nonisolated(unsafe) static var plainRequests = 0
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let comps = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+        let item = { (n: String) in comps?.queryItems?.first { $0.name == n }?.value }
+        let probes = (item("probes") ?? "").split(separator: ",").map(String.init)
+        let fill = item("fill")
+        let isFirst = probes.first == "p0"
+        var status = 200
+        var body: String
+        if fill != nil && ((isFirst && Self.refuseFirst) || (!isFirst && Self.refuseSecond)) {
+            status = 400
+            body = #"{"error":"fill not available for these variables"}"#
+        } else {
+            if fill == nil { Self.plainRequests += 1 }
+            let cols = probes.map { #"{"name":"\#($0)","kind":"num","type":"rna","values":[1,2]}"# }.joined(separator: ",")
+            let extra = fill == nil ? "" : #","fill_options":["na","zero"],"fill":"\#(fill!)","filled":{"\#(probes[0])":1}"#
+            body = #"{"dataset":"d","version":"v1","n":2,"columns":[\#(cols)],"missing":[]\#(extra)}"#
+        }
+        let resp = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+final class FillChunkTests: XCTestCase {
+    private func client() -> APIClient {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [FillStub.self]
+        return APIClient(baseURL: URL(string: "http://stub.invalid")!, session: URLSession(configuration: cfg))
+    }
+    private let names = (0..<150).map { "p\($0)" }
+
+    func testARefusedChunkIsRetriedPlainAndTheFillStaysApplied() async throws {
+        FillStub.refuseFirst = true; FillStub.refuseSecond = false; FillStub.plainRequests = 0
+        let r = try await client().values("d", probes: names, version: "v1", fill: "zero")
+        XCTAssertEqual(r.columns.map(\.name), names)             // both chunks' columns, in order
+        XCTAssertEqual(r.info.fill, "zero")                      // the accepting chunk applied it
+        XCTAssertEqual(r.info.fillOptions, ["na", "zero"])
+        XCTAssertTrue(r.info.anyFilled)
+        XCTAssertEqual(FillStub.plainRequests, 1)                // only the refused chunk was asked again
+    }
+
+    func testEveryChunkRefusedThrowsTheFourHundred() async {
+        FillStub.refuseFirst = true; FillStub.refuseSecond = true
+        do {
+            _ = try await client().values("d", probes: names, version: "v1", fill: "zero")
+            XCTFail("expected a 400")
+        } catch APIClient.APIError.http(let code, let msg) {
+            XCTAssertEqual(code, 400); XCTAssertTrue(msg.contains("fill not available"))
+        } catch { XCTFail("wrong error \(error)") }
     }
 }

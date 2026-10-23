@@ -42,6 +42,13 @@ sha() { sha256sum "$@" 2>/dev/null; }
 
 # allowlist file -> patterns (comment and blank lines removed)
 al_clean() { [ -f "$1" ] && grep -vE '^[[:space:]]*(#|$)' "$1" > "$2" || : > "$2"; }
+# al_anchor <allowlist> <out> : same, but every entry is anchored at the START of the record, so that an entry
+# `path:[0-9]+:content` can only match a record that begins with that repo-relative path (a comment, a file name
+# or padding inside the code cannot imitate it). Entries are grouped, so a top-level `a|b` stays two alternatives.
+al_anchor() { al_clean "$1" "$2.raw"; sed 's/^/^(/; s/$/)/' "$2.raw" > "$2"; }
+# relpath : stdin = grep records (abs path first) -> repo-relative path (REPO/ stripped; PUB/, NGX/ and ~/ for the
+# other roots), applied BEFORE allowlist matching. Records are never truncated before matching.
+relpath() { sed "s#^$REPO/##; s#^$PUB/#PUB/#; s#^$NGX/#NGX/#; s#^$HOME/#~/#"; }
 
 # bl_check <name> <description>  : stdin = current state (text); compares with baseline/<name>
 bl_check() {
@@ -55,10 +62,10 @@ bl_check() {
 # detector <name> <pattern-ERE> <allowlist-basename> : stdin = NUL-separated absolute file list
 detector() {
   local name=$1 pat=$2 alf=$3 hits="$TMP/hits.$1" a="$TMP/al.$1"
-  tr '\n' '\0' | xargs -0 -r grep -InE -- "$pat" 2>/dev/null | cut -c1-260 > "$hits"
-  if [ $RAW = 1 ]; then echo "---- raw hits: $name ($(wc -l < "$hits"))"; sed "s#$REPO/##" "$hits"; return; fi
-  al_clean "$AL/$alf" "$a"
-  local rest; rest=$(grep -vEf "$a" "$hits" | sed "s#$REPO/##")
+  tr '\n' '\0' | xargs -0 -r grep -HInE -- "$pat" 2>/dev/null | relpath > "$hits"
+  if [ $RAW = 1 ]; then echo "---- raw hits: $name ($(wc -l < "$hits"))"; cut -c1-260 "$hits"; return; fi
+  al_anchor "$AL/$alf" "$a"
+  local rest; rest=$(grep -vEf "$a" "$hits" | cut -c1-260)
   local n; n=$(wc -l < "$hits"); local k; k=$(grep -cEf "$a" "$hits")
   if [ -z "$rest" ]; then pass "$name: no unlisted hit ($k allowlisted of $n)"
   else fail "$name: $(printf '%s\n' "$rest" | wc -l) hit(s) not on allowlist/$alf" "$rest"; fi
@@ -171,8 +178,16 @@ undoc=$(grep -hoE 'HandleFunc\("[A-Z]+ [^"]+"' "$SVC"/cmd/t2api/main.go | sed -E
   grep -qF -- "$(echo "$r" | sed 's#/{ds}/#/{ds}/#')" "$REPO/T2Mobile/docs/API.md" || echo "$r"; done)
 [ -z "$undoc" ] && pass "every mux route is documented in T2Mobile/docs/API.md" || fail "mux route(s) not in docs/API.md" "$undoc"
 awk '/^require \(/{f=1;next} /^\)/{f=0} f||/^require /{print}' "$SVC/go.mod" | sed 's/^require //' | bl_check go-deps "Go dependencies (go.mod require)"
-extra=$(sed 's/^require //; s/^[[:space:]]*//' "$SVC/go.mod" | awk '/^\(/{next} /^\)/{f=0;next} /^[a-z]/&&$0!~/^(module|go|toolchain)/&&NF>=2&&$1 ~ /\./{print $1 $2}' | grep -vE '^(modernc.org/(sqlite|libc|mathutil|memory)|github.com/(dustin/go-humanize|google/uuid|remyoudompheng/bigfft)|golang.org/x/(exp|sys))' )
-[ -z "$extra" ] && pass "all Go dependencies are modernc.org/sqlite and its known transitive set" || fail "unexpected Go dependency" "$extra"
+# go.mod: no replace / exclude / retract directive at all (a replace would swap the code behind an allowlisted module path)
+gm="$SVC/go.mod"
+dirs=$(grep -nE '^[[:space:]]*(replace|exclude|retract)\b' "$gm" 2>/dev/null)
+[ -z "$dirs" ] && pass "go.mod: no replace, exclude or retract directive" || fail "go.mod contains replace/exclude/retract (the module path in a require line may not be the code that is built)" "$dirs"
+# module paths named in require lines / require ( ... ) blocks only, each must be on allowlist/go-deps.txt (whole line, fixed string)
+al_clean "$AL/go-deps.txt" "$TMP/al.godeps"
+reqmods=$(sed 's#//.*$##' "$gm" 2>/dev/null | awk '/^[[:space:]]*require[[:space:]]*\(/{f=1;next} f&&/^[[:space:]]*\)/{f=0;next} f{print $1;next} /^[[:space:]]*require[[:space:]]+/{print $2}')
+extra=$(printf '%s\n' "$reqmods" | grep -v '^$' | grep -vxFf "$TMP/al.godeps")
+nreq=$(printf '%s\n' "$reqmods" | grep -vc '^$')
+[ -z "$extra" ] && [ "$nreq" -gt 0 ] && pass "all $nreq Go dependencies in go.mod are on allowlist/go-deps.txt (modernc.org/sqlite and its known transitive set)" || fail "unexpected Go dependency (not on allowlist/go-deps.txt), or no require found ($nreq)" "$extra"
 # detectors over the Go sources
 { find "$SVC" -name '*.go' -not -path '*/vendor/*'; } | detector go-detector \
  '"os/exec"|exec\.Command|net\.Dial|net\.Listen|net\.Lookup|http\.(Get|Post|Head|PostForm|NewRequest|DefaultClient|Client)|\bunsafe\b|"syscall"|^func init\(|go:linkname|go:embed|import "C"|os\.Getenv|os\.Environ|os\.(WriteFile|Create|OpenFile|Remove|Rename|Mkdir|Symlink|Chmod)|ioutil|plugin\.Open|ListenAndServe|Header\.Get|Header\.Values|URL\.Query\(\)|FormValue|Cookie|RemoteAddr|\.Exec\(|ATTACH|reflect\.Value|runtime\.SetFinalizer|os\.Exit|"crypto/tls"|InsecureSkipVerify|r\.(URL|Header|PathValue)[^;]*(==|!=) *"' go.txt
@@ -257,33 +272,34 @@ codefiles | sort -u | grep -E '\.swift$|\.plist$|project\.yml$|\.xcconfig$|\.ent
  'URLSession|URL\(string|\bProcess\(|NSTask|dlopen|dlsym|NSClassFromString|performSelector|UserDefaults|@AppStorage|WKWebView|SFSafariViewController|Firebase|Analytics|Crashlytics|Sentry|identifierForVendor|ASIdentifierManager|UIPasteboard|CLLocation|SecItem|Keychain|Data\(base64|@_silgen_name|unsafeBitCast|OTHER_LDFLAGS|OTHER_SWIFT_FLAGS|NSAppTransportSecurity|NSAllowsArbitraryLoads|preBuildScripts|postBuildScripts|buildPhase|runScript|shellScript|scripts:' swift.txt
 codefiles | sort -u | grep -E '\.sh$|\.py$|\.yml$|\.yaml$|Dockerfile' | detector shell-detector \
  '\|[[:space:]]*(ba|z)?sh([[:space:]]|$)|base64 +(-d|--decode)|\beval\b|\bnc\b|\bncat\b|/dev/tcp|mkfifo|crontab|systemctl +(enable|start|edit|daemon)|authorized_keys|\.ssh/|\bsudo\b|curl .*(--upload-file| -T | -F |--data(-binary)? +@| -d +@)|\bwget\b|\bscp\b|\bssh\b|rsync .*@|openssl +(enc|s_client)|xxd +-r|perl +-e|source +<|\. +<\(|git +(push|remote add|config)' shell.txt
-codefiles | sort -u | tr '\n' '\0' | xargs -0 -r grep -InE '[A-Za-z0-9+/]{150,}={0,2}' 2>/dev/null | cut -c1-200 > "$TMP/b64"
-al_clean "$AL/base64.txt" "$TMP/al.b64"; rest=$(grep -vEf "$TMP/al.b64" "$TMP/b64" | sed "s#$REPO/##")
+codefiles | sort -u | tr '\n' '\0' | xargs -0 -r grep -HInE '[A-Za-z0-9+/]{150,}={0,2}' 2>/dev/null | relpath > "$TMP/b64"
+al_anchor "$AL/base64.txt" "$TMP/al.b64"; rest=$(grep -vEf "$TMP/al.b64" "$TMP/b64" | cut -c1-200)
 [ -z "$rest" ] && pass "base64-like blobs (150+ chars) in code: none outside the allowlist" || fail "long base64-like string in code" "$rest"
 # 7c. credentials: unlisted = FAIL; known accepted findings = WARN
 { repo_files; ls "$PUB"/*.sh "$PUB"/scripts/*.sh "$PUB"/conf/* "$NGX"/*.conf "$HOME"/bin/t2-contact-mail.* 2>/dev/null; } | grep -vE '\.(png|ttf|db|xlsx|gz|zip|pdf|tif|tiff|ico|md)$|/(Data|TCGA/Data)/' | sort -u | tr '\n' '\0' | \
-  xargs -0 -r grep -InE 'AKIA[0-9A-Z]{12}|BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|ghp_[A-Za-z0-9]{20}|github_pat_[A-Za-z0-9_]{20}|xox[bpa]-[A-Za-z0-9-]{10}|sk-[A-Za-z0-9]{24}|AIza[0-9A-Za-z_-]{30}|password *= *["'"'"'][^"'"'"']+["'"'"']|\.p8\b|AuthKey_|api[_-]?key *[=:] *["'"'"'][A-Za-z0-9]|token *[=:] *["'"'"'][A-Za-z0-9_-]{16}' 2>/dev/null | cut -c1-120 | sed -E 's/(password *= *")[^"]*"/\1<redacted>"/' > "$TMP/sec"
-if [ $RAW = 1 ]; then echo "---- raw secrets-pattern hits"; sed "s#$REPO/##" "$TMP/sec"; fi
-al_clean "$AL/secrets.txt" "$TMP/al.sec"; al_clean "$AL/secrets-known-findings.txt" "$TMP/al.seck"
-rest=$(grep -vEf "$TMP/al.sec" "$TMP/sec" | grep -vEf "$TMP/al.seck" | sed "s#$REPO/##")
-known=$(grep -Ef "$TMP/al.seck" "$TMP/sec" | sed "s#$REPO/##" | cut -d: -f1 | sort | uniq -c | sort -rn)
+  xargs -0 -r grep -HInE 'AKIA[0-9A-Z]{12}|BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|ghp_[A-Za-z0-9]{20}|github_pat_[A-Za-z0-9_]{20}|xox[bpa]-[A-Za-z0-9-]{10}|sk-[A-Za-z0-9]{24}|AIza[0-9A-Za-z_-]{30}|password *= *["'"'"'][^"'"'"']+["'"'"']|\.p8\b|AuthKey_|api[_-]?key *[=:] *["'"'"'][A-Za-z0-9]|token *[=:] *["'"'"'][A-Za-z0-9_-]{16}' 2>/dev/null | relpath > "$TMP/sec"
+red() { cut -c1-120 | sed -E 's/(password *= *")[^"]*"/\1<redacted>"/'; }   # display only, after matching
+if [ $RAW = 1 ]; then echo "---- raw secrets-pattern hits"; red < "$TMP/sec"; fi
+al_anchor "$AL/secrets.txt" "$TMP/al.sec"; al_anchor "$AL/secrets-known-findings.txt" "$TMP/al.seck"
+rest=$(grep -vEf "$TMP/al.sec" "$TMP/sec" | grep -vEf "$TMP/al.seck" | red)
+known=$(grep -Ef "$TMP/al.seck" "$TMP/sec" | cut -d: -f1 | sort | uniq -c | sort -rn)
 [ -z "$rest" ] && pass "credential patterns: no unlisted hit" || fail "credential-like string in code" "$rest"
 [ -n "$known" ] && warn "KNOWN FINDING (accepted, see README/report): hard-coded database passwords in legacy files; rotate and delete" "$known"
 # code that reads credential files
-{ repo_files; ls "$PUB"/scripts/*.sh 2>/dev/null; } | grep -E '\.(R|go|swift|sh|py)$' | tr '\n' '\0' | xargs -0 -r grep -InE 'github\.token|t2-testflight\.env|\.appstoreconnect|private_keys|claude-oauth-token|\.ssh/id_|cookie\.env|\.netrc|\.git-credentials' 2>/dev/null | cut -c1-200 > "$TMP/credread"
-al_clean "$AL/credential-readers.txt" "$TMP/al.cr"; rest=$(grep -vEf "$TMP/al.cr" "$TMP/credread" | sed "s#$REPO/##")
+{ repo_files; ls "$PUB"/scripts/*.sh 2>/dev/null; } | grep -E '\.(R|go|swift|sh|py)$' | tr '\n' '\0' | xargs -0 -r grep -HInE 'github\.token|t2-testflight\.env|\.appstoreconnect|private_keys|claude-oauth-token|\.ssh/id_|cookie\.env|\.netrc|\.git-credentials' 2>/dev/null | relpath > "$TMP/credread"
+al_anchor "$AL/credential-readers.txt" "$TMP/al.cr"; rest=$(grep -vEf "$TMP/al.cr" "$TMP/credread" | cut -c1-200)
 [ -z "$rest" ] && pass "code that reads credential files: only the documented iOS release tooling" || fail "code reads a credential file" "$rest"
 # 7d. hidden characters
-{ codefiles; repo_files | grep -E '\.(md|txt|json|html|tsv|csv)$'; } | sort -u | tr '\n' '\0' | xargs -0 -r grep -IlP '[\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2060}-\x{206F}\x{FEFF}]' 2>/dev/null > "$TMP/zw"
-al_clean "$AL/unicode.txt" "$TMP/al.zw"; rest=$(grep -vEf "$TMP/al.zw" "$TMP/zw" | sed "s#$REPO/##")
+{ codefiles; repo_files | grep -E '\.(md|txt|json|html|tsv|csv)$'; } | sort -u | tr '\n' '\0' | xargs -0 -r grep -IlP '[\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2060}-\x{206F}\x{FEFF}]' 2>/dev/null | relpath > "$TMP/zw"
+al_anchor "$AL/unicode.txt" "$TMP/al.zw"; rest=$(grep -vEf "$TMP/al.zw" "$TMP/zw")
 [ -z "$rest" ] && pass "zero-width / bidi-control characters: none outside the allowlist" || fail "zero-width or bidi control characters in" "$rest"
-{ codefiles; } | grep -E '\.(R|go|swift|sh|py)$' | sort -u | tr '\n' '\0' | xargs -0 -r grep -InP '[^\x00-\x7F]' 2>/dev/null | grep -vP '^[^:]+:\d+:\s*(#|//|\*|///)' | grep -vP '"[^"]*[^\x00-\x7F][^"]*"|'"'"'[^'"'"']*[^\x00-\x7F][^'"'"']*'"'" | cut -c1-160 > "$TMP/nonascii"
-al_clean "$AL/nonascii-code.txt" "$TMP/al.na"; rest=$(grep -vEf "$TMP/al.na" "$TMP/nonascii" | sed "s#$REPO/##")
+{ codefiles; } | grep -E '\.(R|go|swift|sh|py)$' | sort -u | tr '\n' '\0' | xargs -0 -r grep -HInP '[^\x00-\x7F]' 2>/dev/null | grep -vP '^[^:]+:\d+:\s*(#|//|\*|///)' | grep -vP '"[^"]*[^\x00-\x7F][^"]*"|'"'"'[^'"'"']*[^\x00-\x7F][^'"'"']*'"'" | relpath > "$TMP/nonascii"
+al_anchor "$AL/nonascii-code.txt" "$TMP/al.na"; rest=$(grep -vEf "$TMP/al.na" "$TMP/nonascii" | cut -c1-160)
 [ -z "$rest" ] && pass "non-ASCII characters outside comments and string literals (homoglyph identifiers): none" || fail "non-ASCII character in code (possible homoglyph identifier)" "$rest"
 { repo_files | grep -E '\.sh$'; ls "$PUB"/scripts/*.sh "$PUB"/*.sh "$HOME"/bin/t2-contact-mail.sh 2>/dev/null; } | tr '\n' '\0' | xargs -0 -r grep -lP '\r' 2>/dev/null > "$TMP/cr"
 [ ! -s "$TMP/cr" ] && pass "no carriage returns in shell scripts" || fail "carriage returns in shell script(s)" "$(cat "$TMP/cr")"
-repo_files | tr '\n' '\0' | xargs -0 -r grep -IlE '.{3000,}' 2>/dev/null | grep -vE '/(TCGA|CPTAC|TCGATARGETGTEX)/[^/]*$|\.(csv|tsv|json|html|md)$' > "$TMP/long"
-al_clean "$AL/long-lines.txt" "$TMP/al.ll"; rest=$(grep -vEf "$TMP/al.ll" "$TMP/long" | sed "s#$REPO/##")
+repo_files | tr '\n' '\0' | xargs -0 -r grep -IlE '.{3000,}' 2>/dev/null | grep -vE '/(TCGA|CPTAC|TCGATARGETGTEX)/[^/]*$|\.(csv|tsv|json|html|md)$' | relpath > "$TMP/long"
+al_anchor "$AL/long-lines.txt" "$TMP/al.ll"; rest=$(grep -vEf "$TMP/al.ll" "$TMP/long")
 [ -z "$rest" ] && pass "no code file with a 3000+ character line" || warn "code file(s) with a 3000+ character line" "$rest"
 
 ###############################################################################################
@@ -303,7 +319,7 @@ cat "$REPO/.gitignore" | grep -vE '^\s*(#|$)' | bl_check gitignore ".gitignore e
 (cd "$REPO"; git log --all --since=2026-09-01 --diff-filter=A --numstat --format='C %h' | awk '/^C /{c=$2; next} $1=="-"{print c, $3}' | grep -vE '\.(png|ttf|jpg|pdf)$') > "$TMP/newbin"
 [ ! -s "$TMP/newbin" ] && pass "git: no binary file other than fonts/images/PDF added since 2026-09-01" || fail "git: unexpected binary file added since 2026-09-01" "$(cat "$TMP/newbin")"
 (cd "$REPO"; git ls-files -z | xargs -0 ls -l 2>/dev/null | awk '$5>5000000{print $5, $9}') > "$TMP/bigf"
-al_clean "$AL/big-files.txt" "$TMP/al.bf"; rest=$(grep -vEf "$TMP/al.bf" "$TMP/bigf")
+al_anchor "$AL/big-files.txt" "$TMP/al.bf"; rest=$(grep -vEf "$TMP/al.bf" "$TMP/bigf")
 [ -z "$rest" ] && pass "git: no tracked file over 5 MB beyond the allowlist" || fail "git: large tracked file" "$rest"
 (cd "$REPO"; git for-each-ref --format='%(refname:short) %(objectname:short)' refs/heads refs/remotes refs/tags | grep -v 'origin/HEAD') | sort | bl_check git-refs "git refs (branches, remote branches, tags) of the repository"
 nm=$(cd "$REPO"; git branch -a --no-merged main --format='%(refname:short)' | grep -v '^$' | tr '\n' ' ')

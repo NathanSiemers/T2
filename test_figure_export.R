@@ -204,6 +204,9 @@ ok(is.null(pt$labels$title) && !is.null(pt$labels$subtitle), "title off: no titl
 ps <- t2_apply_text_switches(pf, title = TRUE, subtitle = FALSE, axis_titles = FALSE)
 ok(!is.null(ps$labels$title) && is.null(ps$labels$subtitle) && inherits(ps$theme$axis.title, "element_blank"),
    "subtitle off, axis titles off (blank axis.title)")
+pl <- t2_apply_text_switches(list(plot = pf, summary = "s"), title = FALSE, subtitle = FALSE, axis_titles = FALSE)
+ok(is.list(pl) && identical(pl$summary, "s") && is.null(pl$plot$labels$title) && is.null(pl$plot$labels$subtitle) &&
+   inherits(pl$plot$theme$axis.title, "element_blank"), "switches on a plotter-style list strip res$plot")
 fa <- tmp("png"); t2_render_figure(ps, fa, 3.5, 3.2, 100, "png"); ok(file.exists(fa) && file.size(fa) > 1000, "a figure with switched-off elements renders")
 pn <- draw(list(x = "CD8A", y = "FOXP3"), source = FALSE)
 ok(is.null(pn$labels$caption), "source line off, nothing to put in the caption: no caption")
@@ -258,6 +261,8 @@ attr(fdf, "fill_options") <- c("na", "zero"); attr(fdf, "fill") <- "zero"; attr(
 attr(fdf, "filled_rows") <- list(A.prot = c(TRUE, TRUE, FALSE, FALSE, FALSE))
 fi <- t2_fill_of(fdf)
 ok(identical(unname(fi$filled), 2L) && identical(unname(fi$tested_n), 4L) && fi$basis == "shown", "t2_fill_of: counts from the frame's own rows (2 set, 4 with a value), not the dataset's")
+fi2 <- t2_fill_of(fdf, rows = c(TRUE, FALSE, TRUE, TRUE, FALSE))
+ok(identical(unname(fi2$filled), 1L) && identical(unname(fi2$tested_n), 2L), "t2_fill_of rows: counts only the plotted rows (1 set, 2 with a value)")
 attr(fdf, "filled_rows") <- NULL
 ok(t2_fill_of(fdf)$basis == "dataset" && unname(t2_fill_of(fdf)$filled) == 99L, "no frame attribute: the answer's dataset-wide counts are the fallback")
 

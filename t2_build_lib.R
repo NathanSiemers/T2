@@ -118,12 +118,6 @@ t2_write_meta <- function(con, meta = list(), tte = NULL) {
       DBI::dbExecute(con, "DELETE FROM dataset_meta WHERE key = ?", params = list(k))
       DBI::dbExecute(con, "INSERT INTO dataset_meta(key, value) VALUES (?, ?)", params = list(k, unname(vals[[k]])))
     }
-    if (has("fill_options")) {               # optional column, added when absent; validated
-      t2_ensure_columns(con, "types", c(fill_options = "TEXT"))
-      for (i in seq_len(nrow(spec))) if (!is.na(spec$fill_options[i]))
-        DBI::dbExecute(con, "UPDATE types SET fill_options = ? WHERE type = ?",
-                       params = list(t2_fill_options_check(spec$fill_options[i]), spec$type[i]))
-    }
     DBI::dbCommit(con)
   }, error = function(e) { try(DBI::dbRollback(con), silent = TRUE); stop(e) })
   invisible(names(vals))
@@ -157,6 +151,12 @@ t2_write_types <- function(con, spec, allow_new = TRUE) {
       }
       if (has("label")) for (i in seq_len(nrow(spec))) if (!is.na(spec$label[i]))
         DBI::dbExecute(con, "UPDATE types SET label = ? WHERE type = ?", params = list(as.character(spec$label[i]), spec$type[i]))
+    }
+    if (has("fill_options")) {               # optional column, added when absent; validated
+      t2_ensure_columns(con, "types", c(fill_options = "TEXT"))
+      for (i in seq_len(nrow(spec))) if (!is.na(spec$fill_options[i]))
+        DBI::dbExecute(con, "UPDATE types SET fill_options = ? WHERE type = ?",
+                       params = list(t2_fill_options_check(spec$fill_options[i]), spec$type[i]))
     }
     if (has("r_datatype")) {
       s <- spec[!is.na(spec$r_datatype), , drop = FALSE]

@@ -1550,4 +1550,14 @@ freeze began; the submission 635f739b was not touched. Nathan pastes the reply (
 **Reply sent, 2026-10-22 night:** Nathan posted the reply in the thread (his edits: the misclassification framing,
 "open access" category, policy URLs appended instead of attachments, trimmed to the 4,000-character limit). The text as
 sent is in `docs/APPSTORE.md`, "Reply AS SENT". Now waiting for Apple; nothing else to do on ASC.
+**Ultrareview of PR #14, 2026-10-22 night** (Nathan launched `/ultrareview 14`, free run 1 of 3; findings posted as
+https://github.com/NathanSiemers/T2/pull/14#issuecomment-6357428844): 9 findings, all verified real by Claude. Blocker:
+the `types.fill_options` write block landed in `t2_write_meta` (no `has`/`spec` there), so every `dataset_meta.R set`
+and every builder's meta write fails ("could not find function has"); the suites were green because none of them runs
+a writer and the dev db files already carry the keys. Others: Publish text switches ignore non-survival plots; the web
+not-detected caption counts the whole frame, not the plotted rows; scan.sh Go-dependency allowlist misses go-isatty /
+go-strftime (the FAIL earlier blamed on the baseline), unanchored allowlist matching, `replace` directives ignored;
+iOS sends `fill=` to every 100-probe chunk and one refusal drops the fill; Go always emits `hidden` so R's DEMO
+fallback is dead; the R client refetches cached columns to learn fill_options. Nathan: "fix them". Fixes in progress
+on the branch (three Sonnet agents: R, scan.sh, iOS), then the full suite, then a commit; still no release (freeze).
 

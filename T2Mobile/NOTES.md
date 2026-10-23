@@ -1533,4 +1533,6 @@ Gmail); Nathan pastes it; then Path B of `docs/IOS-RELEASE-AFTER-APPLE.md`. The 
 **Acceptance of the new Mac, 2026-10-22 18:24-18:50 PDT:** `T2_MAC=10.1.0.9 ops/test.sh ios` from a cold toolchain
 (XcodeGen, first build, simulator first boot) passed: 9 UI tests, 0 failures, 74 screenshots, iPhone 18 Pro light,
 against the dev service through the ssh tunnel. The MacBook Pro is the iOS machine from now on.
+Later the same evening Nathan ran `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` on the new Mac
+(`xcode-select -p` confirms); the temporary `DEVELOPER_DIR` line was removed from `~/.zshenv`.
 

@@ -1510,3 +1510,24 @@ next iOS build (1.0 build 3 if build 2 is rejected and this is the fix, 1.1 if a
 reboot, `%sudo NOPASSWD`, root's authorized keys, the legacy files with database passwords (delete or rotate),
 `TCGA/createT2_plus.sh` (rsync to an old ec2 host), `github.token` files in dev/archive mounts, the over-broad
 `.claude/settings.local.json` rules, cert renewal 2027-04-04.
+
+### 2026-10-22 — MacBook Pro takes over the iOS work; build 2 rejected again (Claude)
+
+Nathan: the old MacBook (10.0.0.110) travels with him for weeks; the MacBook Pro `nathan@10.1.0.9` (ethernet on
+eno2, hostname theone, Apple silicon, macOS 27.0.1, Xcode 27.0 installed by Nathan) replaces it for everything.
+Done from here over ssh: `~/Claude/T2Mobile/ios` synced (the `ops/test.sh ios` rsync; default `T2_MAC` is now
+10.1.0.9), `tools/xcodegen` 2.46 (universal binary) and the 401 MB screenshot archive copied from the old Mac,
+`~/.appstoreconnect/` (asc.py, the two API keys, `t2-testflight.env`, listing jsons) streamed Mac-to-Mac with modes
+kept (700/600; nothing printed), `T2App/Config/Local.xcconfig` (team id). Xcode is not `xcode-select`ed (needs sudo,
+which asks a password): `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` in `~/.zshenv` makes every
+ssh shell use it; the first-launch check passes; the iOS 27.0 simulator runtime (8 GB) was downloaded with
+`xcodebuild -downloadPlatform iOS`; Swift 6.4. No Apple Distribution certificate lives in either keychain (the old
+Mac has only two Apple Development identities): testflight.sh signs through the ASC API key (cloud signing), so
+nothing had to be exported. Open for Nathan on the new Mac: `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`
+(optional, replaces the zshenv line), sign in to Xcode with the Apple ID if a development build on a real phone is
+wanted (Settings > Accounts), keep the lid-closed sleep off (pmset shows sleep 0, womp 1 today). `asc.py get`
+takes full `/v1/...` paths (a bare path builds a bad host name and fails with "nodename nor servname provided").
+**Step 0 result: build 2 REJECTED again** — reviewSubmission 635f739b `UNRESOLVED_ISSUES`, version 1.0 `REJECTED`,
+item `REJECTED`, build 2 VALID (read-only API, 18:30 PDT). The message is only in the Resolution Center (no mail in
+Gmail); Nathan pastes it; then Path B of `docs/IOS-RELEASE-AFTER-APPLE.md`. The freeze still holds until he lifts it.
+

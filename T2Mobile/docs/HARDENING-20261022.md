@@ -20,6 +20,19 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 
 ## Checkpoints (newest first)
 
+### 2026-10-23 ~01:50 PDT: all review + security rounds committed; code-simplification scan running
+- Branch round-20261020 now holds, all green: ultrareview fixes (ca81c2b); Go rounds A/strict-query (01a1fee),
+  3/security (be032f1); ops + clean-release tooling (fa8dbf5); reviews B Shiny (5e3f684), C data layer (c28d0df);
+  iOS round (749bbdb, Swift 99 + UI 9/9 on the Mac). Thanos observer-guarding is PR #2 (separate repo, fully green).
+- Red-team (SECURITY-REDTEAM-20261022.md): no critical/high; the real findings (cache-value multiplication,
+  cross-dataset cache memory, X-Real-IP trust, contact parsing, nosniff) are fixed in Go round 3; the production
+  compose pieces (trusted-proxies CIDR, -cache-mb sizing, Nginx X-Real-IP headers, cache key) are STAGED in
+  T2Mobile/ops/pending/ for after the freeze.
+- Code-simplification scan (Nathan's request): 4 read-only survey agents (R app, R data layer, Go, Swift) propose
+  only behavior-preserving cleanups ranked by safety; the lead applies SAFE ones, then re-runs ops/test.sh all +
+  security/scan.sh. Conservative posture (app in Apple review). Nothing deployed; production on the released image.
+- OPEN decisions for Nathan: merge order of this round after the freeze; apply the ops/pending production-config
+  changes; security/scan.sh --baseline (he runs it after reviewing git diff security/); the Thanos PR #2 merge.
 ### 2026-10-22 23:25 PDT: Go rounds A + 2 committed after a green run on t2api-hard
 - `devstack.sh up hard 3870` + `test hard equiv fuzz-api abuse app-service`: equiv 76, fuzz 6, abuse 29, app-service
   117/30/19/24, all pass (counts above the round-0 numbers because agents B and C had already added tests to the

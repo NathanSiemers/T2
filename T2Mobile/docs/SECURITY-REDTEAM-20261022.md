@@ -36,12 +36,46 @@ Lead (imagination + triage): picks attack classes, reviews agent findings, verif
 Sonnet agents (engineers): run crafted requests against t2api-sec, record exact request + response + why it
 is a weakness, propose a fix. No agent commits. The lead fixes, re-tests, commits, checkpoints.
 
-## Findings (lead-verified; open / fixed <commit> / rejected)
+## Findings (lead-verified)
 
-(filled in as the round runs)
+### Injection + parsing agent (t2api-sec): NO SQLi, traversal, JSON breakout, header/log injection, or panic.
+Every untrusted value is bound or used only as a map key; the {ds} segment is a map key, never a path; the JSON
+writer escapes quotes/backslashes/control/`</script>`/invalid-UTF-8/U+2028-9; CR/LF/NUL in names 400; 100-probe cap
+holds; contact body cap, DisallowUnknownFields, 10k nesting all hold. ~190 requests.
+- R1 (medium, OPEN): cache-key multiplication by VALUE variants of valid params. `all` accepts any value (all=2,
+  all=x behave as all=1), `limit` junk falls back to 50, `fill=NA` is lowercased, probe lists differ by order /
+  padding / empty parts; each distinct URL is immutable-cacheable, so one answer has unlimited cacheable URLs.
+  Fix (service): accept `all` only =1, `limit` only a positive int else 400, `fill` exact na|zero|floor, reject
+  probe lists with empty/whitespace parts; emit immutable only for a canonical request. -> Go round 3.
+- R2 (low, OPEN): no X-Content-Type-Options: nosniff on JSON. -> Go round 3.
+- R3 (low, OPEN): contact parsing laxness: `application/jsonx` accepted (use mime.ParseMediaType exact), trailing
+  JSON after the object ignored (require dec.More()==false), weak email regex (net/mail.ParseAddress). -> Go round 3.
+
+### Trust + cache + contact agent (t2api-sec): CONFIRMED the X-Real-IP/X-Forwarded-For trust issue; everything
+else hardened.
+- R4 (medium, OPEN): clientIP/clientAddr trust X-Real-IP / last X-Forwarded-For UNCONDITIONALLY. Proof: rotating
+  X-Real-IP bypasses the contact 5/IP/day limit (8 varied IPs = 8 accepted) and skews /statz distinct_clients;
+  a ~9 KB header value is accepted and keyed into the per-minute map (up to ~800 MB at the 50k cap). Only
+  exploitable by a client that reaches the service past Nginx (review-D flat-network co-tenant). Fix (service):
+  a -trusted-proxies CIDR gate; trust the headers only when RemoteAddr is a trusted proxy, else RemoteAddr;
+  default trust none; validate with net.ParseIP and a length cap. Ship with the compose flag (staged, after
+  freeze). -> Go round 3 + ops/pending/.
+- Contact mail-injection HARDENED: CRLF / U+2028-9 / bidi / C1 stripped by oneLine/paragraphs; stored records
+  verified in the dev store; email with a newline rejected; the downstream mailer re-sanitizes (defence in depth).
+- Cache games HARDENED server-side: repeated param 400, encoding variants collide to one ETag, forged
+  If-None-Match cannot cross-content 304 (ETag = sha256(version:key)), HEAD==GET, error/no-store never cached.
+- Info disclosure: unknown dataset vs missing probe clean; no path/SQL/Go-type in errors; no pprof/metrics/vars;
+  /statz is unauthenticated and verbose (no PII) -> low, gate behind the trust fix / internal bind in production.
 
 ## Checkpoints (newest first)
 
+### 2026-10-22 ~00:40 (23rd) PDT: three agents reported; Shiny-specific red-team launching; DoS agent still out
+- Both agents converge on the same two real, medium issues (cache-value multiplication; X-Real-IP trust) and
+  confirm the injection/JSON/traversal/mail-injection surface is clean. These go into Go round 3 after the DoS
+  agent reports, so one agent owns the service files.
+- Nathan asked to test R/Shiny-specific weaknesses (hostile websocket client, shared-worker crash, XSS, download
+  handler, server-side eval). Launching that agent against a Shiny instance pointed at t2api-sec. Reviews B and C
+  committed (5e3f684, c28d0df); iOS round has 1 UI test (test05) failing, under triage.
 ### 2026-10-22 ~23:40 PDT: round opened
 - t2api-sec up on 3871 (own network, dev data, read-only). Red-team agents launching: (1) injection + parsing,
   (2) DoS + resource exhaustion + compression, (3) trust boundary + cache + contact. Prior static review A

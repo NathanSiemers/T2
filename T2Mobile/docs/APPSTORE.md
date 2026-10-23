@@ -194,7 +194,7 @@ What NOT to do: convert the account to an organization (D-U-N-S number, legal en
 concede that the app is a regulated-services app), or add a login (there is nothing to gate). Keep the
 submission alive: reply in the thread first (lesson of 2026-10-20), do not cancel.
 
-### Reply to the 5.1.3(iv) / 5.1.1(ix) rejection (draft for Nathan; about 3,700 characters, under the 4,000 limit)
+### Reply to the 5.1.3(iv) / 5.1.1(ix) rejection (draft for Nathan; about 3,000 characters, under the 4,000 limit)
 
 Thank you for the review. We believe both issues rest on a misunderstanding of what the app does, and we
 would like to clarify.

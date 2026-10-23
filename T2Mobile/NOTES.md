@@ -1530,4 +1530,7 @@ takes full `/v1/...` paths (a bare path builds a bad host name and fails with "n
 **Step 0 result: build 2 REJECTED again** — reviewSubmission 635f739b `UNRESOLVED_ISSUES`, version 1.0 `REJECTED`,
 item `REJECTED`, build 2 VALID (read-only API, 18:30 PDT). The message is only in the Resolution Center (no mail in
 Gmail); Nathan pastes it; then Path B of `docs/IOS-RELEASE-AFTER-APPLE.md`. The freeze still holds until he lifts it.
+**Acceptance of the new Mac, 2026-10-22 18:24-18:50 PDT:** `T2_MAC=10.1.0.9 ops/test.sh ios` from a cold toolchain
+(XcodeGen, first build, simulator first boot) passed: 9 UI tests, 0 failures, 74 screenshots, iPhone 18 Pro light,
+against the dev service through the ssh tunnel. The MacBook Pro is the iOS machine from now on.
 

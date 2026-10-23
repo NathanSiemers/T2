@@ -67,8 +67,37 @@ else hardened.
 - Info disclosure: unknown dataset vs missing probe clean; no path/SQL/Go-type in errors; no pprof/metrics/vars;
   /statz is unauthenticated and verbose (no PII) -> low, gate behind the trust fix / internal bind in production.
 
+### DoS + resource-exhaustion agent (t2api-sec): one new medium (cache memory sizing); everything else hardened.
+- R5 (medium, OPEN): per-dataset -cache-mb (512) x 4 datasets + sqlite page cache drove RSS to ~3.0-3.1 GB of the
+  4 GB container limit with a few thousand ordinary /values requests from ONE client (no concurrency). Per-dataset
+  eviction is correct; the sum across datasets is not bounded. Fix: a shared cache budget across datasets, or a
+  lower -cache-mb for a 4-dataset deployment. -> Go round 3 (H5) + ops/pending sizing note.
+- HARDENED (service-side, not Nginx-dependent): the 256 in-flight semaphore sheds load with 503 (busy_refusals=144
+  under 400 concurrent); ReadHeaderTimeout 5 s stops slowloris (500 partial-header sockets, PIDs stayed 39, health
+  1.6 ms); MaxHeaderBytes 16 KB -> 431 on a 29 KB query; contact body cap 16 KB; probe-name 200 and 100-probe caps
+  fail fast; search() is linear (q='' on cptac 259k names ~10 ms, 300 concurrent 0.16 s); limit edge cases all safe;
+  304/error bodies minimal and no-store; gzip ~3x only. No pprof/metrics/vars endpoints; no shell in the image.
+
+### R/Shiny hostile-client agent (stopped by a safety classifier mid-run; code-reading only, no attacks executed).
+- S1 (medium, hypothesis -> Thanos PR): the Thanos filter module's observers read slider/flag inputs raw
+  (val[1]/val[2], na_/log_ flags) without type/length/NA checks and are NOT under the T2 t2_guarded wrapper, so a
+  malformed websocket input throws and ends that user's session (Shiny ends the session, not the worker: a nuisance,
+  not a cross-session crash). Fix: guard the module observers (separate repo /scratch/nathan/R/Thanos; Nathan asked
+  for a PR, no contract change). app.R raw-input reads (print1 str(reactiveValuesToList(input)), plot_btn sum,
+  tweak_widgets as.character) are lower risk and were partly covered by review B's t2_guarded/.t2_one/.t2_flag.
+- NOTE: offensive ("try to break it") agents repeatedly trip a safety classifier. The remaining security work is
+  done as DEFENSIVE hardening + robustness tests (same outcome), which does not.
+
 ## Checkpoints (newest first)
 
+### 2026-10-23 ~01:20 PDT: all four red-team agents in; fixes delegated as defensive hardening
+- Full picture: injection/traversal/JSON/log-injection/mail-injection surface is CLEAN; real issues are two medium
+  cache concerns (value multiplication R1, cross-dataset memory R5) and the X-Real-IP trust gap (R4), plus low items
+  (nosniff R2, contact parsing R3) and the Thanos observer guarding (S1). No critical/high.
+- Fix agents running: Go round 3 (H1-H5 = R1-R5, verified on a fresh devstack instance t2api-g3, compose wiring
+  staged in ops/pending); Thanos PR (guard module observers, no contract change, verified against T2 test_app_thanos
+  40/0); iOS follow-up (unrelated: test05 scroll-robustness + survival-label consistency, Mac rebuild).
+- Reviews B and C committed (5e3f684, c28d0df). iOS hardening round still uncommitted (1 UI test fix in flight).
 ### 2026-10-22 ~00:40 (23rd) PDT: three agents reported; Shiny-specific red-team launching; DoS agent still out
 - Both agents converge on the same two real, medium issues (cache-value multiplication; X-Real-IP trust) and
   confirm the injection/JSON/traversal/mail-injection surface is clean. These go into Go round 3 after the DoS

@@ -6,6 +6,25 @@ app) and **data** (a SQLite dataset file). Most releases are one or the other; a
 is usually both (a new `.db` plus the code that knows about it). Every production step is a
 call of one script, `/scratch/nathan/R/T2/T2Mobile/ops/deploy.sh`, by its absolute path.
 
+## The production freeze (FREEZE file)
+
+While the file `T2Mobile/ops/FREEZE` exists, `deploy.sh` refuses every step that changes
+production: `service`, `data`, `code`, `nginx`, `nginx-rebuild`, `pool-restart`, `api-mode`,
+`fix-links`, `rollback-*`, `retire-*`. It prints the file and exits 2. `status`, `check` and
+`data-stage` (which only creates a new directory, never a served path) always run. The freeze is
+in force since 2026-10-20 (iOS 1.0 build 2 in App Review); **Nathan lifts it by deleting
+`T2Mobile/ops/FREEZE`**. Dry runs: `T2_DATA_BASE=<scratch dir>` and `T2_COMPOSE_FILE=<copy of the
+compose file>` point `data-stage`, `data` and `status` at copies (with `T2_COMPOSE_FILE` set,
+`data` edits the copy and starts nothing). Copy `deploy.sh` to a scratch directory to run a
+guarded step against a copy (the guard looks for FREEZE next to the script).
+
+After the freeze, in this order: (1) delete FREEZE, (2) re-sync the contact mailer from the repo:
+`~/bin/t2-contact-mail.sh` and `~/bin/t2-contact-mail.py` are older copies of
+`T2Mobile/ops/contact/` (`sendmail -i -t`, per-message error handling, a lock, truncation reset),
+(3) the pending Nginx change in `ops/pending/` (see its README), (4) run
+`ops/allow-deploy.py` (it now allows only `deploy.sh status` and `deploy.sh check`; delete an
+old broad `deploy.sh:*` rule by hand).
+
 ## Where things live
 
 | place | role |
@@ -65,7 +84,7 @@ ops/deploy.sh status      # what runs, which commit is served, which data direct
 ops/deploy.sh check       # the Chrome suite against the live /T2/ (27 checks, read-only)
 ```
 
-Rollback: `deploy.sh rollback-service` (previous t2api image); for code, `git -C
+Rollback: `deploy.sh rollback-service` (previous t2api image, restarts t2api and t2api-web); for code, `git -C
 /scratch/shinyusb/T2T checkout <previous commit>` followed by `deploy.sh pool-restart`, or
 revert on `main` and run `code` again.
 

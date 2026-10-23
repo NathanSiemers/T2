@@ -4,14 +4,20 @@
 ##   ./test.sh load       load test only          ./test.sh equiv    equivalence only
 ## R is not installed on this host: the equivalence test runs in the T2T image, with the T2
 ## code and the same read-only databases, on the service's internal Docker network.
-## By default it tests the PUBLISHED container (`t2api` on the `shinypublic` network,
-## 127.0.0.1:3860). For the standalone development copy:
-##   T2API_NET=t2api-dev T2API_HOST=t2api-dev T2API_PORT=3861 ./test.sh
+## By default it tests the DEVELOPMENT service (`t2api-dev`, network t2api-dev, 127.0.0.1:3861).
+## `all` and `load` run a 200-client load test and 2,000 abuse requests: never against production
+## unless T2API_PROD=1 is set (then T2API_NET/HOST/PORT default to shinypublic / t2api / 3860).
 ## gitr() comes from the deployed T2T code; T2_CODE=/scratch/nathan/R/T2 uses the working copy,
 ## T2_DB=<dir with datasets/ (TCGA.db among them)> other database files (default /scratch/shinyusb/T2).
 cd "$(dirname "$0")"
 what=${1:-all}
-NET=${T2API_NET:-shinypublic}; HOST=${T2API_HOST:-t2api}; PORT=${T2API_PORT:-3860}
+if [ "${T2API_PROD:-0}" = 1 ]; then
+    echo "WARNING: T2API_PROD=1 -- testing the PRODUCTION service (load test and abuse requests)" >&2
+    NET=${T2API_NET:-shinypublic}; HOST=${T2API_HOST:-t2api}; PORT=${T2API_PORT:-3860}
+else
+    NET=${T2API_NET:-t2api-dev}; HOST=${T2API_HOST:-t2api-dev}; PORT=${T2API_PORT:-3861}
+fi
+case "$HOST:$PORT" in t2api:*|*:3860) [ "${T2API_PROD:-0}" = 1 ] || { echo "test.sh: $HOST:$PORT is the production service; set T2API_PROD=1 to test it" >&2; exit 2; } ;; esac
 IMAGE=${T2API_IMAGE:-t2api:2026.10}
 T2=/scratch/shinyusb
 if [ "$what" = all ] || [ "$what" = equiv ]; then

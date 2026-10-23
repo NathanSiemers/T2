@@ -1,0 +1,6 @@
+Production freeze since 2026-10-20 (iOS 1.0 build 2 in App Review).
+Nathan, 2026-10-22 night: changes that do not alter the API the reviewed app sees may be released, with only
+momentary downtime, and ONLY through the clean path: commit -> suites -> PR -> merge to main -> deploy.sh code ->
+deploy.sh service (which builds from the served checkout on main). Data, Nginx and compose changes stay frozen.
+deploy.sh refuses every mutating step while this file exists; Nathan deletes it (or runs the step himself)
+when a release is due.

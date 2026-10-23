@@ -20,6 +20,22 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 
 ## Checkpoints (newest first)
 
+### 2026-10-22 23:05 PDT: Nathan's rule after the incident; clean-release tooling; second dev instance
+- Nathan: "I want to keep from interfering with the iOS app currently in review. You can make all changes that don't
+  interfere with the current api, and only momentarily interfere with the api being online." and "let's be clean
+  about this in terms of development versions, PRs etc." / "you really should have a good development environment
+  available for testing".
+- Restore of the released image: the classifier refused twice ("Production Deploy"); Nathan runs the scratchpad
+  script `restore-t2api-20261022.sh`. Production meanwhile runs the accidental build (healthy, API-compatible).
+- Clean release: `deploy.sh service` now builds from the SERVED checkout /scratch/shinyusb/T2T, refuses a dirty tree,
+  a branch other than main (T2_DEPLOY_REF override) or a HEAD != origin/main, labels the image with the commit and
+  tags it t2api:git-<sha>. FREEZE text updated to Nathan's rule; the guard stays (agents cannot deploy).
+- Dev environment: T2Mobile/service/docker-compose.yml takes T2API_DEV_NAME/PORT/NET/IMAGE; new
+  `T2Mobile/ops/devstack.sh up|down|ls|test <name>` runs named instances (t2api-<name>, 127.0.0.1:3870+) beside
+  t2api-dev with the same data and the same suites, so a rebuild never stops another run. First use: `devstack.sh up
+  hard 3870` from the hardening tree + `test hard equiv fuzz-api abuse app-service` (running) = the verification of
+  Go rounds A+2 without touching t2api-dev, which agents B and C are using.
+- iOS: 98 Swift tests green; the Mac build + UI suite of the T2App changes is running (`ops/test.sh ios`).
 ### 2026-10-22 22:50 PDT: INCIDENT: production t2api rebuilt during the freeze (by an agent); restore waits for Nathan
 - At 22:36 PDT the ops fix agent ran `T2Mobile/ops/deploy.sh service` for real (it meant to test the new FREEZE guard
   but had not created the FREEZE file yet; the `.claude/settings.local.json` allow rule for deploy.sh let it run

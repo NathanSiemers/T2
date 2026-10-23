@@ -7,11 +7,14 @@
 ##   Docker network `t2api-dev`
 ## - same lockdown as the public Shiny containers: read-only filesystem, unprivileged
 ##   user, no capabilities, memory ceiling without swap; databases mounted read-only
+## Named extra instances (T2Mobile/ops/devstack.sh): T2API_DEV_NAME / T2API_DEV_PORT / T2API_DEV_NET /
+## T2API_DEV_IMAGE give a second, independent copy (own container, image tag, port and network) so one
+## test run never has to stop another; the defaults are the canonical t2api-dev.
 services:
   t2api:
     build: .
-    image: t2api:dev
-    container_name: t2api-dev
+    image: ${T2API_DEV_IMAGE:-t2api:dev}
+    container_name: ${T2API_DEV_NAME:-t2api-dev}
     restart: unless-stopped
     command: ["-addr", ":8080", "-datasets", "/data/datasets", "-cache-mb", "512"]
     user: "999:999"
@@ -24,7 +27,7 @@ services:
     oom_score_adj: 800
     pids_limit: 256
     cpus: 8
-    ports: ["127.0.0.1:3861:8080"]
+    ports: ["127.0.0.1:${T2API_DEV_PORT:-3861}:8080"]
     networks: [t2api-dev]
     logging:
       driver: json-file
@@ -36,4 +39,4 @@ services:
 
 networks:
   t2api-dev:
-    name: t2api-dev
+    name: ${T2API_DEV_NET:-t2api-dev}

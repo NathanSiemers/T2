@@ -20,6 +20,16 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 
 ## Checkpoints (newest first)
 
+### 2026-10-22 ~22:40 PDT: review A (Go service) in, fix agent A launched
+- Review A: no critical/high. SQL all parameterised; JSON writer escapes everything (verified by curl with quotes,
+  backslashes, invalid UTF-8, CRLF); NaN/Inf -> null; limits (100 probes, name 200, q 200, limit<=200, body 16 KB,
+  in-flight 256) enforced; ETag/`v` semantics consistent; usage maps bounded; rows closed; path traversal 404.
+- Fix agent A (Go) working on: middleware order gzipped(recovered) + lazy gzip only for 2xx + sync.Pool; probes search
+  bounded top-k selection; probes search Cache-Control honours `v`; version string gains the SQLite change counter;
+  %q in the panic log; contact: limiter before honeypot, Zl/Zp/bidi stripped, one client-address helper (last XFF);
+  graceful shutdown on SIGTERM; precomputed /v1/datasets bytes + ETag. Unit tests via `ops/test.sh go`; the dev
+  container is rebuilt by the lead afterwards (`ops/test.sh dev-up`) and equiv/app-service re-run.
+- Round 0 (ultrareview fixes) still in `ops/test.sh all`; commit pending on its verdict.
 ### 2026-10-22 ~22:10 PDT: round 0 (ultrareview fixes) in test, review agents launched
 - Ultrareview of PR #14 (comment 6357428844): 9 findings, all real, fixed in the working tree by three agents
   (R: t2_build_lib.R fill block moved into t2_write_types; figure_export.R list branch; lib.R t2_fill_of rows;
@@ -31,4 +41,18 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 
 ## Findings log (verified by the lead; status: open / fixed <commit> / rejected <why>)
 
-(none yet)
+### Review A: Go service (2026-10-22)
+| # | file | sev | finding | status |
+|---|---|---|---|---|
+| A1 | main.go handleProbes | medium | full sort of all matches before cut to limit; ~55 ms per q="" on TCGA; distinct q bypass the Nginx cache | fixing (agent A) |
+| A2 | cache.go LRU | medium | no scan resistance: a client walking distinct probes evicts the hot set (512 MB ~ 5-6k TCGA columns) | OPEN decision: 2Q/segmented LRU, or accept (Nginx per-IP limits bound the rate) |
+| A3 | main.go middleware | medium (latent) | recovered(gzipped(mux)): a panic commits 200 + gzip header before fail(500) | fixing |
+| A4 | main.go gzipped | low-med | new gzip.Writer per request incl. 304/errors; 304 carries Content-Encoding | fixing |
+| A5 | compose -cache-mb per dataset | low-med | 3 datasets x 512 MB cache + 48 conns x 3 x 4 MB page cache can exceed the 4g limit; SetMemoryLimit does not see sqlite memory; dev pids_limit 256 tight for 144 blocked conns | OPEN decision (compose change = after the freeze): lower -db-conns or cache_size, verify production pids_limit |
+| A6 | dataset.go:144 version | low | size+mtime seconds not collision-proof; /v1/datasets has no ETag and never runs unchanged() | fixing (change counter; ETag on /v1/datasets) |
+| A7 | main.go probes search | low | Cache-Control public 86400 ignores v: stale search hits up to a day after a swap | fixing |
+| A8 | main.go:258 | low | panic log prints the raw path (%s) | fixing (%q) |
+| A9 | contact.go | low | honeypot early return before the limiter (unbounded log lines); oneLine keeps U+2028/9 and bidi controls; XFF first vs last between contact.go and usage.go | fixing |
+| A10 | cache.go key | low | `name|fill` key could collide with a probe literally named so; sparse+fill caches a duplicate copy | rejected (unrealistic names; duplicate only if such data exists) |
+| A11 | Dockerfile/go.mod | low | Go 1.23 out of support since 2025-08; sqlite bump needed for a newer toolchain | OPEN decision for Nathan (dependency bump + perf re-check; not under the freeze) |
+| A12 | main.go | low | /v1/datasets re-marshalled per request; no graceful shutdown | fixing |

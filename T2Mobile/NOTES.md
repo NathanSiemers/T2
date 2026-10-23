@@ -1542,4 +1542,9 @@ organization account, no login, no cancel of the submission; build 3 only if App
 against the dev service through the ssh tunnel. The MacBook Pro is the iOS machine from now on.
 Later the same evening Nathan ran `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` on the new Mac
 (`xcode-select -p` confirms); the temporary `DEVELOPER_DIR` line was removed from `~/.zshenv`.
+**Category change, 2026-10-22 evening:** on Nathan's go-ahead ("go ahead and change the category, I'll paste the reply")
+the app's primary category went MEDICAL → EDUCATION (secondary stays REFERENCE) through the API from the new Mac
+(`asc.py patchrel appInfos 84fcf192-…`, 200, read back). This is the one write to App Store Connect since the
+freeze began; the submission 635f739b was not touched. Nathan pastes the reply (`docs/APPSTORE.md`, "Reply to the
+5.1.3(iv) / 5.1.1(ix) rejection") into the Resolution Center thread and attaches the policy documents himself.
 

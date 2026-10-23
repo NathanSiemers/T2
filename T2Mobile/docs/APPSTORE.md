@@ -234,10 +234,13 @@ better, and we will gladly adjust the wording of the listing or of the in-app no
 
 We would welcome a review appointment if that would help resolve this quickly.
 
-### Steps (Nathan decides; none taken yet)
+### Steps (Nathan decides)
 
-1. In App Store Connect, change the categories to Education / Reference (App Information; allowed on a rejected
-   version), and paste the reply in the Resolution Center thread of submission 635f739b. Attach as "proof of
+**Done 2026-10-22 evening (Nathan: "go ahead and change the category, I'll paste the reply"):** categories changed
+through the API from the MacBook Pro (`asc.py patchrel appInfos 84fcf192-1969-4c3f-858c-fbbd53f6b66e`, primary
+MEDICAL → EDUCATION, secondary REFERENCE unchanged; read back 200). The reply below is Nathan's to paste.
+
+1. In App Store Connect, ~~change the categories to Education / Reference~~ (done, see above), and paste the reply in the Resolution Center thread of submission 635f739b. Attach as "proof of
    approval" (App Review notes / attachments): the NCI "TCGA Human Subjects Protection and Data Access
    Policies" (PDF from cancer.gov), the NIH Genomic Data Sharing Policy (NOT-OD-14-124), the GDC and PDC
    data access policy pages, the GTEx consent/ethics statement (gtexportal.org, "Documentation"); Nathan

@@ -23,7 +23,10 @@ local({
 ## The whole pipeline writes to <final>.building; the live db is untouched until
 ## the freshly built db passes the SQL suite, then a same-filesystem rename
 ## swaps it in. A failed build leaves the live db exactly as it was.
+## (../tcga.db vs ../datasets/TCGA.db as the promote target is Nathan's decision: the legacy top-level file stays the default)
 .final_db = Sys.getenv('TCGA_DB', '../tcga.db')
+if (!exists('t2_refuse_served')) { source('../t2_views.R'); source('../t2_build_lib.R') }   # the served-path guard
+t2_refuse_served(.final_db)
 .build_db = paste0(.final_db, '.building')
 Sys.setenv(TCGA_DB = .build_db)          # 015/020/280/310/validation all target this
 for (.s in c('', '-wal', '-shm')) try(file.remove(paste0(.build_db, .s)), silent = TRUE)
@@ -34,6 +37,7 @@ message('Building to ', .build_db, '  (live ', .final_db, ' stays until tests pa
 ## /scratch/shinyusb/T2 and read by the read-only app containers with no
 ## -wal/-shm sidecar files. The served copy is never written to.
 promote_db = function(build, final) {
+  t2_refuse_served(build); t2_refuse_served(final)
   cc = DBI::dbConnect(RSQLite::SQLite(), build)          # fold WAL into main file
   try(DBI::dbExecute(cc, 'PRAGMA wal_checkpoint(TRUNCATE)'), silent = TRUE)
   jm = DBI::dbGetQuery(cc, 'PRAGMA journal_mode=DELETE')[[1]]
@@ -44,7 +48,8 @@ promote_db = function(build, final) {
     try(file.remove(paste0(build, sfx)), silent = TRUE)
     try(file.remove(paste0(final, sfx)), silent = TRUE) # stale sidecars of old db
   }
-  file.rename(build, final)                              # atomic (same filesystem)
+  if (!isTRUE(file.rename(build, final)))                # atomic (same filesystem)
+    stop('could not rename ', build, ' to ', final)
 }
 
 ## comment out the line below if you don't want to delete

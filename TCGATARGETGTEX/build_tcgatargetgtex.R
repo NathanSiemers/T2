@@ -64,6 +64,7 @@ SUBSET_SAMPLES <- as.integer(Sys.getenv("TTG_SUBSET_SAMPLES", "0"))   # 0 = all
 PROBE_CHUNK    <- as.integer(Sys.getenv("TTG_PROBE_CHUNK", "5000"))
 
 stopifnot(file.exists(EXPR_GZ), file.exists(PHENO_GZ), file.exists(PROBEMAP))
+t2_refuse_served(OUT)
 dir.create(dirname(OUT), showWarnings = FALSE, recursive = TRUE)
 
 t0 <- Sys.time()
@@ -125,8 +126,11 @@ say("collapsed probes:", length(gene_probes))
 ## ============================================================================
 ## 3. Dimension tables + empty fact tables
 ## ============================================================================
-if (file.exists(OUT)) file.remove(OUT)
-con <- dbConnect(SQLite(), OUT)
+## build to <OUT>.building and rename to OUT only after t2_finalize_dataset() passed (same pattern as
+## CPTAC/build_cptac.R): a failed or interrupted build never touches an existing OUT
+BUILD <- paste0(OUT, ".building")
+for (f in c(BUILD, paste0(BUILD, "-journal"))) if (file.exists(f)) stopifnot(file.remove(f))
+con <- dbConnect(SQLite(), BUILD)
 
 samples_tbl <- data.frame(key = seq_along(samp_cols), sample = samp_cols,
                           stringsAsFactors = FALSE)
@@ -282,7 +286,7 @@ say("probes with no data removed:", fin$dropped)
 ## ============================================================================
 summ <- function(q) dbGetQuery(con, q)[1, 1]
 cat("\n==================== BUILD SUMMARY ====================\n")
-cat("db file        :", OUT, "\n")
+cat("db file        :", OUT, "(built as", BUILD, ")\n")
 cat("samples        :", summ("SELECT COUNT(*) FROM samples"), "\n")
 cat("gene probes    :", summ("SELECT COUNT(*) FROM probes"), "\n")
 cat("allprobes      :", summ("SELECT COUNT(*) FROM allprobes"), "\n")
@@ -297,4 +301,5 @@ cat("elapsed        :", round(difftime(Sys.time(), t0, units = "mins"), 1), "min
 cat("======================================================\n")
 
 dbDisconnect(con)
+if (!file.rename(BUILD, OUT)) stop("could not rename ", BUILD, " to ", OUT)   # the contract check passed (t2_finalize_dataset above)
 say("DONE ->", OUT)

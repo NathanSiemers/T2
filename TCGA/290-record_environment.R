@@ -1,9 +1,15 @@
 rundate = Sys.time()
 
+## only what describes the run (R, locale, time zone, user, T2_ / TCGA_ settings): the environment of a
+## build host also holds credentials, and this table ships inside the served database. Any name that
+## looks like a secret is dropped even when the allowlist matches it.
+.env_all = Sys.getenv()
+.env_keep = grepl('^(R_|TZ$|LANG|LC_|HOME$|USER$|PATH$|T2_|TCGA_)', names(.env_all)) &
+            (!grepl('KEY|TOKEN|PASS|SECRET|PAT|CRED', names(.env_all), ignore.case = TRUE) | names(.env_all) == 'PATH')   # PATH itself holds no secret
 env = data.frame(
     rundate = rundate,
-    variable = names(Sys.getenv()),
-    value = as.character(Sys.getenv())
+    variable = names(.env_all)[.env_keep],
+    value = as.character(.env_all)[.env_keep]
 )
 
 session = devtools::session_info()

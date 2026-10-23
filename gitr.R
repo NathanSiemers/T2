@@ -156,10 +156,10 @@ gitr_fill_numeric = function(conn, num_result, db_probes, fill, cohort) {
   fo = dbGetQuery(conn, "SELECT type, fill_options FROM types")
   offered = lapply(setNames(fo$fill_options, fo$type), function(v)
     if (is.na(v)) "na" else unique(c("na", intersect(c("zero", "floor"), strsplit(v, "|", fixed = TRUE)[[1]]))))
-  sp = if ("sparse" %in% dbListTables(conn)) dbGetQuery(conn, "SELECT type, sparse FROM sparse") else data.frame(type = character(0), sparse = integer(0))
   all_opts = unique(unlist(offered[ty$type]))
-  out$options = c("na", "zero", "floor")[c("na", "zero", "floor") %in% c("na", all_opts)]
-  if (identical(fill, "na")) return(out)
+  out$options = c("na", "zero", "floor")[c("na", "zero", "floor") %in% c("na", all_opts)]   # the answer reports what is on offer, whatever the fill
+  if (identical(fill, "na")) return(out)       # nothing to fill: no sparse / stored-sample queries
+  sp = if ("sparse" %in% dbListTables(conn)) dbGetQuery(conn, "SELECT type, sparse FROM sparse") else data.frame(type = character(0), sparse = integer(0))
   rows = num_result
   for (i in seq_len(nrow(ty))) {
     p = ty$probe[i]; t = ty$type[i]
@@ -290,29 +290,34 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     }
   }
 
-  ## join with full clinpheno if phenos requested.
-  ## Synthesise the virtual columns (subtype / cohort / lcohort) from the
-  ## dataset's role map, guarded by column presence so non-TCGA datasets that
-  ## lack these columns simply don't get the corresponding virtual column.
-  if (phenos) {
-    probe_cols = setdiff(colnames(rout), clinpheno_cols)
-    out = t2_add_virtual_cols(clinpheno, roles) %>%
-      left_join(rout[, c('sample', probe_cols), drop = FALSE], by = 'sample')
-  } else {
-    out = rout
-  }
+  ## The filter frame: clinpheno + the virtual columns (subtype / cohort / lcohort, from the dataset's
+  ## role map, guarded by column presence so datasets that lack a role simply don't get the column) +
+  ## the probe columns, ALWAYS, so the cohort / nonormal / noheme / rules filters work with phenos = FALSE
+  ## too. phenos = TRUE returns this frame; phenos = FALSE returns only the requested columns (rout)
+  ## of the rows the filters keep. Both are in clinpheno row order, so `keep` indexes either.
+  probe_cols = setdiff(colnames(rout), clinpheno_cols)
+  full = t2_add_virtual_cols(clinpheno, roles) %>%
+    left_join(rout[, c('sample', probe_cols), drop = FALSE], by = 'sample')
+  out = if (phenos) full else rout
+  if (nrow(out) != nrow(full)) stop("gitr: internal error, the filter frame and the result differ in length")
 
-  ## filters — each is a no-op when its role column is absent for this dataset
+  ## filters: each is a no-op when its role column is absent for this dataset
   stc = t2_role(roles, 'sampletype_col')
-  keep = t2_sample_keep(out, roles, cohort = cohort, nonormal = nonormal,
+  keep = t2_sample_keep(full, roles, cohort = cohort, nonormal = nonormal,
                         noheme = noheme, rules = rules)
-  if (!is.null(keep_samples)) keep = keep & (out$sample %in% keep_samples)
+  if (!is.null(keep_samples)) keep = keep & (full$sample %in% keep_samples)
   if (!all(keep)) out = out[keep, , drop = FALSE]
 
   ## factor levels for the sample-type role column (if present + declared)
   if (phenos && !is.null(stc) && stc %in% colnames(out) &&
       !is.null(roles$sampletype_levels)) {
-    out[[stc]] = factor(out[[stc]], levels = roles$sampletype_levels)
+    ## a value outside the declared levels keeps its own level (after the declared ones) and is
+    ## warned about once: factor(x, levels = declared) would turn it into NA without a word
+    xs = as.character(out[[stc]]); extra = setdiff(sort(unique(xs[!is.na(xs)])), roles$sampletype_levels)
+    if (length(extra))
+      warning("gitr: sample-type value(s) not in the declared sampletype_levels, kept as extra levels: ",
+              paste(extra, collapse = ", "), call. = FALSE)
+    out[[stc]] = factor(xs, levels = union(roles$sampletype_levels, sort(unique(xs[!is.na(xs)]))))
   }
 
   ## apply R datatypes from the datatypes table

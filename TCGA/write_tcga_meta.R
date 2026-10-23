@@ -10,7 +10,7 @@
 ##   source("write_tcga_meta.R"); write_tcga_meta("../tcga.db.building")   (00-master.R does this)
 ##
 ## IDEMPOTENT: every key is replaced, the table / column are created when missing, one short
-## write transaction. Refuses any path under /scratch/shinyusb (served files: deploy by a new
+## write transaction. Refuses a served path (t2_refuse_served in t2_build_lib.R; served files: deploy by a new
 ## directory / atomic mv, never by writing to a served file).
 ## ============================================================================
 suppressMessages({ library(DBI); library(RSQLite); library(jsonlite) })
@@ -77,8 +77,7 @@ if (!exists("t2_write_meta")) source(file.path(.wtm_root, "t2_build_lib.R"))
 }
 
 write_tcga_meta <- function(db) {
-  if (grepl("^/scratch/shinyusb(/|$)", db) || grepl("^/scratch/shinyusb(/|$)", normalizePath(db, mustWork = FALSE)))
-    stop("refusing a served path: ", db)
+  t2_refuse_served(db)
   if (!file.exists(db)) stop("no such file: ", db)
   v <- .tcga_meta_values()
   con <- DBI::dbConnect(RSQLite::SQLite(), db)

@@ -25,7 +25,8 @@ set.seed(42)
 
 dir.create("datasets", showWarnings = FALSE)
 dbpath <- file.path("datasets", "DEMO.db")
-if (file.exists(dbpath)) file.remove(dbpath)
+t2_refuse_served(dbpath)
+if (file.exists(dbpath)) stopifnot(file.remove(dbpath))
 con <- dbConnect(SQLite(), dbpath)
 
 ## ---------------------------------------------------------------------------

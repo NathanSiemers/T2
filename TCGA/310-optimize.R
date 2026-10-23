@@ -1,7 +1,7 @@
 sqlvacuum = TRUE
 if( ! mysql) {
       if( sqlvacuum ) {
-	    system(paste0('sqlite3 ', Sys.getenv('TCGA_DB','../tcga.db'), ' "VACUUM;"'))
+	    system2('sqlite3', c(shQuote(Sys.getenv('TCGA_DB','../tcga.db')), shQuote('VACUUM;')))   # quoted: a path may hold blanks or shell characters
 	}
   } else {
       if( optimize ) {

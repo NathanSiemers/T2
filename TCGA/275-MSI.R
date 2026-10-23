@@ -9,15 +9,17 @@ library(readxl)
 
 msi_file = 'Data/Knijnenburg_TableS5_MSIsensor.xlsx'
 
-## Download if not present
+## Download if not present: to <file>.part, sha256 checked against TCGA/checksums.sha256 ("<sha256>  <name>"),
+## then renamed; an unlisted file stops the run unless T2_RECORD_CHECKSUMS=1 (t2_download_lib.R)
+if (!exists("t2_download_verified")) source(file.path('..', 't2_download_lib.R'))
+msi_manifest = 'checksums.sha256'
 if (!file.exists(msi_file)) {
   cat("Downloading Knijnenburg Table S5 (MSIsensor scores)...\n")
-  download.file(
+  t2_download_verified(
     url = "https://www.cell.com/cms/10.1016/j.celrep.2018.12.060/attachment/586e3aa7-7445-4406-b3e8-42768e07b554/mmc6.xlsx",
-    destfile = msi_file,
-    mode = "wb"
+    dest = msi_file, name = basename(msi_file), manifest = msi_manifest
   )
-}
+} else t2_verify_checksum(msi_file, basename(msi_file), msi_manifest)
 
 ## Read the Excel file (skip 2 header rows)
 msi_raw = read_excel(msi_file, sheet = 1, skip = 2,

@@ -52,7 +52,7 @@ check (`dataset_contract_check.R`) requires the ones marked **req** of every fil
 | key | meaning |
 |---|---|
 | `order` | listing position (integer; TCGA = 1) |
-| `hidden` (optional) | `1` / `true` / `yes` (any case) = the apps do not list the dataset (DEMO); anything else or absent = listed. The api serves it as `"hidden": bool` in `/v1/datasets` and still answers every endpoint for it |
+| `hidden` (optional) | `1` / `true` / `yes` (any case, surrounding blanks ignored) = the apps do not list the dataset (DEMO); anything else or absent = listed. The conformance check accepts exactly those words and their opposites (`0` / `false` / `no`) and FAILs any other value, so the check and the service's `metaTrue` agree on every accepted spelling. The api serves it as `"hidden": bool` in `/v1/datasets` and still answers every endpoint for it |
 | `title` **req**, `label` **req** | display strings (`"T2: CPTAC Pan-Cancer …"`, `"CPTAC Pan-Cancer"`) |
 | `cohort_col` **req** | clinical column that becomes the virtual `cohort` |
 | `subtype_col` | clinical column that becomes the virtual `subtype` (the sub-cohort handle); empty = none |
@@ -62,7 +62,7 @@ check (`dataset_contract_check.R`) requires the ones marked **req** of every fil
 | `source_col`, `sources`, `source_labels`, `source_descriptions` | the dataset's parts (Toil: GTEX, TARGET) |
 | `tte_variables` **req** (may be `[]`) | JSON array of `{"name","label","event_col","time_col","time_unit","description"}` |
 | `about` **req**, `citation`, `attribution`, `about_url` | the dataset's About prose; `attribution` is the sentence a data provider requires (CPTAC: the NCI sentence) |
-| `references` (optional) | JSON array, in display order, of full-title bibliography records `{"group","title","authors","journal","year","pmid","doi","url","note"}`: `title`, `authors`, `journal` and `year` (integer) are required (the api drops a record without a title and logs it), `pmid`, `doi`, `url`, `note` optional strings (give a pmid or doi where one exists). These are records for non-scientists: the full title of the paper, never a bare "Author 2018" tag. `group` is the heading the apps list the entry under |
+| `references` (optional) | JSON array, in display order, of full-title bibliography records `{"group","title","authors","journal","year","pmid","doi","url","note"}`: `title`, `authors` and `year` (integer) are required, and at least one of `pmid`, `doi`, `url`; `journal` may be `""` (a program page or data portal) (the api drops a record without a title and logs it), `pmid`, `doi`, `url`, `note` optional strings (give a pmid or doi where one exists). These are records for non-scientists: the full title of the paper, never a bare "Author 2018" tag. `group` is the heading the apps list the entry under |
 
 `types.label` **req**: the word a plot title uses for the type (`mut`/`fmut` → "mutation", `cnv` →
 "CNA", `prot` → "protein", `phospho` → "phosphosite", `rna` → "" since a bare name needs no word).
@@ -137,8 +137,19 @@ variables; the limits in `T2_LIMITS`.
 
 ## 4. Conformance
 
-`Rscript dataset_contract_check.R <db> <name>` (also run by `sql_tests.R`): required tables and
-columns, `sample` column, the **req** keys present and parsable, each tte pair present and numeric
+`Rscript dataset_contract_check.R [--quick] <db> <name>` (also run by `sql_tests.R`): required tables and
+columns, `sample` column, the **req** keys present, non-empty and parsable, each tte pair present and numeric
 with events in {0, 1, NULL} and unit `days`, `types.label` non-NULL, role columns present in
 `clinpheno`, `default_cohorts` values are cohort levels, every `datatypes.type` in `types`, one
-type per probe. Every builder runs it last; a file that fails it is not released.
+type per probe. Integrity of the data it describes: `samples`, `probes`, `clinpheno`, `types`,
+`datatypes`, `allprobes` and `tested` have unique, non-NULL keys; `tested.sample` / `tested.type`
+resolve and every `tested.value` is 1 (the views ignore the column); every `probes` row is in `allprobes`;
+every `types` row has a `datatypes` row; a type stored in `tcgacati` is declared `factor`;
+`default_x/y/color/size/condition` name a variable of the dataset (a probe, a clinical column, or the
+virtual `cohort` / `lcohort` / `subtype`); `sampletype_levels` contain every value of the sample-type
+column; `normal_label`, `heme_values` and `sources` are real levels of their columns.
+The **deep** part (the default; `--quick` or `deep = FALSE` skips it) scans every row of `tcgai` and
+`tcgacati` for NULL or orphan `samplekey` / `probekey` / `type` and (`tcgai`) duplicate
+`(probekey, type, samplekey)`: one pass over the table, minutes on TCGA. Builders run it deep;
+`dataset_meta.R` runs it after each write with `deep = FALSE`. Every builder runs the check last;
+a file that fails it is not released.

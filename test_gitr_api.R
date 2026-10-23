@@ -135,4 +135,32 @@ for (ds in intersect(t2_datasets(), names(files))) {
   ga <- quiet(gitr("no_such_probe_zzz", dbfile = ba$path, roles = ba$roles))
   ok("no_such_probe_zzz" %in% colnames(ga) && all(is.na(ga$no_such_probe_zzz)), "an unknown probe is an all-NA column, as with the files")
 }
+## ---- file mode (the oracle itself): filters with phenos = FALSE, undeclared sample types, absent virtual columns ----
+cat("\n== file mode: gitr() filters and levels (DEMO) ==\n")
+if ("DEMO" %in% names(files)) {
+  fd <- dataset_info("DEMO"); co <- "breast"
+  gp1 <- quiet(with_files(gitr("GENE01", phenos = TRUE,  cohort = co, dbfile = fd$path, roles = fd$roles)))
+  gp0 <- quiet(with_files(gitr("GENE01", phenos = FALSE, cohort = co, dbfile = fd$path, roles = fd$roles)))
+  nb <- sum(as.character(quiet(with_files(gitr("cohort", cohort = "all", dbfile = fd$path, roles = fd$roles)))$cohort) == co)
+  ok(nrow(gp1) == nb && nb > 0 && nrow(gp0) == nb, sprintf("phenos = FALSE filters by cohort like phenos = TRUE (%d of %d rows)", nrow(gp0), nb))
+  ok(identical(sort(as.character(gp0$sample)), sort(as.character(gp1$sample))) && identical(colnames(gp0), c("sample", "GENE01")), "... the same samples, and only the requested columns")
+  gall <- quiet(with_files(gitr("GENE01", phenos = FALSE, dbfile = fd$path, roles = fd$roles)))
+  ok(nrow(gall) > nb, "... and without a cohort filter all samples come back")
+  gr <- quiet(with_files(gitr("GENE01", phenos = FALSE, rules = list(list(column = "tissue_origin", op = "in", values = "lung")), dbfile = fd$path, roles = fd$roles)))
+  ok(nrow(gr) == 12, "phenos = FALSE applies sample rules too (lung: 12)")
+  ok(!"lcohort" %in% colnames(quiet(with_files(gitr(c("GENE01", "lcohort"), dbfile = fd$path, roles = fd$roles)))),
+     "a dataset with no clinical `cohort` column returns no lcohort column and no error (the service says `missing`)")
+  r0 <- fd$roles; r0$subtype_col <- NA_character_
+  ok(!"subtype" %in% colnames(quiet(with_files(gitr(c("GENE01", "subtype"), dbfile = fd$path, roles = r0)))),
+     "asking for subtype where no subtype_col is declared returns no column and no error")
+  ## sample-type values outside the declared levels: kept as extra levels with ONE warning, never NA
+  r1 <- fd$roles; r1$sampletype_col <- "growth_media"
+  lv <- sort(unique(quiet(with_files(gitr("growth_media", dbfile = fd$path, roles = fd$roles)))$growth_media)); r1$sampletype_levels <- as.character(lv[1])
+  w <- character(0)
+  g1 <- withCallingHandlers(suppressMessages(capture.output(gx <- with_files(gitr("GENE01", dbfile = fd$path, roles = r1)))),
+                            warning = function(x) { w <<- c(w, conditionMessage(x)); invokeRestart("muffleWarning") })
+  ok(length(w) == 1 && grepl("not in the declared sampletype_levels", w), "one warning names the undeclared sample types")
+  ok(sum(is.na(gx$growth_media)) == 0 && identical(levels(gx$growth_media)[1], as.character(lv[1])) && setequal(levels(gx$growth_media), as.character(lv)),
+     "no sample type became NA; the declared level stays first, the others follow")
+}
 finish("gitr over the service")

@@ -147,15 +147,21 @@ JOIN clinpheno cp ON cp.sample = sa.sample")
 ## the views while still being offered in the variable menu through `probes`/`allprobes`).
 ## Call before finalize_t2_core(). Returns the number of names removed.
 drop_t2_dataless_probes <- function(con) {
-  DBI::dbExecute(con, "CREATE TEMP TABLE withdata AS SELECT DISTINCT probekey FROM tcgai UNION SELECT DISTINCT probekey FROM tcgacati")
+  ## a NULL probekey must not reach withdata: `key NOT IN (.. NULL ..)` is never true, so the delete below would remove nothing
+  DBI::dbExecute(con, "DROP TABLE IF EXISTS withdata")
+  DBI::dbExecute(con, "CREATE TEMP TABLE withdata AS SELECT probekey FROM (SELECT DISTINCT probekey FROM tcgai UNION SELECT DISTINCT probekey FROM tcgacati) WHERE probekey IS NOT NULL")
   DBI::dbExecute(con, "CREATE INDEX withdata_i ON withdata(probekey)")
   gone <- DBI::dbGetQuery(con, "SELECT probe FROM probes p WHERE NOT EXISTS (SELECT 1 FROM withdata w WHERE w.probekey = p.key)")$probe
   if (length(gone)) {
-    DBI::dbExecute(con, "DELETE FROM probes WHERE key NOT IN (SELECT probekey FROM withdata)")
-    DBI::dbExecute(con, "CREATE TEMP TABLE gone(probe TEXT)")
-    DBI::dbWriteTable(con, "gone", data.frame(probe = gone, stringsAsFactors = FALSE), append = TRUE, temporary = TRUE)
-    DBI::dbExecute(con, "DELETE FROM allprobes WHERE probe IN (SELECT probe FROM gone)")
-    DBI::dbExecute(con, "DROP TABLE gone")
+    ## the probes delete and the allprobes delete go together: allprobes loses a name only when its probes row went
+    ndel <- DBI::dbExecute(con, "DELETE FROM probes WHERE NOT EXISTS (SELECT 1 FROM withdata w WHERE w.probekey = probes.key)")
+    if (ndel > 0) {
+      DBI::dbExecute(con, "DROP TABLE IF EXISTS gone")
+      DBI::dbExecute(con, "CREATE TEMP TABLE gone(probe TEXT)")
+      DBI::dbWriteTable(con, "gone", data.frame(probe = gone, stringsAsFactors = FALSE), append = TRUE, temporary = TRUE)
+      DBI::dbExecute(con, "DELETE FROM allprobes WHERE probe IN (SELECT probe FROM gone)")
+      DBI::dbExecute(con, "DROP TABLE gone")
+    }
   }
   DBI::dbExecute(con, "DROP TABLE withdata")
   length(gone)

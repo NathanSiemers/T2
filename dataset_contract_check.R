@@ -4,13 +4,18 @@
 ## section 4) for ANY T2 dataset file. Every builder runs it last; sql_tests.R runs it as part
 ## of run_sql_tests(); a file that fails it is not released.
 ##
-##   Rscript dataset_contract_check.R <db> <name>          (exit status 1 on any FAIL)
+##   Rscript dataset_contract_check.R [--quick] <db> <name>   (exit status 1 on any FAIL; --quick = deep FALSE)
 ##   source("dataset_contract_check.R"); check_dataset_contract(con, "cptac")
 ##
-## check_dataset_contract(con, name, verbose = TRUE) returns invisible(list(results, ok)),
+## check_dataset_contract(con, name, verbose = TRUE, deep = TRUE) returns invisible(list(results, ok)),
 ## `results` a data.frame(group, test, status, detail) with status PASS|FAIL|WARN, and prints
 ## one line per check in the format of sql_tests.R when verbose. A missing dataset_meta table
 ## or a missing required key is a FAIL, never an error.
+## deep = TRUE (the builders, via t2_finalize_dataset) also scans every row of tcgai / tcgacati for
+## NULL keys, orphan keys / types and (tcgai) duplicate facts: one pass over the table each, minutes
+## on TCGA.db (195 M rows). deep = FALSE (dataset_meta.R after a write, `--quick`) skips those
+## scans and runs every check on the small tables (samples, probes, clinpheno, tested, allprobes,
+## datatypes, types, dataset_meta and what it references).
 ## ============================================================================
 suppressMessages({ library(DBI); library(RSQLite); library(jsonlite) })
 
@@ -25,7 +30,7 @@ suppressMessages({ library(DBI); library(RSQLite); library(jsonlite) })
 if (!exists("t2_run_checks")) source(file.path(.dcc_dir, "t2_test_helpers.R"))
 if (!exists("T2_META_KEYS"))  { if (!exists("set_t2_sparse")) source(file.path(.dcc_dir, "t2_views.R")); source(file.path(.dcc_dir, "t2_build_lib.R")) }
 
-check_dataset_contract <- function(con, name = "", verbose = TRUE) {
+check_dataset_contract <- function(con, name = "", verbose = TRUE, deep = TRUE) {
   tabs <- DBI::dbListTables(con)
   has  <- function(t) t %in% tabs
   cols <- function(t) tryCatch(DBI::dbListFields(con, t), error = function(e) character(0))
@@ -110,9 +115,13 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE) {
     o <- meta[["order"]]
     if (is.null(o)) P("not set") else if (grepl("^-?[0-9]+$", o)) P(o) else F(sprintf("order '%s' is not an integer", o))
   })
-  add("contract", "hidden (optional) is 0 or 1", function() {
+  add("contract", "hidden (optional) is 0/1/true/false/yes/no", function() {
+    ## the service's metaTrue accepts 1/true/yes (any case); everything else is "listed". The check
+    ## accepts the same words and their opposites, so a value that merely looks like a typo is a FAIL
     h <- meta[["hidden"]]
-    if (is.null(h)) P("not set") else if (h %in% c("0", "1")) P(h) else F(sprintf("hidden '%s' is not 0 or 1", h))
+    if (is.null(h)) P("not set")
+    else if (tolower(trimws(h)) %in% c("0", "1", "true", "false", "yes", "no")) P(h)
+    else F(sprintf("hidden '%s' is not one of 0, 1, true, false, yes, no", h))
   })
   add("contract", "lists are |-separated (not comma-only)", function() {
     ## a value of a level-list key with a comma and no "|" is a comma-separated list, unless the
@@ -250,11 +259,124 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE) {
     suf <- ifelse(grepl("\\.", p$probe), sub(".*\\.", "", p$probe), NA_character_)
     wrong <- !is.na(suf) & suf %in% dty & suf != p$type
     if (any(wrong)) return(F(sprintf("%d numeric probes whose suffix type differs from probe_types, e.g. %s", sum(wrong), p$probe[which(wrong)[1]])))
+    if (!deep) return(P(sprintf("%d numeric probes (categorical probes not scanned: deep = FALSE)", nrow(p))))
     cat_multi <- DBI::dbGetQuery(con, "SELECT probekey FROM (SELECT DISTINCT probekey, type FROM tcgacati) GROUP BY probekey HAVING COUNT(*) > 1 LIMIT 5")$probekey
     if (length(cat_multi)) return(F(sprintf("categorical probekeys with several types, e.g. %s", paste(cat_multi, collapse = ","))))
     both <- DBI::dbGetQuery(con, "SELECT COUNT(*) n FROM (SELECT DISTINCT probekey FROM tcgacati) c JOIN probe_types pt ON pt.probekey = c.probekey")$n
     if (both > 0) F(sprintf("%d probes are both numeric and categorical", both)) else P(sprintf("%d numeric probes", nrow(p)))
   })
+
+  ## ---- keys, duplicates, orphans, references (the small tables: always) -------
+  cnt <- function(sql) as.numeric(q1(sql))
+  have_cols <- function(t, cc) has(t) && all(cc %in% cols(t))
+  add("integrity", "keys unique and non-NULL (small tables)", function() {
+    spec <- list(samples = list("key", "sample"), probes = list("key", "probe"), clinpheno = list("sample"),
+                 types = list("type"), datatypes = list("type"), allprobes = list("probe"),
+                 tested = list(c("sample", "type")))
+    bad <- character(0)
+    for (t in names(spec)) for (cc in spec[[t]]) {
+      if (!have_cols(t, cc)) next        # the schema check says so
+      nn <- cnt(sprintf("SELECT COUNT(*) FROM %s WHERE %s", qi(t), paste(sprintf("%s IS NULL", qi(cc)), collapse = " OR ")))
+      dd <- cnt(sprintf("SELECT COUNT(*) FROM (SELECT 1 FROM %s GROUP BY %s HAVING COUNT(*) > 1)", qi(t), paste(qi(cc), collapse = ", ")))
+      if (nn > 0) bad <- c(bad, sprintf("%s.%s: %d NULL row(s)", t, paste(cc, collapse = "+"), nn))
+      if (dd > 0) bad <- c(bad, sprintf("%s.%s: %d duplicated key(s)", t, paste(cc, collapse = "+"), dd))
+    }
+    if (length(bad)) F(paste(bad, collapse = "; ")) else P()
+  })
+  add("integrity", "tested: sample and type resolve, every value is 1", function() {
+    if (!have_cols("tested", c("sample", "value", "type")) || !have_cols("samples", "sample") || !have_cols("types", "type")) return(P("schema check says"))
+    os <- cnt("SELECT COUNT(*) FROM (SELECT sample FROM tested EXCEPT SELECT sample FROM samples)")
+    ot <- cnt("SELECT COUNT(*) FROM (SELECT type FROM tested EXCEPT SELECT type FROM types)")
+    nv <- cnt("SELECT COUNT(*) FROM tested WHERE value IS NULL OR value <> 1")   # the views ignore the column
+    bad <- c(if (os > 0) sprintf("%d distinct tested.sample value(s) (NULL included) not in samples", os), if (ot > 0) sprintf("%d distinct tested.type value(s) (NULL included) not in types", ot),
+             if (nv > 0) sprintf("%d rows whose value is not 1 (the views ignore tested.value; 'not tested' is no row)", nv))
+    if (length(bad)) F(paste(bad, collapse = "; ")) else P()
+  })
+  add("integrity", "probes are in allprobes; probe_types resolve", function() {
+    if (!have_cols("probes", c("key", "probe")) || !have_cols("allprobes", "probe")) return(P("schema check says"))
+    na <- cnt("SELECT COUNT(*) FROM (SELECT probe FROM probes EXCEPT SELECT probe FROM allprobes)")   # set-based: allprobes may have no index
+    bad <- if (na > 0) sprintf("%d probes row(s) absent from allprobes", na) else character(0)
+    if (have_cols("probe_types", c("probekey", "type")) && have_cols("types", "type")) {
+      np <- cnt("SELECT COUNT(*) FROM (SELECT probekey FROM probe_types EXCEPT SELECT key FROM probes)")
+      nt <- cnt("SELECT COUNT(*) FROM (SELECT type FROM probe_types EXCEPT SELECT type FROM types)")
+      if (np > 0) bad <- c(bad, sprintf("%d probe_types row(s) whose probekey is NULL or not in probes", np))
+      if (nt > 0) bad <- c(bad, sprintf("%d probe_types row(s) whose type is NULL or not in types", nt))
+    }
+    if (length(bad)) F(paste(bad, collapse = "; ")) else P()
+  })
+  add("integrity", "every type has a datatypes row", function() {
+    if (!have_cols("types", "type") || !have_cols("datatypes", "type")) return(P("schema check says"))
+    m <- DBI::dbGetQuery(con, "SELECT y.type FROM types y WHERE NOT EXISTS (SELECT 1 FROM datatypes d WHERE d.type = y.type)")$type
+    if (length(m)) F(paste("types without a datatypes row:", paste(m, collapse = ", "))) else P()
+  })
+  add("integrity", "a type with categorical facts (tcgacati) is declared factor", function() {
+    if (!have_cols("datatypes", c("type", "r_datatype")) || !have_cols("tcgacati", "type")) return(P("schema check says"))
+    num <- DBI::dbGetQuery(con, "SELECT type FROM datatypes WHERE r_datatype = 'numeric'")$type
+    bad <- Filter(function(t) cnt(sprintf("SELECT COUNT(*) FROM (SELECT 1 FROM tcgacati WHERE type = %s LIMIT 1)", ql(t))) > 0, num)
+    if (length(bad)) F(paste("declared numeric but stored in tcgacati:", paste(bad, collapse = ", "))) else P()
+  })
+
+  ## ---- the roles and defaults against the data ----------------------------------
+  coh_col <- getm("cohort_col"); sub_col <- getm("subtype_col")
+  virt <- c(if (nzchar(coh_col) && coh_col %in% clin) "cohort", if (nzchar(coh_col) && coh_col %in% clin && "cohort" %in% clin) "lcohort",
+            if (nzchar(sub_col) && sub_col %in% clin) "subtype")
+  add("contract", "default_x/y/color/size/condition name existing variables", function() {
+    if (!has("allprobes")) return(P("no allprobes (schema check says)"))
+    bad <- character(0)
+    for (k in c("default_x", "default_y", "default_color", "default_size", "default_condition")) for (v in splitl(getm(k))) {
+      ok <- v %in% clin || v %in% virt || cnt(sprintf("SELECT COUNT(*) FROM allprobes WHERE probe = %s", ql(v))) > 0
+      if (!ok) bad <- c(bad, sprintf("%s=%s", k, v))
+    }
+    if (length(bad)) F(paste("not a variable of the dataset:", paste(bad, collapse = ", "))) else P()
+  })
+  levels_of <- function(col) if (nzchar(col) && col %in% clin)
+    as.character(DBI::dbGetQuery(con, sprintf("SELECT DISTINCT %s AS v FROM clinpheno WHERE %s IS NOT NULL", qi(col), qi(col)))$v) else NULL
+  add("contract", "sampletype_levels cover every sample type", function() {
+    lv <- splitl(getm("sampletype_levels")); act <- levels_of(getm("sampletype_col"))
+    if (!length(lv)) return(P("none declared"))
+    if (is.null(act)) return(P("no sampletype_col (role check says)"))
+    miss <- setdiff(act, lv)
+    if (length(miss)) F(paste("values of", getm("sampletype_col"), "not in sampletype_levels:", paste(miss, collapse = ", "))) else P(paste(length(lv), "levels"))
+  })
+  add("contract", "normal_label / heme_values / sources are real levels", function() {
+    bad <- character(0)
+    for (pr in list(c("normal_label", "sampletype_col"), c("heme_values", "cohort_col"), c("sources", "source_col"))) {
+      v <- splitl(getm(pr[1])); if (!length(v)) next
+      act <- levels_of(getm(pr[2]))
+      if (is.null(act)) { bad <- c(bad, sprintf("%s set but %s is not a clinpheno column", pr[1], pr[2])); next }
+      m <- setdiff(v, act)
+      if (length(m)) bad <- c(bad, sprintf("%s: %s not in %s", pr[1], paste(m, collapse = ", "), getm(pr[2])))
+    }
+    if (length(bad)) F(paste(bad, collapse = "; ")) else P()
+  })
+
+  ## ---- the fact tables, row by row (deep only: one pass each) ---------------------
+  if (!deep) add("integrity", "tcgai / tcgacati row scans (NULL, orphan, duplicate)", function() SKIP("deep = FALSE"))
+  if (deep) {
+    add("integrity", "tcgai: no NULL or orphan keys/types, no duplicate fact", function() {
+      if (!have_cols("tcgai", c("samplekey", "probekey", "type"))) return(P("schema check says"))
+      r <- DBI::dbGetQuery(con, "SELECT COUNT(*) n, COALESCE(SUM(samplekey IS NULL OR probekey IS NULL OR type IS NULL), 0) nul,
+          COALESCE(SUM(samplekey IS NOT NULL AND NOT EXISTS (SELECT 1 FROM samples s WHERE s.key = d.samplekey)), 0) os,
+          COALESCE(SUM(probekey IS NOT NULL AND NOT EXISTS (SELECT 1 FROM probes p WHERE p.key = d.probekey)), 0) op,
+          COALESCE(SUM(type IS NOT NULL AND NOT EXISTS (SELECT 1 FROM types y WHERE y.type = d.type)), 0) ot FROM tcgai d")
+      dd <- cnt("SELECT COUNT(*) FROM (SELECT 1 FROM tcgai GROUP BY probekey, type, samplekey HAVING COUNT(*) > 1)")
+      bad <- c(if (r$nul > 0) sprintf("%.0f rows with a NULL key/type", r$nul), if (r$os > 0) sprintf("%.0f orphan samplekeys", r$os),
+               if (r$op > 0) sprintf("%.0f orphan probekeys", r$op), if (r$ot > 0) sprintf("%.0f unknown types", r$ot),
+               if (dd > 0) sprintf("%.0f duplicated (probekey, type, samplekey)", dd))
+      if (length(bad)) F(paste(bad, collapse = "; ")) else P(sprintf("%.0f rows", r$n))
+    })
+    add("integrity", "tcgacati: no NULL or orphan keys/types", function() {
+      ## several values per (sample, probe) are legitimate here (two mutations of one gene): no duplicate check
+      if (!have_cols("tcgacati", c("samplekey", "probekey", "type"))) return(P("schema check says"))
+      r <- DBI::dbGetQuery(con, "SELECT COUNT(*) n, COALESCE(SUM(samplekey IS NULL OR probekey IS NULL OR type IS NULL), 0) nul,
+          COALESCE(SUM(samplekey IS NOT NULL AND NOT EXISTS (SELECT 1 FROM samples s WHERE s.key = d.samplekey)), 0) os,
+          COALESCE(SUM(probekey IS NOT NULL AND NOT EXISTS (SELECT 1 FROM probes p WHERE p.key = d.probekey)), 0) op,
+          COALESCE(SUM(type IS NOT NULL AND NOT EXISTS (SELECT 1 FROM types y WHERE y.type = d.type)), 0) ot FROM tcgacati d")
+      bad <- c(if (r$nul > 0) sprintf("%.0f rows with a NULL key/type", r$nul), if (r$os > 0) sprintf("%.0f orphan samplekeys", r$os),
+               if (r$op > 0) sprintf("%.0f orphan probekeys", r$op), if (r$ot > 0) sprintf("%.0f unknown types", r$ot))
+      if (length(bad)) F(paste(bad, collapse = "; ")) else P(sprintf("%.0f rows", r$n))
+    })
+  }
 
   ## ---- run -------------------------------------------------------------------
   res <- t2_run_checks(tests)
@@ -269,11 +391,12 @@ check_dataset_contract <- function(con, name = "", verbose = TRUE) {
 }
 if (.contract_direct()) {
   a <- commandArgs(trailingOnly = TRUE)
-  if (length(a) < 1) { cat("usage: Rscript dataset_contract_check.R <db-path> [dataset-name]\n"); quit(status = 2) }
+  quick <- "--quick" %in% a; a <- setdiff(a, "--quick")   # --quick: deep = FALSE (no row scans of tcgai / tcgacati)
+  if (length(a) < 1) { cat("usage: Rscript dataset_contract_check.R [--quick] <db-path> [dataset-name]\n"); quit(status = 2) }
   nm <- sub("\\.db$", "", basename(a[1])); if (tolower(nm) == "tcga") nm <- "TCGA"   # tcga.db (legacy) and TCGA.db
   con <- DBI::dbConnect(RSQLite::SQLite(), a[1], flags = RSQLite::SQLITE_RO)
   invisible(DBI::dbExecute(con, "PRAGMA busy_timeout = 60000"))
-  out <- check_dataset_contract(con, if (length(a) >= 2) a[2] else nm)
+  out <- check_dataset_contract(con, if (length(a) >= 2) a[2] else nm, deep = !quick)
   DBI::dbDisconnect(con)
   quit(status = if (out$ok) 0 else 1)
 }

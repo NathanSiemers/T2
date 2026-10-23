@@ -134,6 +134,13 @@ write_default_filters = function(con, dataset) {
 if (sys.nframe() == 0 && length(commandArgs(trailingOnly = TRUE)) == 3) local({
   a = commandArgs(trailingOnly = TRUE)
   ro = identical(a[1], "check")
+  if (!ro) {                                  # `write` changes the file: never a served one
+    if (!exists("t2_refuse_served")) {
+      .d = dirname(normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])))
+      source(file.path(.d, "t2_views.R")); source(file.path(.d, "t2_build_lib.R"))
+    }
+    t2_refuse_served(a[2])
+  }
   con = DBI::dbConnect(RSQLite::SQLite(), a[2], flags = if (ro) RSQLite::SQLITE_RO else RSQLite::SQLITE_RW)
   on.exit(DBI::dbDisconnect(con))
   if (ro) {

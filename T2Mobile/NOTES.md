@@ -1547,4 +1547,7 @@ the app's primary category went MEDICAL → EDUCATION (secondary stays REFERENCE
 (`asc.py patchrel appInfos 84fcf192-…`, 200, read back). This is the one write to App Store Connect since the
 freeze began; the submission 635f739b was not touched. Nathan pastes the reply (`docs/APPSTORE.md`, "Reply to the
 5.1.3(iv) / 5.1.1(ix) rejection") into the Resolution Center thread and attaches the policy documents himself.
+**Reply sent, 2026-10-22 night:** Nathan posted the reply in the thread (his edits: the misclassification framing,
+"open access" category, policy URLs appended instead of attachments, trimmed to the 4,000-character limit). The text as
+sent is in `docs/APPSTORE.md`, "Reply AS SENT". Now waiting for Apple; nothing else to do on ASC.
 

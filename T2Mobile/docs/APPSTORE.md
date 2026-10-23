@@ -234,13 +234,44 @@ better, and we will gladly adjust the wording of the listing or of the in-app no
 
 We would welcome a review appointment if that would help resolve this quickly.
 
+### Reply AS SENT by Nathan, 2026-10-22 (Resolution Center thread of submission 635f739b; Nathan's edits: the misclassification framing, "open access" category, "linked" instead of "attached", URLs appended; shortened to fit 4,000 characters)
+
+Thank you for the review and concerns. We believe concerns rest on a misunderstanding of what the app does, likely due to our misclassification of the tool itself, and we would like to clarify.
+
+T2 Cancer Genomics does not conduct human-subject research and collects no health data. It is a viewer for published, de-identified data that public research consortia (The Cancer Genome Atlas, CPTAC, GTEx, TARGET) released years ago for unrestricted reuse. The app has no participants: it does not enroll anyone, asks no questions, records nothing about the user, and has no account and no health input of any kind. Our App Privacy answers reflect this: nothing is collected except the name and email a user chooses to type into the optional contact form.  Thus, our Medical/Health classification was probably inappropriate for the app's function as a reference source for previously published scientific data.
+
+Guideline 5.1.3(iv) addresses apps that conduct health-related human subject research by collecting data from their users. The data T2 displays were collected by the consortia named above under their own informed consent procedures and institutional review board approvals, and are distributed by the US National Cancer Institute under its data-sharing policies (the open-access tiers of the Genomic Data Commons and the Proteomic Data Commons, and the UCSC Xena hub). The app is in the same class as a chart in a journal article or a textbook: it draws summary plots of these public tables. There is no participant from whom consent could be obtained, no study to approve, and no data of the user to protect.
+
+On the approval you asked for: every data set in the app was approved for public release by the review bodies of its program, in the "open access" category of data availability. TCGA specimens were collected under informed consent and institutional review board approval at each tissue source site, and the NCI's "TCGA Human Subjects Protection and Data Access Policies" define the open-access tier of de-identified data that the app uses (the controlled-access tier, which requires an NIH data access committee, is not in the app). CPTAC and TARGET data are released under the same NIH Genomic Data Sharing Policy, and GTEx donors' families gave informed consent for public release of the de-identified data. We have linked to these policy documents in the App Review notes; the app's About screen cites the primary publications of every data set and of every data type.
+
+Guideline 5.1.1(ix): the app provides no regulated service and requires no sensitive user information. It is not used in healthcare delivery. It states at first launch and on its About screen that it gives no medical advice and must not be used for diagnosis or treatment decisions. Its audience is scientists in biomedical research, as the description says.
+
+We recognise that our choice of the Medical category may have suggested a healthcare or clinical-research product. We have changed the primary category to Education (secondary: Reference), which describes the app better, and we will gladly adjust the wording of the listing or of the in-app notice if you advise.
+
+We would welcome a review appointment if that would help resolve this quickly.
+
+TCGA: NCI/NHGRI "Human Subjects Protection and Data Access Policies"
+https://www.cancer.gov/ccg/research/structural-genomics/tcga/history/policies/tcga-human-subjects-data-policies.pdf
+
+TCGA ethics and policies overview (informed consent guidelines, data use)
+https://www.cancer.gov/ccg/research/genome-sequencing/tcga/history/ethics-policies
+
+NIH Genomic Data Sharing Policy, NOT-OD-14-124 (governs TCGA, TARGET, CPTAC)
+https://grants.nih.gov/grants/guide/notice-files/NOT-OD-14-124.html
+
+NCI Proteomic Data Commons (CPTAC): all proteomic data are open access
+https://datacommons.cancer.gov/repository/proteomic-data-commons
+
+GTEx: NHGRI sample informed consent
+https://www.genome.gov/Pages/PolicyEthics/InformedConsent/5_GTEx_ENCODE_Sample_Consent.pdf
+
 ### Steps (Nathan decides)
 
 **Done 2026-10-22 evening (Nathan: "go ahead and change the category, I'll paste the reply"):** categories changed
 through the API from the MacBook Pro (`asc.py patchrel appInfos 84fcf192-1969-4c3f-858c-fbbd53f6b66e`, primary
 MEDICAL → EDUCATION, secondary REFERENCE unchanged; read back 200). The reply below is Nathan's to paste.
 
-1. In App Store Connect, ~~change the categories to Education / Reference~~ (done, see above), and paste the reply in the Resolution Center thread of submission 635f739b. Attach as "proof of
+1. ~~In App Store Connect, change the categories to Education / Reference~~ (done, see above), ~~and paste the reply~~ (sent 2026-10-22, text above) in the Resolution Center thread of submission 635f739b. Attach as "proof of
    approval" (App Review notes / attachments): the NCI "TCGA Human Subjects Protection and Data Access
    Policies" (PDF from cancer.gov), the NIH Genomic Data Sharing Policy (NOT-OD-14-124), the GDC and PDC
    data access policy pages, the GTEx consent/ethics statement (gtexportal.org, "Documentation"); Nathan

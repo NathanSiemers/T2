@@ -26,6 +26,18 @@ testServer(shiny::shinyAppDir("."), {
   ok(is.list(r1) && !is.null(r1$plot), "TCGA plot builds")
   cat("    TCGA summary line 1:", strsplit(r1$summary, "\n")[[1]][1], "\n")
 
+  ## ---- B6: "all" next to a named cohort means all ----
+  session$setInputs(cohort = c("all", "BRCA"))
+  ok(identical(sanitize_t2_input(input, bundle())$cohort, "all"), "cohort: 'all' with BRCA reduces to 'all'")
+  session$setInputs(cohort = c("BRCA", "LUAD"))
+  ok(identical(sanitize_t2_input(input, bundle())$cohort, c("BRCA", "LUAD")), "cohort: named cohorts stay as they are")
+  session$setInputs(cohort = "all")
+  ## ---- B9: a vector where one value is expected must not error the observers ----
+  r_err <- tryCatch({ session$setInputs(multi_y = c(TRUE, FALSE)); session$setInputs(dataset = c("TCGA", "cptac")); "" },
+                    error = function(e) conditionMessage(e))
+  ok(identical(r_err, ""), paste("vector-valued multi_y / dataset inputs do not raise", r_err))
+  session$setInputs(multi_y = FALSE, dataset = "TCGA")
+
   ## ---- not-detected values: the control follows the values answer ----
   session$flushReact()
   ok(identical(fill_state()$options, "na") && is.null(output$fill_ui$html), "TCGA: the answer offers na only; no not-detected control")

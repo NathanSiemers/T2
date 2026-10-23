@@ -172,6 +172,12 @@ t2_url_host = function(url) {
     sub("^www\\.", "", h)
 }
 
+## a link target that is safe to put in an href: http(s) only, else ""
+t2_safe_href = function(url) {
+    url = as.character(url)[1]
+    if (is.na(url) || !grepl("^https?://", url)) "" else url
+}
+
 ## The About note on time-to-event analysis, from the bundle's tte list
 ## (/meta tte_variables): which variables switch X to a Kaplan-Meier plot, what
 ## each one is, and the data set's citation. NULL when the data set has none.
@@ -417,6 +423,17 @@ ui = fluidPage(
 ################################################################
 
 server = function(input, output, session) {
+    ## An observer body must never end the session: a client can send any shape for
+    ## an input. Errors are logged and the visitor gets a generic line; req() / validate()
+    ## conditions (silent errors) pass through.
+    t2_guarded = function(what, expr) {
+        tryCatch(expr, error = function(e) {
+            if (inherits(e, c("shiny.silent.error", "validation"))) stop(e)
+            message("T2 ", what, " failed: ", conditionMessage(e))
+            showNotification("Something went wrong with that request; please try again.", type = "error", duration = 8)
+            invisible(NULL)
+        })
+    }
     ## ---- active source bundle (the single object that "knows" the data source) ----
     init_bundle = load_source_bundle(t2_default_dataset())
     bundle = reactiveVal(init_bundle)
@@ -517,11 +534,12 @@ server = function(input, output, session) {
 
     ## switching datasets: take the bundle of the new data source (cached per
     ## dataset version) and repopulate all inputs from it.
-    observeEvent(input$dataset, {
-        req(input$dataset)
-        if (identical(input$dataset, bundle()$key)) return()
-        if (!(input$dataset %in% T2_SOURCES_SERVED)) return()
-        b = load_source_bundle(input$dataset)
+    observeEvent(input$dataset, t2_guarded("dataset switch", {
+        ## a client may send any shape for an input: take one value from the served list or nothing
+        ds = .t2_one(input$dataset, T2_SOURCES_SERVED, "")
+        req(nzchar(ds))
+        if (identical(ds, bundle()$key)) return()
+        b = load_source_bundle(ds)
         old = isolate(selected_vars()$vars)
         prev = isolate(sanitize_t2_input(input, bundle()))   # the picks to carry over
         bundle(b)
@@ -534,19 +552,19 @@ server = function(input, output, session) {
         stale_picks <<- if (setequal(old, new)) NULL else old
         ## the not-detected choice belongs to the data source it was made on
         fill_choice("na"); fill_state(NULL)
-    }, ignoreInit = TRUE)
+    }), ignoreInit = TRUE)
 
     ## when multi_y is toggled on, add "probe" to color choices and select it
-    observeEvent(input$multi_y, {
+    observeEvent(input$multi_y, t2_guarded("multi-Y switch", {
         b = bundle()
         mgp = b$mygenesplus
         stc = b$handles$name[b$handles$role == "sample_type"]     # the sample-type handle, if the data set has one
-        if (input$multi_y) {
+        if (.t2_flag(input$multi_y)) {
             update_selectize_ranked(session, 'color', c('probe', mgp), 'probe')
         } else {
             update_selectize_ranked(session, 'color', t2_menu(mgp, lower = b$names_lower), if (length(stc)) stc[1] else "")
         }
-    }, ignoreInit = TRUE)
+    }), ignoreInit = TRUE)
 
     ## ---- Thanos: one instance per dataset, started on first use ----
     ## A Thanos instance is bound to one backend (= one dataset) for life, so
@@ -683,7 +701,10 @@ server = function(input, output, session) {
     })
     ## what the last plot was drawn from; the download hands out the same table
     plot_snapshot = NULL
+    plot_seq = 0           # which plot this is: a refusal is announced once per plot, not on every resize redraw
+    last_notice = list(seq = -1, text = "")
     plot_result = eventReactive(plot_clicks(), {
+        plot_seq <<- plot_seq + 1
         ## nothing is drawn until a Plot button has been pressed
         req(plot_clicks() > 0)
         b = bundle()
@@ -699,7 +720,14 @@ server = function(input, output, session) {
         fcap = filter_caption_for(b, inp, samp, fs)
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
-            fun_plot1(inp, reactive = FALSE, ctx = ctx, gg = gg, filter_caption = fcap)
+            ## an answer of the data service that failed is not shown as it is (URLs, host names)
+            tryCatch(fun_plot1(inp, reactive = FALSE, ctx = ctx, gg = gg, filter_caption = fcap),
+                     error = function(e) {
+                         m = conditionMessage(e)
+                         safe = t2_user_message(m)
+                         if (identical(safe, m)) stop(e)
+                         list(warning = safe)
+                     })
         })
     })
     observe({
@@ -725,18 +753,27 @@ server = function(input, output, session) {
     observeEvent(input$plot_btn2, updateTabsetPanel(session, 'tabs', selected = 'plot'))
     observeEvent(input$plot_btn3, updateTabsetPanel(session, 'tabs', selected = 'plot'))
 
+    ## the size comes from the browser (clientData), which a client can forge: both
+    ## sides are clamped, so a hostile page cannot ask for a 30000 x 16000 px plot
+    clamp_px = function(v) if (length(v) != 1 || !is.numeric(v) || is.na(v)) NULL else min(max(v, 200), 3000)
     output$main_plot = renderPlot({
         res = plot_result()
         if (is.null(res)) return(NULL)
         if (is.list(res) && !is.null(res$warning)) {
-            showNotification(res$warning, type = "warning", duration = 10)
+            txt = t2_user_message(res$warning)
+            if (!(identical(last_notice$seq, plot_seq) && identical(last_notice$text, txt))) {
+                last_notice <<- list(seq = plot_seq, text = txt)
+                showNotification(txt, type = "warning", duration = 10)
+            }
             if (is.null(res$plot)) return(NULL)
         }
         ## Survival mode returns a ggsurvplot (a list with $plot + $table); print
         ## the whole object so the risk table renders too, not just the curve.
         if (inherits(res, "ggsurvplot")) return(res)
         if (is.list(res) && !is.null(res$plot)) res$plot else res
-    })
+    },
+    width  = function() clamp_px(session$clientData$output_main_plot_width),
+    height = function() clamp_px(plot_height()))
     ## a fixed-height container (not height = "auto": an auto-height plot
     ## collapses while it redraws, the page scrollbar comes and goes, the width
     ## changes, and the plot redraws for ever)
@@ -777,6 +814,8 @@ server = function(input, output, session) {
     pub_fig = reactive(sanitize_t2_figure(input))
     ## everything that decides what is drawn (not how large the file is)
     pub_spec = reactive({
+        ## only the Publish tab draws a figure: no work on every input change elsewhere
+        req(identical(input$tabs, "publish"))
         b = bundle()
         inp = sanitize_t2_input(input, b)
         if (length(inp$x) == 0 || length(inp$y) == 0) return(NULL)
@@ -851,6 +890,8 @@ server = function(input, output, session) {
         type_df = b$types      # read with the bundle (files or service)
         ## convert PMID references to clickable PubMed links
         type_df$reference = sapply(type_df$reference, function(ref) {
+            if (is.na(ref)) return(ref)
+            ref = htmltools::htmlEscape(ref)       # the data is trusted; escaped anyway
             pmid = regmatches(ref, regexpr("PMID:\\d+", ref))
             if (length(pmid) > 0) {
                 pmid_num = sub("PMID:", "", pmid)
@@ -860,7 +901,7 @@ server = function(input, output, session) {
         })
         ## make source_url clickable, labelled by the host of the link
         type_df$source_link = sapply(type_df$source_url, function(url) {
-            if (!is.na(url) && url != "")
+            if (!is.na(url) && nzchar(t2_safe_href(url)))
                 paste0('<a href="', htmltools::htmlEscape(url, attribute = TRUE), '" target="_blank">',
                        htmltools::htmlEscape(t2_url_host(url)), '</a>')
             else ""
@@ -917,7 +958,7 @@ server = function(input, output, session) {
             if (nzchar(a$description)) tags$p(a$description),
             if (nzchar(a$citation)) tags$p(tags$b("Citation: "), a$citation),
             if (nzchar(a$attribution)) tags$p(tags$i(a$attribution)),
-            if (nzchar(a$url)) tags$p(tags$a(href = a$url, target = "_blank", t2_url_host(a$url))))
+            if (nzchar(t2_safe_href(a$url))) tags$p(tags$a(href = t2_safe_href(a$url), target = "_blank", t2_url_host(a$url))))
     })
     ## the table behind the last plot (same dataset, variables and samples);
     ## before any plot, the table for the current selections

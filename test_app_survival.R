@@ -80,5 +80,22 @@ testServer(shiny::shinyAppDir("."), {
   session$setInputs(dataset = "DEMO", x = "OS", y = "GENE01", plot_btn = 21)
   rd <- plot_result()
   ok(inherits(rd, "ggsurvplot") && grepl("Overall Survival", rd$plot$labels$title), "DEMO: the label of its tte entry titles the plot (Overall Survival)")
+
+  ## ---- B3: a sparse marker (60% equal values) merges cut points: the groups are
+  ## named by position among the surviving cuts, the count is the real one, and a
+  ## grouping with a group under 5 samples is refused ----
+  set.seed(7)
+  sparse <- c(rep(0, 60), rnorm(40, 5))
+  qg <- t2_quantile_groups(sparse, 3)
+  ok(!is.null(qg$grp) && qg$n == 2 && identical(levels(qg$grp), c("Low", "High")),
+     "sparse marker, 3 asked: 2 groups named Low/High (not Low/Mid)")
+  ok(identical(levels(t2_quantile_groups(rnorm(100), 3)$grp), c("Low", "Mid", "High")), "a continuous marker keeps Low/Mid/High")
+  ok(identical(levels(t2_quantile_groups(rnorm(100), 4)$grp), paste0("Q", 1:4)), "4 groups: Q1..Q4")
+  tiny <- c(rep(0, 50), rep(1, 47), 2, 3, 4)
+  ok(!is.null(t2_quantile_groups(tiny, 3)$refused), "a grouping that leaves a group with fewer than 5 samples is refused")
+  ## ---- B5: a covariate fit that is not possible says so ----
+  adj <- residualize_on(rnorm(50), data.frame(f = factor(rep("a", 50))))
+  ok(identical(attr(adj, "adjusted"), FALSE) && length(adj) == 50, "one-level factor condition: residualize_on reports adjusted = FALSE")
+  ok(is.null(attr(residualize_on(rnorm(50), data.frame(z = rnorm(50))), "adjusted")), "a possible fit carries no adjusted flag")
 })
 finish("test_app_survival")

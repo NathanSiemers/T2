@@ -27,4 +27,7 @@ ui_html <- as.character(appenv$ui)
 ok(grepl("no medical advice", ui_html, fixed = TRUE), "About statement in the UI")
 ok(grepl("not medical advice", ui_html, fixed = TRUE), "footer in the UI")
 ok(grepl('uiOutput|about_references', ui_html) && grepl("about_references", ui_html, fixed = TRUE), "references output in About")
+cat("== B12: hrefs are http(s) only ==\n")
+ok(identical(appenv$t2_safe_href("https://x.org/a?b=1"), "https://x.org/a?b=1") && identical(appenv$t2_safe_href("javascript:alert(1)"), "") &&
+   identical(appenv$t2_safe_href("data:text/html,x"), "") && identical(appenv$t2_safe_href(NA), ""), "t2_safe_href passes http(s) and nothing else")
 finish("test_about_references")

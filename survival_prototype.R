@@ -70,6 +70,28 @@ fmtp <- function(p) {
   sprintf("%.3g", p)
 }
 
+## Equal-count groups of a marker. Equal values can merge cut points, so fewer groups
+## than asked may survive; they are named by position among the surviving cuts:
+## 2 -> Low/High, 3 -> Low/Mid/High, more -> Q1..Qn (the iOS app's Stats.groupLabels
+## takes the first `made` names of the asked-for set instead, so a 3-group ask that
+## made 2 gives Low/Mid there). A grouping that leaves any group under min_n samples
+## is refused. Returns NULL (fewer than 2 distinct values), list(refused = text), or
+## list(grp = factor, n = number of groups).
+t2_quantile_groups <- function(m, n_groups, min_n = 5L) {
+  br <- unique(stats::quantile(m, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE))
+  if (length(br) < 2) return(NULL)
+  made <- length(br) - 1L
+  if (made < 2) return(NULL)
+  labs <- if (made == 2) c("Low", "High") else if (made == 3) c("Low", "Mid", "High") else paste0("Q", seq_len(made))
+  br[1] <- -Inf; br[length(br)] <- Inf
+  grp <- cut(m, breaks = br, labels = labs, include.lowest = TRUE)
+  small <- table(grp[!is.na(grp)])
+  if (any(small < min_n))
+    return(list(refused = sprintf("the groups would hold only %s samples (at least %d are needed in each; many samples share one marker value). Try fewer groups.",
+                                  paste(small, collapse = "/"), min_n)))
+  list(grp = grp, n = made)
+}
+
 survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                         nonormal = TRUE,
                         facet = NULL, ci = TRUE, title = NULL,
@@ -130,9 +152,8 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   xmax <- if (capped) max_time else max(df$time)
   cond_note <- if (do_cond && length(cond_cols)) sprintf("  •  adj: %s", paste(cond_cols, collapse = ", ")) else ""
 
-  labs <- if (n_groups == 2) c("Low", "High")
-          else if (n_groups == 3) c("Low", "Mid", "High")
-          else paste0("Q", seq_len(n_groups))
+  refused <- NULL          # why add_marker_grp gave up on the last subset
+  unadj <- character(0)    # subsets (panels) where the covariate adjustment was not possible
 
   ## Build the marker (median-z of the Y probes, optionally covariate-adjusted)
   ## and equal-count groups on a SUBSET of samples — used over the whole cohort
@@ -152,9 +173,14 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
     facet <- c("probe", utils::head(facet, 1))     # ggsurvplot_facet takes at most two
     ylab <- "Y probe"
   }
-  add_marker_grp <- function(sub) {
+  add_marker_grp <- function(sub, label = "all samples") {
+    refused <<- NULL
     m <- combine_markers_median_z(sub[, ymark, drop = FALSE])
-    if (do_cond && length(cond_cols)) m <- residualize_on(m, sub[, cond_cols, drop = FALSE])
+    if (do_cond && length(cond_cols)) {
+      m <- residualize_on(m, sub[, cond_cols, drop = FALSE])
+      if (identical(attr(m, "adjusted"), FALSE)) unadj <<- c(unadj, label)
+      m <- as.numeric(m)
+    }
     ## a marker with no more distinct values than groups (a 0/1 mutation call, a
     ## copy-number class): the values ARE the groups; quantile cuts would collapse
     vals <- sort(unique(m[!is.na(m)]))
@@ -163,11 +189,11 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
       sub$grp <- factor(m, levels = vals, labels = paste0("= ", format(vals)))
       return(sub)
     }
-    br <- unique(stats::quantile(m, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE))
-    if (length(br) < 2) return(NULL)
-    br[1] <- -Inf; br[length(br)] <- Inf
+    qg <- t2_quantile_groups(m, n_groups)
+    if (is.null(qg)) return(NULL)
+    if (!is.null(qg$refused)) { refused <<- paste0(label, ": ", qg$refused); return(NULL) }
     sub$marker <- m
-    sub$grp <- cut(m, breaks = br, labels = labs[seq_len(length(br) - 1)], include.lowest = TRUE)
+    sub$grp <- qg$grp
     sub
   }
 
@@ -179,11 +205,15 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                    paste(facet, collapse = " x "), format(length(parts), big.mark = ","), T2_LIMITS$km_panels))
     keep_part <- vapply(parts, function(s) nrow(s) >= 2L * n_groups, logical(1))
     dropped <- sum(!keep_part)
-    parts <- lapply(parts[keep_part], add_marker_grp)
+    parts <- parts[keep_part]
+    parts <- Map(function(s, nm) add_marker_grp(s, nm), parts, names(parts))
+    dropped <- dropped + sum(vapply(parts, is.null, logical(1)))
     parts <- parts[!vapply(parts, is.null, logical(1))]
     df <- if (length(parts)) do.call(rbind, parts) else NULL
     if (is.null(df) || nrow(df) < 20) stop("too few samples per facet group to form ", n_groups, " groups")
     df <- df[!is.na(df$grp), , drop = FALSE]; df$grp <- droplevels(df$grp)
+    if (length(unadj)) cond_note <- sprintf("  \u2022  NOT adjusted in: %s", paste(unique(unadj), collapse = ", "))
+    n_made <- nlevels(df$grp)          # the groups actually drawn (cut points can merge)
     fit <- survfit(Surv(time, event) ~ grp, data = df)
     pal <- t2_km_palette(nlevels(df$grp))
     g <- ggsurvplot_facet(fit, data = df, facet.by = facet, palette = pal,
@@ -195,11 +225,11 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
                           xlab = sprintf("Time (%s)", unit$word), ylab = sprintf("%s probability", endpoint),
                           ggtheme = theme_minimal(base_size = 11 * k, base_family = base_family)) +
       ggtitle(title %||% sprintf("%s by %s %s-groups (within panel) — faceted by %s",
-                                 elabel, ylab, n_groups, paste(facet, collapse = " × ")))
+                                 elabel, ylab, n_made, paste(facet, collapse = " × ")))
     g <- .km_strip_ci_border(g)                      # no outline on CI bands
     attr(g, "t2summary") <- sprintf(
       "Faceted KM: %s by %s %d-groups computed WITHIN each %s panel (n=%d%s%s%s). Per-panel log-rank p shown.",
-      endpoint, ylab, n_groups, paste(facet, collapse = " x "), nrow(df),
+      endpoint, ylab, n_made, paste(facet, collapse = " x "), nrow(df),
       if (capped) sprintf(", ≤%d%s", as.integer(max_time), unit$short) else "", cond_note,
       if (dropped) sprintf(", %d small panel(s) dropped", dropped) else "")
     attr(g, "t2summary") <- paste0(attr(g, "t2summary"), if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
@@ -210,9 +240,10 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
 
   ## ---------------- single panel: signature + groups over the whole cohort ----
   df <- add_marker_grp(df)
-  if (is.null(df)) stop("marker has too few distinct values to stratify")
+  if (is.null(df)) stop(refused %||% "marker has too few distinct values to stratify")
   df <- df[!is.na(df$grp), , drop = FALSE]; df$grp <- droplevels(df$grp)
   if (nlevels(df$grp) < 2) stop("marker has too few distinct values to stratify")
+  if (length(unadj)) cond_note <- "  \u2022  NOT adjusted (the covariate fit was not possible)"
   pal <- t2_km_palette(nlevels(df$grp))
   fit <- survfit(Surv(time, event) ~ grp, data = df)
 
@@ -233,8 +264,9 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
   leglabs <- sprintf("%s  (med %s)", levels(df$grp), medlab)
   med_txt <- paste(sprintf("%s %s", levels(df$grp), medlab), collapse = "  |  ")
 
-  grp_desc <- switch(as.character(n_groups), "2" = "halves", "3" = "tertiles",
-                     "4" = "quartiles", "5" = "quintiles", sprintf("%d groups", n_groups))
+  n_made <- nlevels(df$grp)          # the groups actually drawn: fewer than asked when cut points merged
+  grp_desc <- switch(as.character(n_made), "2" = "halves", "3" = "tertiles",
+                     "4" = "quartiles", "5" = "quintiles", sprintf("%d groups", n_made))
   if (any(grepl("^= ", levels(df$grp)))) grp_desc <- "values"      # grouped by value, not by quantile
   cap_txt <- if (capped) sprintf("  •  follow-up ≤ %d%s", as.integer(max_time), unit$short) else ""
 

@@ -48,6 +48,10 @@ T2_API_VALUES_CACHE = 400                       # probe columns kept per process
 .t2_api$frames = t2_cache(8)                    # "<ds>|<version>|<roles>" -> list(raw, fac): the frame and its factored twin
 .t2_api$menu   = t2_cache(8)                    # "<ds>|<version>" -> the typed variable list
 
+## percent-encode every reserved character of one value; unlike utils::URLencode it
+## also encodes a value that already contains %XX ("x%41y" -> "x%2541y")
+t2_urlencode = function(x) utils::URLencode(as.character(x), reserved = TRUE, repeated = TRUE)
+
 ## GET a path of the service, parsed JSON. `simplify = FALSE` gives lists (for
 ## /meta, which is small and nested); TRUE gives vectors for the big answers
 ## (/values, /probes, /clinical: arrays of numbers / strings become atomic
@@ -58,21 +62,23 @@ T2_API_VALUES_CACHE = 400                       # probe columns kept per process
 ## restarts with a new version): the datasets list is forgotten so the next
 ## t2_api_version() re-reads it, and the condition `t2_api_version_changed` is
 ## signalled for t2_api_versioned() to retry.
-t2_api_get = function(path, retry = 2, simplify = FALSE) {
+t2_api_get = function(path, retry = 1, simplify = FALSE) {
   url = paste0(T2_API_URL, path)
-  h = curl::new_handle(accept_encoding = "gzip", followlocation = TRUE, connecttimeout = 10, timeout = 120)
+  ## a worker is held for at most about a minute (2 tries, 3 s to connect, 30 s in all):
+  ## during a service restart the visitor gets "busy" quickly rather than a stuck page
+  h = curl::new_handle(accept_encoding = "gzip", followlocation = TRUE, connecttimeout = 3, timeout = 30)
   curl::handle_setheaders(h, "User-Agent" = "T2-shiny (gitr over t2api)")
   for (i in seq_len(retry + 1)) {
     r = tryCatch(curl::curl_fetch_memory(url, handle = h), error = function(e) e)
-    if (inherits(r, "error")) { if (i > retry) stop("t2api: ", conditionMessage(r), " (", url, ")"); Sys.sleep(1); next }
-    if (r$status_code == 503 && i <= retry) { Sys.sleep(3); next }
+    if (inherits(r, "error")) { if (i > retry) stop("t2api: the service is busy or not answering: ", conditionMessage(r), " (", substr(url, 1, 200), ")"); Sys.sleep(1); next }
+    if (r$status_code == 503 && i <= retry) { Sys.sleep(1); next }
     if (r$status_code == 409) {
       .t2_api$datasets = NULL
       stop(structure(class = c("t2_api_version_changed", "error", "condition"),
                      list(message = paste("t2api: dataset version changed for", path), call = NULL)))
     }
     if (r$status_code != 200)
-      stop("t2api: HTTP ", r$status_code, " for ", path, ": ", substr(rawToChar(r$content), 1, 200))
+      stop("t2api: HTTP ", r$status_code, " for ", substr(path, 1, 200), ": ", substr(rawToChar(r$content), 1, 200))
     return(jsonlite::fromJSON(rawToChar(r$content), simplifyVector = simplify,
                               simplifyDataFrame = FALSE, simplifyMatrix = FALSE))
   }
@@ -184,7 +190,7 @@ t2_api_values = function(ds, probes, fill = "na") {
   probes = unique(probes)
   key = function(p, f = "na") paste0(ds, "|", v, "|", p, if (f != "na") paste0("|fill=", f))
   ask = function(chunk, f) t2_api_versioned(ds, function(vv) sprintf("/v1/%s/values?v=%s&probes=%s%s", ds, vv,
-                                  utils::URLencode(paste(chunk, collapse = ","), reserved = TRUE),
+                                  t2_urlencode(paste(chunk, collapse = ",")),
                                   if (f != "na") paste0("&fill=", f) else ""), simplify = TRUE)
   ## the values of all the probes under fill f: list(cols, options). `force` asks for every probe
   ## (the answer's fill_options is for the probes of THAT request), else only for the uncached ones.

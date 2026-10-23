@@ -293,4 +293,21 @@ ok(all(vapply(T2_FIG_PRESETS, function(pr) {
 ok(T2_FIG_PRESETS$nature1$width == 89 && T2_FIG_PRESETS$nature2$width == 183 &&
    T2_FIG_PRESETS$nature2$height <= 170, "Nature presets: 89 and 183 mm wide, no taller than 170 mm")
 ok(!file.exists("Rplots.pdf"), "no stray Rplots.pdf")
+cat("\n== B2 loess limit, B4 categorical X with a hyphen in its name ==\n")
+smooth_layers <- function(p) Filter(function(l) inherits(l$geom, "GeomSmooth"), p$layers)
+lo <- quiet(fun_plot1(list(x = "CD8A", y = "FOXP3", cohort = "all", allComplete = TRUE, smooth = "TRUE"), reactive = FALSE,
+                      ctx = t2_plot_ctx(b), gg = list(smooth.method = "loess")))
+sl <- smooth_layers(lo$plot)
+npts <- as.integer(sub(".*Data points in plot: (\\d+).*", "\\1", lo$summary))
+ok(npts > T2_LIMITS$loess_points, sprintf("the frame has more than %d points (%d)", T2_LIMITS$loess_points, npts))
+ok(length(sl) == 1 && identical(sl[[1]]$stat_params$method, "lm"), "loess over the limit: the smooth layer is drawn with method lm")
+ok(grepl("loess needs <= 5000 points; a linear fit is drawn", lo$summary, fixed = TRUE) && !is.null(lo$warning), "the summary and the warning say a linear fit is drawn")
+lo2 <- quiet(fun_plot1(list(x = "CD8A", y = "FOXP3", cohort = "BRCA", allComplete = TRUE, smooth = "TRUE"), reactive = FALSE,
+                       ctx = t2_plot_ctx(b), gg = list(smooth.method = "loess")))
+sl2 <- smooth_layers(lo2$plot)
+ok(length(sl2) == 1 && identical(sl2[[1]]$stat_params$method, "loess") && is.null(lo2$warning), "loess within the limit is kept (BRCA)")
+hy <- quiet(fun_plot1(list(x = "NKX2-1.mut", y = "CD8A", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(b)))
+ok(is.list(hy) && any(vapply(hy$plot$layers, function(l) inherits(l$geom, "GeomBoxplot"), NA)),
+   "a categorical X whose name has a hyphen draws the boxplot")
+
 finish("test_figure_export")

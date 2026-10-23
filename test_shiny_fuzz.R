@@ -142,6 +142,27 @@ app$set_inputs(tabs = "filter"); settle(1500)
 ok(alive(), "invented Thanos filter columns do not break the Filter tab")
 
 ## ---------------------------------------------------------------------------
+## 6b. Inputs of the wrong SHAPE (vectors where one value is expected), a forged
+##     plot size and oversized contact fields: none may end the session.
+## ---------------------------------------------------------------------------
+cat("-- 6b. wrong-shaped inputs, forged plot size, contact fields\n")
+app$set_inputs(tabs = "select"); settle(500)
+setv("multi_y", list(TRUE, FALSE, "x")); setv("multi_y", list())
+setv("dataset", list("TCGA", "CPTAC")); setv("dataset", list()); setv("dataset", 42)
+setv("pcortype", list("x", "y")); setv("allComplete", list(TRUE, FALSE))
+settle(1500)
+ok(alive(), "vector-valued multi_y / dataset / flags do not end the session")
+# a client can set the reported size of an output: the plot must not be drawn that large
+setv(".clientdata_output_main_plot_width", 30000); setv(".clientdata_output_main_plot_height", 16000)
+setv("x", "cohort"); setv("y", "CD8A"); settle(500)
+t0 <- Sys.time(); app$click("plot_btn"); settle(5000)
+ok(alive() && as.numeric(Sys.time() - t0, units = "secs") < 60, "a forged 30000 x 16000 plot size is clamped (session alive, drawn quickly)")
+setv("contact_name", list("a", "b")); setv("contact_email", 7); setv("contact_message", strrep("m", 100000))
+setv("contact_affiliation", strrep("x", 100000)); setv("contact_send", 1)
+settle(1500)
+ok(alive(), "wrong-shaped and oversized contact fields do not end the session")
+
+## ---------------------------------------------------------------------------
 ## 7. The whole storm left no uncaught R error and the app still plots normally.
 ## ---------------------------------------------------------------------------
 cat("-- 7. recovery\n")

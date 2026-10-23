@@ -622,6 +622,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
     ################################################################
     ## apply conditioning — individually for each numeric x/y variable
+    unadjusted = c()     # variables (or probes) whose conditioning fit was not possible
     if (!is.null(condition) & pcortype != 'none' & is.null(conditioning_msg)) {
         ## get numeric vars to condition (excluding skipped non-numerics)
         cond_x_vars = if (pcortype == 'x' | pcortype == 'both') setdiff(x, cond_skip_x) else c()
@@ -638,12 +639,18 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
             if (stacked_y && identical(v, "y_value")) {
                 for (pr in unique(as.character(data$probe))) {
                     i = which(data$probe == pr)
-                    data[i, v] = residualize_on( data[i, v], data[ i, condition, drop = FALSE] )
+                    r = residualize_on( data[i, v], data[ i, condition, drop = FALSE] )
+                    if (identical(attr(r, "adjusted"), FALSE)) unadjusted = c(unadjusted, pr)
+                    data[i, v] = as.numeric(r)
                 }
             } else {
-                data[, v] = residualize_on( data[, v], data[ , condition, drop = FALSE] )
+                r = residualize_on( data[, v], data[ , condition, drop = FALSE] )
+                if (identical(attr(r, "adjusted"), FALSE)) unadjusted = c(unadjusted, v)
+                data[, v] = as.numeric(r)
             }
         }
+        if (length(unadjusted))
+            warnings = c(warnings, paste("Not adjusted (the fit was not possible) in:", paste(unique(unadjusted), collapse = ", ")))
     }
     ## check for waterfall
     if(waterfall){
@@ -749,7 +756,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     pts = function(position = 'identity') {
         if (draw_points) do.call(geom_point, c(list(position = position), pt_args))
     }
-    if( ! grepl('\\+|\\-', x[1] ) && is.factor(data[, x]) ) {
+    if( is.factor(data[, x]) ) {
         ## boxplot + jittered points for categorical x
         jw = G('jitter.width', 0.2)
         box_args = list(outlier.shape = NA, linewidth = G('boxplot.linewidth', 0.5),
@@ -797,9 +804,18 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     pal_dir = as.numeric(G('colour.direction', '1'))
     if ( !is.null(smooth) ) {
         if ( smooth == 'TRUE' & is.numeric(data[,x]) & is.numeric(data[,y]) ) {
+            ## loess is O(n^2): above T2_LIMITS$loess_points points the fit is a straight line
+            ## (the fit is one line over all the points, not one per group)
+            sm_method = G('smooth.method', 'lm')
+            n_fit = sum(stats::complete.cases(data[, c(x, y), drop = FALSE]))
+            if (identical(sm_method, 'loess') && n_fit > T2_LIMITS$loess_points) {
+                sm_method = 'lm'
+                warnings = c(warnings, sprintf("loess needs <= %d points; a linear fit is drawn (%d points).",
+                                               T2_LIMITS$loess_points, n_fit))
+            }
             sm_args = list(mapping = aes_q(x = as.name(x), y = as.name(y)), formula = y ~ x,
                            alpha = G('smooth.alpha', 0.25), fullrange = FALSE,
-                           method = G('smooth.method', 'lm'),
+                           method = sm_method,
                            se = identical(G('smooth.se', 'TRUE'), 'TRUE'),
                            level = min(max(G('smooth.level', 0.95), 0.01), 0.999),
                            linewidth = G('smooth.linewidth', 1),
@@ -878,7 +894,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if (!is.null(orig_facet[1]))
         plot_summary = paste0(plot_summary, sprintf("\n  Facet: %s", paste(orig_facet, collapse = " + ")))
     if (!is.null(orig_condition) && pcortype != 'none')
-        plot_summary = paste0(plot_summary, sprintf("\n  Conditioning: %s on %s", paste(orig_condition, collapse = ", "), pcortype))
+        plot_summary = paste0(plot_summary, sprintf("\n  Conditioning: %s on %s%s", paste(orig_condition, collapse = ", "), pcortype,
+                                                    if (length(unadjusted)) " (NOT applied where the fit failed, see warnings)" else ""))
     if (multi_y) plot_summary = paste0(plot_summary, "\n  Multi-Y: individual probes plotted separately")
     if (zscore_y) plot_summary = paste0(plot_summary, "\n  Z-score Y: enabled")
     if (length(warnings) > 0)
@@ -897,13 +914,29 @@ fun_table1 = function ( input, ctx = t2_default_ctx() ) {
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
     my.input = c( input$x, input$y, input$color, input$size, input$facet )
     my.input = setdiff( my.input, 'probe' )   # multi-Y colour handle, not a column
+    ## a Kaplan-Meier plot forces nonormal (fun_plot1); its table must hold the same samples
+    km = length(input$x) > 0 && input$x[1] %in% tte_names(ctx)
     gitr( my.input,
           cohort = if (length(input$cohort)) input$cohort else 'all',
-          nonormal = isTRUE(input$nonormal), noheme = isTRUE(input$noheme),
+          nonormal = km || isTRUE(input$nonormal), noheme = isTRUE(input$noheme),
           dbfile = ctx$path, roles = ctx$roles, keep_samples = ctx$keep, rules = ctx$rules,
           fill = ctx$fill %||% "na" )
 }
 
+
+## The text a visitor may see for a caught error. Errors of the data service carry
+## URLs and internal host names ("t2api: HTTP 503 for /v1/...", "Couldn't connect to
+## server (http://t2api:8080/...)"): those become one generic line and the detail goes
+## to the log. Plotting refusals (validation messages written for users) pass unchanged.
+t2_user_message = function(msg) {
+    msg = paste(as.character(msg), collapse = " ")
+    if (grepl("https?://|t2api|HTTP [0-9]|Couldn't connect|Timeout was reached|Failed to connect|Could not resolve|Connection (refused|reset)",
+              msg, ignore.case = TRUE)) {
+        message("T2 data service error: ", substr(msg, 1, 500))
+        return("The data service did not answer; please retry in a moment.")
+    }
+    msg
+}
 
 ## input: the browser's choices, already validated (sanitize_t2_input); ctx: the
 ## plot context (t2_plot_ctx) -- the active data source and the samples chosen
@@ -981,7 +1014,7 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
             t2_style_survival(km, style = km_style, gg = gg, fig_width = fig_width,
                 caption = t2_caption_text(c(filter_caption, if (isTRUE(fill_caption)) t2_fill_caption(fi, ctx)), caption, fig_width, 0.75 * base_size))
             },
-            error = function(e) list(warning = paste("Survival plot:", conditionMessage(e)))))
+            error = function(e) list(warning = paste("Survival plot:", t2_user_message(conditionMessage(e))))))
     }
 
     do.call(plotter, input)

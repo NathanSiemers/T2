@@ -10,6 +10,7 @@
 ## UI default.
 ## ============================================================================
 
+## (cohort: "all" among several picks reduces the choice to "all"; see .t2_cohort_pick)
 ## plotter() arguments that may come from the browser (the plot context --
 ## dataset, roles, label, Filter-tab samples, sample rules -- is injected by the
 ## server afterwards).
@@ -37,6 +38,14 @@ T2_CONTROLS = list(
     v = unique(v[!is.na(v) & v %in% allowed])
     if (length(v) == 0) return(NULL)
     head(v, max_n)
+}
+
+## The cohort choice. Rule: "all" together with named cohorts means all (the
+## dataset-wide choice contains every cohort; gitr() would otherwise draw only the
+## named ones while the subtitle said "all"), so the pick is reduced to "all".
+.t2_cohort_pick = function(v, cohorts, max_n) {
+    v = .t2_pick(v, c('all', cohorts), Inf)
+    if ('all' %in% v) 'all' else head(v, max_n)
 }
 
 ## single value from `allowed`, else default
@@ -68,7 +77,7 @@ sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable 
         y         = .t2_pick(input$y, vars, T2_LIMITS$y_vars),
         color     = .t2_one(input$color, c('probe', vars), ""),
         size      = .t2_one(input$size, vars, ""),
-        cohort    = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), T2_LIMITS$cohorts),
+        cohort    = .t2_cohort_pick(input$cohort, unname(b$mycohorts), T2_LIMITS$cohorts),
         facet     = .t2_pick(input$facet, vars, T2_LIMITS$facet_vars),
         condition = .t2_pick(input$condition, vars, T2_LIMITS$condition_vars),
         pcortype  = .t2_one(input$pcortype, T2_CONTROLS$pcortype$choices, T2_CONTROLS$pcortype$default),

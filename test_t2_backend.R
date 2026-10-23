@@ -111,4 +111,20 @@ ok(length(d) == 4 && any(grepl("CD8A in \\[5, 9.123\\]", d)) && any(grepl("FOXP3
    any(grepl("MKI67 >= 2", d)) && any(grepl("gender: FEMALE", d)),
    "active filters described; no-op filters (full range / all levels) omitted")
 
+## B8: a name that already holds %XX is still encoded (utils::URLencode alone leaves it unchanged)
+ok(identical(t2_urlencode("x%41y"), "x%2541y") && identical(t2_urlencode("A,B"), "A%2CB") && identical(t2_urlencode("HLA-A"), "HLA-A"),
+   "t2_urlencode: x%41y -> x%2541y, a comma is encoded")
+## B10: errors of the data service never reach the browser as they are
+ok(identical(t2_user_message("t2api: HTTP 503 for /v1/x/values: down"), "The data service did not answer; please retry in a moment.") &&
+   identical(t2_user_message("Couldn't connect to server (http://t2api:8080/v1/x)"), "The data service did not answer; please retry in a moment.") &&
+   identical(t2_user_message("Survival plot needs a Y marker."), "Survival plot needs a Y marker."),
+   "t2_user_message: service errors become one generic line, validation messages pass")
+## B7: the table behind a Kaplan-Meier plot holds the same samples (no normals)
+{
+  b7 <- load_dataset_bundle("TCGA")
+  n_km <- nrow(fun_table1(list(x = "OS", y = "CD8A", cohort = "all"), ctx = t2_plot_ctx(b7)))
+  n_sc <- nrow(fun_table1(list(x = "MKI67", y = "CD8A", cohort = "all"), ctx = t2_plot_ctx(b7)))
+  ok(n_km < n_sc, sprintf("table behind a KM plot excludes normal samples (%d rows < %d of a scatter)", n_km, n_sc))
+}
+
 finish("test_t2_backend")

@@ -1566,4 +1566,6 @@ on the branch (three Sonnet agents: R, scan.sh, iOS), then the full suite, then 
 is untested in integration. Claude's restore attempt was refused by the permission classifier; the restore script is
 in the session scratchpad (see the HARDENING checkpoint). Nathan decides: restore, or accept. `T2Mobile/ops/FREEZE`
 now blocks deploy.sh steps.
+Restored 23:15 PDT by Claude in manual mode on Nathan's instruction: both containers back on the released image
+79459df33aa4; verified. Development continues on named devstack instances (`ops/devstack.sh`).
 

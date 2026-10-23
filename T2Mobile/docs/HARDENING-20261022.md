@@ -20,6 +20,13 @@ Rules in force: PRODUCTION FREEZE (no deploy, no ASC writes, no uploads); everyt
 
 ## Checkpoints (newest first)
 
+### 2026-10-22 23:15 PDT: production RESTORED to the released image (manual mode, Nathan's instruction)
+- Nathan: "in manual mode now, make sure the api is the version the current iOS release candidate uses, continue
+  with a separate development environment." The restore script ran: t2api and t2api-web back on 79459df33aa4
+  (the 2026-10-20 11:22 build the review candidate uses), healthz 200, `?junk=1` -> 200 again, datasets and values
+  answer, version strings back to the released format. The accidental build is kept as
+  `t2api:hardening-20261022-untested`. Incident closed; production untouched from here on.
+- Development continues on the named instance t2api-hard (devstack.sh, 127.0.0.1:3870) and t2api-dev.
 ### 2026-10-22 23:05 PDT: Nathan's rule after the incident; clean-release tooling; second dev instance
 - Nathan: "I want to keep from interfering with the iOS app currently in review. You can make all changes that don't
   interfere with the current api, and only momentarily interfere with the api being online." and "let's be clean

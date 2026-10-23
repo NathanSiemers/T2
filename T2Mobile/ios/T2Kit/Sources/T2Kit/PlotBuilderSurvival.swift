@@ -88,14 +88,31 @@ extension PlotBuilder {
             var m = Stats.combineMedianZ(probes.map { p in rows.map { p[$0] } })
             if !covariates.isEmpty { m = Stats.residuals(m, on: covariates.map { c in rows.map { c[$0] } }) }
             let asked = max(2, request.kmGroups)
-            let cut = Stats.quantileGroupsUnique(m, groups: asked)
-            guard cut.count >= 2 else {
-                return .empty("\(markerName) has too few distinct values to be split into \(asked) groups (many samples share one value). Try 2 groups.", warnings: warnings)
+            // a marker with no more distinct values than groups (a 0/1 mutation call, a
+            // copy-number class): the values ARE the groups, as in survival_prototype.R
+            let vals = Array(Set(m.filter { !$0.isNaN })).sorted()
+            if vals.count >= 2 && vals.count <= asked {
+                let index = Dictionary(uniqueKeysWithValues: vals.enumerated().map { ($1, $0) })
+                group = m.map { $0.isNaN ? -1 : (index[$0] ?? -1) }
+                labels = Self.valueLabels(vals).map { "= \($0)" }
+            } else {
+                let cut = Stats.quantileGroupsUnique(m, groups: asked)
+                guard cut.count >= 2 else {
+                    return .empty("\(markerName) has too few distinct values to be split into \(asked) groups (many samples share one value). Try 2 groups.", warnings: warnings)
+                }
+                // as t2_quantile_groups: a group of fewer than 5 samples is refused
+                var sizes = [Int](repeating: 0, count: cut.count)
+                for g in cut.group where g >= 0 { sizes[g] += 1 }
+                if sizes.contains(where: { $0 < 5 }) {
+                    return .empty("\(markerName): the groups would hold only \(sizes.map(String.init).joined(separator: "/")) samples (at least 5 are needed in each; many samples share one marker value). Try fewer groups.", warnings: warnings)
+                }
+                group = cut.group
+                labels = Stats.groupLabels(made: cut.count)
             }
-            group = cut.group
-            labels = Stats.groupLabels(asked: asked, made: cut.count)
             marker = m
-            groupWord = asked == 2 ? "halves" : asked == 3 ? "tertiles" : asked == 4 ? "quartiles" : asked == 5 ? "quintiles" : "\(asked) groups"
+            // the word follows the groups actually made, not the number asked for
+            let made = labels.count
+            groupWord = made == 2 ? "halves" : made == 3 ? "tertiles" : made == 4 ? "quartiles" : made == 5 ? "quintiles" : "\(made) groups"
         }
 
         // one curve per group
@@ -157,5 +174,16 @@ extension PlotBuilder {
         if !context.datasetLabel.isEmpty { subtitle += "   \(context.datasetLabel)." }
         return PlotScene(kind: .survival, title: "\(entry.label) by \(markerName) \(groupWord)", subtitle: subtitle,
                          panels: [panel], legend: legend, stats: stats, warnings: warnings, n: rows.count)
+    }
+
+    /// R's format() of a numeric vector: one common number of decimals
+    static func valueLabels(_ vals: [Double]) -> [String] {
+        var decimals = 0
+        for v in vals {
+            for d in 0...7 where abs(v - (v * pow(10, Double(d))).rounded() / pow(10, Double(d))) < 1e-9 * max(1, abs(v)) {
+                decimals = max(decimals, d); break
+            }
+        }
+        return vals.map { String(format: "%.\(decimals)f", $0) }
     }
 }

@@ -29,8 +29,12 @@ public enum TableExport {
         if v == v.rounded(), abs(v) < 1e15 { return String(Int64(v)) }
         return "\(v)"
     }
-    /// quoted only when it has to be (a comma, a quote, a line break, or text that would read as missing)
-    static func quoted(_ s: String) -> String {
+    /// quoted only when it has to be (a comma, a quote, a line break, or text that would read as missing).
+    /// Text that starts with = + - @ (or a tab or return) would be run as a formula by a
+    /// spreadsheet: it gets a leading apostrophe.
+    static func quoted(_ text: String) -> String {
+        var s = text
+        if let f = s.first, "=+-@\t\r".contains(f) { s = "'" + s }
         if s.isEmpty || s == "NA" || s.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) {
             return "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }

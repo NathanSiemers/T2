@@ -93,8 +93,14 @@ extension Column: Decodable {
             let v = try c.decode([Double?].self, forKey: .values)
             data = .numeric(v.map { $0 ?? .nan })
         case "cat":
-            data = .categorical(levels: try c.decode([String].self, forKey: .levels),
-                                codes: try c.decode([Int].self, forKey: .codes))
+            let levels = try c.decode([String].self, forKey: .levels)
+            let codes = try c.decode([Int].self, forKey: .codes)
+            // code sites index levels[code]: a code outside the levels would trap (-1 = missing)
+            if let bad = codes.first(where: { $0 < -1 || $0 >= levels.count }) {
+                throw DecodingError.dataCorruptedError(forKey: .codes, in: c,
+                    debugDescription: "code \(bad) of \(name) is outside its \(levels.count) levels")
+            }
+            data = .categorical(levels: levels, codes: codes)
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "unknown column kind \(other)")
         }
@@ -454,6 +460,19 @@ public struct Clinical: Decodable, Sendable {
     /// sample ids, in THE order of every column
     public let samples: [String]
     public let columns: [Column]
+    private enum CodingKeys: String, CodingKey { case dataset, n, samples, columns }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dataset = try c.decode(String.self, forKey: .dataset)
+        n = try c.decode(Int.self, forKey: .n)
+        samples = try c.decode([String].self, forKey: .samples)
+        columns = try c.decode([Column].self, forKey: .columns)
+        // every column must hold one cell per sample, or the sites that index by sample would trap
+        if let bad = columns.first(where: { $0.count != samples.count }) {
+            throw DecodingError.dataCorruptedError(forKey: .columns, in: c,
+                debugDescription: "column \(bad.name) has \(bad.count) cells for \(samples.count) samples")
+        }
+    }
 }
 
 public struct Values: Decodable, Sendable {
@@ -472,6 +491,23 @@ public struct Values: Decodable, Sendable {
     public let fill: String?
     public let filled: [String: Int]?
     public let testedN: [String: Int]?
+    private enum CodingKeys: String, CodingKey { case dataset, version, n, columns, missing, fillOptions, fill, filled, testedN }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dataset = try c.decode(String.self, forKey: .dataset)
+        version = try c.decodeIfPresent(String.self, forKey: .version)
+        n = try c.decode(Int.self, forKey: .n)
+        columns = try c.decode([Column].self, forKey: .columns)
+        missing = try c.decode([String].self, forKey: .missing)
+        fillOptions = try c.decodeIfPresent([String].self, forKey: .fillOptions)
+        fill = try c.decodeIfPresent(String.self, forKey: .fill)
+        filled = try c.decodeIfPresent([String: Int].self, forKey: .filled)
+        testedN = try c.decodeIfPresent([String: Int].self, forKey: .testedN)
+        if let bad = columns.first(where: { $0.count != n }) {
+            throw DecodingError.dataCorruptedError(forKey: .columns, in: c,
+                debugDescription: "column \(bad.name) has \(bad.count) cells for \(n) samples")
+        }
+    }
 }
 
 /// What the answers to one values request (possibly several chunks) say about not-detected fills.

@@ -615,6 +615,8 @@ final class T2UITests: XCTestCase {
             // after the switch, the Filter tab's picker must search THIS dataset's names:
             // type a few letters, tap, type the next, then one Add for both
             openTab("Filter")
+            // the list may open scrolled down to carried panels: bring the summary into view
+            scrollTo("filter-count")
             waitFor("filter-count", "the filter's sample count")
             // (colour stays sample_type, carried over from TCGA, so "study" is added by hand)
             pickMany("Add a filter column", [("CD8", "CD8B"), ("GZM", "GZMB"), ("stud", "study")], shotName: "32a-filter-picks-after-switch")
@@ -662,6 +664,8 @@ final class T2UITests: XCTestCase {
             shot("32c-plot-gtex-only")
             // the filter panels came along, and the study panel offers only the levels of this part
             openTab("Filter")
+            // the list may open scrolled down to carried panels: bring the summary into view
+            scrollTo("filter-count")
             waitFor("filter-count", "the filter's sample count")
             scrollTo("filter-remove-CD8B", maxSwipes: 25)
             scrollTo("filter-remove-GZMB", maxSwipes: 25)

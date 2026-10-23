@@ -144,6 +144,23 @@ final class PlotBuilderMoreTests: XCTestCase {
         XCTAssertTrue(three.legend.entries[1].label.hasPrefix("Mid"))
     }
 
+    func testSurvivalSparseTertilesAreNamedByGroupsMade() {
+        // 15 zeros and 27 distinct values: the first two tertile cuts merge, so 2 groups survive and
+        // are named Low / High (as t2_quantile_groups in R), with "halves" in the title
+        var sparse = trial
+        sparse["M"] = Column(name: "M", type: "rna", data: .numeric([Double](repeating: 0, count: 15) + (1...27).map(Double.init)))
+        let s = PlotBuilder.build(PlotRequest(x: ["OS"], y: ["M"]), columns: sparse, keep: all, context: survivalContext)
+        XCTAssertEqual(s.kind, .survival, s.message)
+        XCTAssertEqual(s.legend.entries.count, 2)
+        XCTAssertTrue(s.legend.entries[0].label.hasPrefix("Low")); XCTAssertTrue(s.legend.entries[1].label.hasPrefix("High"))
+        XCTAssertEqual(s.title, "Overall Survival by M halves")
+        // a group of fewer than 5 samples is refused, as in R: a tail of 4 above the merged cuts
+        var tiny = trial
+        tiny["M"] = Column(name: "M", type: "rna", data: .numeric([Double](repeating: 0, count: 15) + [Double](repeating: 5, count: 23) + [100, 101, 102, 103]))
+        let t = PlotBuilder.build(PlotRequest(x: ["OS"], y: ["M"]), columns: tiny, keep: all, context: survivalContext)
+        XCTAssertEqual(t.kind, .empty); XCTAssertTrue(t.message.contains("at least 5"))
+    }
+
     func testSurvivalRefusals() {
         // without the endpoint in the context, OS is an ordinary numeric variable
         XCTAssertEqual(PlotBuilder.build(PlotRequest(x: ["OS"], y: ["M"]), columns: trial, keep: all).kind, .scatter)
@@ -153,7 +170,9 @@ final class PlotBuilderMoreTests: XCTestCase {
         XCTAssertEqual(a.kind, .empty); XCTAssertTrue(a.message.contains("(15)"))
         // a marker that cannot be split
         var flat = trial; flat["M"] = Column(name: "M", type: "rna", data: .numeric([Double](repeating: 0, count: 40) + [1, 2]))
-        let b = PlotBuilder.build(PlotRequest(x: ["OS"], y: ["M"]), columns: flat, keep: all, context: survivalContext)
+        // (two groups asked: three distinct values would otherwise be three groups of their own, as in R)
+        var halves = PlotRequest(x: ["OS"], y: ["M"]); halves.kmGroups = 2
+        let b = PlotBuilder.build(halves, columns: flat, keep: all, context: survivalContext)
         XCTAssertEqual(b.kind, .empty); XCTAssertTrue(b.message.contains("too few distinct values"))
         // the time column is missing
         var noTime = trial; noTime["OS.time"] = nil

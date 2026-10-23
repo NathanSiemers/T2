@@ -353,6 +353,7 @@ struct SelectView: View {
                     ForEach(model.sources) { Text($0.label).tag($0.id) }
                 }
                 .accessibilityIdentifier("dataset-picker")
+                .disabled(model.busy)      // (one opening at a time)
                 if let m = model.meta {
                     let n = model.fixedPreset == nil ? m.nSamples : model.selectedCount()
                     Text("\(m.title)\n\(n.formatted()) samples, \(m.nProbes.formatted()) variables")

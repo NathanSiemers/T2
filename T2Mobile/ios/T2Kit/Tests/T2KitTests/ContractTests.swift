@@ -108,6 +108,9 @@ final class ContractSurvivalTests: XCTestCase {
 /// reverse of the order they were asked in.
 final class ValuesStub: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var version = "v1"
+    /// set when the request is cancelled: a late answer to a cancelled task would crash FoundationNetworking on Linux
+    private let stopped = NSLock()
+    nonisolated(unsafe) private var isStopped = false
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -119,13 +122,15 @@ final class ValuesStub: URLProtocol, @unchecked Sendable {
         let missing = probes.filter { $0.hasSuffix("7") }.map { "\"\($0)\"" }.joined(separator: ",")
         let body = #"{"dataset":"d","version":"\#(Self.version)","n":2,"columns":[\#(cols)],"missing":[\#(missing)]}"#
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+            self.stopped.lock(); let done = self.isStopped; self.stopped.unlock()
+            if done { return }
             let resp = HTTPURLResponse(url: self.request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
             self.client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
             self.client?.urlProtocol(self, didLoad: Data(body.utf8))
             self.client?.urlProtocolDidFinishLoading(self)
         }
     }
-    override func stopLoading() {}
+    override func stopLoading() { stopped.lock(); isStopped = true; stopped.unlock() }
 }
 
 final class ParallelValuesTests: XCTestCase {

@@ -5,29 +5,54 @@ import FoundationNetworking
 
 /// The app's only contact with the server: read-only queries to t2api (docs/API.md).
 public struct APIClient: Sendable {
-    public enum APIError: Error, CustomStringConvertible {
+    public enum APIError: Error, CustomStringConvertible, LocalizedError {
         case badURL
         case http(Int, String)
-        case transport(String)
-        /// the server no longer serves the database version the device holds: everything
+        /// the request never got an answer: the URLError's code (when there was one) and its text
+        case transport(URLError.Code?, String)
+        /// the database version the device holds is no longer served: everything
         /// fetched for that dataset (sample order included) belongs to the old database
         case versionChanged
         public var description: String {
             switch self {
             case .versionChanged: return "the database on the server was updated"
             case .badURL: return "bad URL"
-            case .http(let code, let msg): return "server answered \(code): \(msg)"
-            case .transport(let msg): return msg
+            case .http(let code, let msg): return msg.isEmpty ? "server answered \(code)" : "server answered \(code): \(msg)"
+            case .transport(_, let msg): return msg
             }
         }
+        public var errorDescription: String? { description }
+        /// the device could not reach the network at all (as opposed to the server failing)
+        public var isOffline: Bool {
+            if case .transport(let code?, _) = self { return Self.offlineCodes.contains(code) }
+            return false
+        }
+        public static let offlineCodes: [URLError.Code] = [.notConnectedToInternet, .networkConnectionLost, .cannotFindHost,
+                                                           .cannotConnectToHost, .timedOut, .dataNotAllowed, .internationalRoamingOff]
     }
+
+    /// `T2 iOS <marketing version> (<build>)`: the service classifies clients by the prefix "T2 iOS"
+    public static var userAgent: String {
+        let info = Bundle.main.infoDictionary
+        let version = (info?["CFBundleShortVersionString"] as? String) ?? "0"
+        let build = (info?["CFBundleVersion"] as? String) ?? "0"
+        return "T2 iOS \(version) (\(build))"
+    }
+    /// a session with a response cache big enough for the 2.6 MB clinical table (the shared
+    /// session's cache never stores an answer above about 0.5 MB)
+    public static let cachingSession: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.urlCache = URLCache(memoryCapacity: 20 * 1024 * 1024, diskCapacity: 200 * 1024 * 1024, diskPath: "t2api")
+        cfg.requestCachePolicy = .useProtocolCachePolicy
+        return URLSession(configuration: cfg)
+    }()
     /// the service limits one request to this many names
     public static let maxProbesPerRequest = 100
 
     public let baseURL: URL
     private let session: URLSession
 
-    public init(baseURL: URL, session: URLSession = .shared) {
+    public init(baseURL: URL, session: URLSession = APIClient.cachingSession) {
         self.baseURL = baseURL
         self.session = session
     }
@@ -116,7 +141,7 @@ public struct APIClient: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try JSONEncoder().encode(m)
         let (data, response) = try await fetch(request)
-        guard let http = response as? HTTPURLResponse else { throw APIError.transport("no HTTP response") }
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport(nil, "no HTTP response") }
         guard http.statusCode == 200 else {
             let body = (try? JSONDecoder().decode([String: String].self, from: data))?["error"] ?? ""
             throw APIError.http(http.statusCode, body)
@@ -153,7 +178,7 @@ public struct APIClient: Sendable {
             try await Task.sleep(nanoseconds: 2_000_000_000)
             (data, response) = try await fetch(request)
         }
-        guard let http = response as? HTTPURLResponse else { throw APIError.transport("no HTTP response") }
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport(nil, "no HTTP response") }
         if http.statusCode == 409 { throw APIError.versionChanged }
         guard http.statusCode == 200 else {
             throw APIError.http(http.statusCode, String(data: data.prefix(300), encoding: .utf8) ?? "")
@@ -161,14 +186,42 @@ public struct APIClient: Sendable {
         return try Self.decoder.decode(T.self, from: data)
     }
 
+    /// holds the running data task so that a cancelled Swift task cancels the request
+    private final class TaskBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var task: URLSessionDataTask?
+        private var cancelled = false
+        func set(_ t: URLSessionDataTask) {
+            lock.lock(); task = t; let c = cancelled; lock.unlock()
+            if c { t.cancel() }
+        }
+        func cancel() {
+            lock.lock(); cancelled = true; let t = task; lock.unlock()
+            t?.cancel()
+        }
+    }
+
     // callback form: available on every platform Foundation runs on, Linux included
     private func fetch(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        try await withCheckedThrowingContinuation { cont in
-            session.dataTask(with: request) { data, response, error in
-                if let error { cont.resume(throwing: APIError.transport(error.localizedDescription)); return }
-                guard let data, let response else { cont.resume(throwing: APIError.transport("empty response")); return }
-                cont.resume(returning: (data, response))
-            }.resume()
-        }
+        var request = request
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        let box = TaskBox()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<(Data, URLResponse), Error>) in
+                let task = session.dataTask(with: request) { data, response, error in
+                    if let error {
+                        if let u = error as? URLError {
+                            if u.code == .cancelled { cont.resume(throwing: CancellationError()); return }
+                            cont.resume(throwing: APIError.transport(u.code, u.localizedDescription)); return
+                        }
+                        cont.resume(throwing: APIError.transport(nil, error.localizedDescription)); return
+                    }
+                    guard let data, let response else { cont.resume(throwing: APIError.transport(nil, "empty response")); return }
+                    cont.resume(returning: (data, response))
+                }
+                box.set(task)
+                task.resume()
+            }
+        } onCancel: { box.cancel() }
     }
 }

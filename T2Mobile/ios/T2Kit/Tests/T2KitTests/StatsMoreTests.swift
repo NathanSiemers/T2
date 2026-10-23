@@ -134,10 +134,10 @@ final class StatsMoreTests: XCTestCase {
         let halves = Stats.quantileGroupsUnique(binary, groups: 2)
         XCTAssertEqual(halves.group, [0, 0, 0, 0, 1, 1, 1, 1]); XCTAssertEqual(halves.count, 2)
         XCTAssertEqual(Stats.quantileGroupsUnique([.nan, .nan], groups: 3).count, 0)
-        XCTAssertEqual(Stats.groupLabels(asked: 3, made: 3), ["Low", "Mid", "High"])
-        XCTAssertEqual(Stats.groupLabels(asked: 2, made: 2), ["Low", "High"])
-        XCTAssertEqual(Stats.groupLabels(asked: 3, made: 2), ["Low", "Mid"])            // R: labs[seq_len(length(br) - 1)]
-        XCTAssertEqual(Stats.groupLabels(asked: 4, made: 4), ["Q1", "Q2", "Q3", "Q4"])
+        XCTAssertEqual(Stats.groupLabels(made: 3), ["Low", "Mid", "High"])
+        XCTAssertEqual(Stats.groupLabels(made: 2), ["Low", "High"])
+        XCTAssertEqual(Stats.groupLabels(made: 2), ["Low", "High"])   // R names by the groups made: a sparse tertile ask -> Low/High
+        XCTAssertEqual(Stats.groupLabels(made: 4), ["Q1", "Q2", "Q3", "Q4"])
     }
 
     func testResidualsMatchLm() {

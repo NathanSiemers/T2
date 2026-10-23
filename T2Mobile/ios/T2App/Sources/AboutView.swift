@@ -8,6 +8,26 @@ struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var advanced = false
     @State private var contact = false
+    /// the address being typed: applied (after a check) only by Reconnect
+    @State private var addressDraft = ""
+    @State private var addressProblem = ""
+
+    /// is `text` an http(s) address with a host?
+    private func validAddress(_ text: String) -> Bool {
+        guard let u = URL(string: text), let scheme = u.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        return !(u.host ?? "").isEmpty
+    }
+    private func applyAddress() {
+        let t = addressDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !t.isEmpty && !validAddress(t) {
+            addressProblem = "That is not an http or https address."
+            return
+        }
+        addressProblem = ""
+        model.baseURL = t.isEmpty ? t2DefaultService : t
+        addressDraft = model.baseURL
+        Task { await model.reconnect() }
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -95,15 +115,17 @@ struct AboutView: View {
                 }
                 Section {
                     DisclosureGroup("Advanced", isExpanded: $advanced) {
-                        TextField("Service address", text: $model.baseURL)
+                        TextField("Service address", text: $addressDraft)
                             .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                             .accessibilityIdentifier("service-address")
-                        Button("Reconnect") { Task { await model.reconnect() } }
+                        if !addressProblem.isEmpty { Text(addressProblem).font(.footnote).foregroundStyle(.red) }
+                        Button("Reconnect") { applyAddress() }
                     }
                 } footer: {
                     Text("For a copy of the T2 data service run elsewhere. Leave it alone otherwise.")
                 }
             }
+            .onAppear { addressDraft = model.baseURL }
             .navigationTitle("About T2")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -156,7 +178,7 @@ struct ContactView: View {
                     } header: {
                         Text("Message")
                     } footer: {
-                        Text("Up to 4,000 characters. Your message and address go to the author and nowhere else.")
+                        Text("Up to 12,000 bytes (about 4,000 to 12,000 characters, fewer for accented or non-Latin letters). Your message and address go to the author and nowhere else.")
                     }
                     if !problem.isEmpty {
                         Section { Text(problem).foregroundStyle(.red).font(.footnote).accessibilityIdentifier("contact-problem") }
@@ -183,20 +205,29 @@ struct ContactView: View {
         }
     }
 
+    /// the server's body cap is 16 KB: the message is held to 12,000 bytes of UTF-8 (the server counts bytes)
+    private static let maxMessageBytes = 12_000
+
     private func send() async {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bytes = text.utf8.count
+        guard bytes <= Self.maxMessageBytes else {
+            problem = "The message is too long (\(bytes) bytes; the limit is 12,000). Please shorten it."
+            return
+        }
         sending = true; problem = ""
         let m = APIClient.ContactMessage(
             name: String(name.trimmingCharacters(in: .whitespaces).prefix(200)),
             affiliation: String(affiliation.trimmingCharacters(in: .whitespaces).prefix(200)),
             email: email.trimmingCharacters(in: .whitespaces),
-            message: String(message.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4000)),
+            message: text,
             started: Date().timeIntervalSince(appeared),
             app: "T2 iOS \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
         do {
             try await model.sendContactMessage(m)
             sent = true
         } catch {
-            problem = "The message could not be sent: \(error). Please try again later."
+            problem = "The message could not be sent: \(error.localizedDescription). Please try again later."
         }
         sending = false
     }

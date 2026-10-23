@@ -73,6 +73,18 @@ public enum Stats {
         return x.map { v in v.isNaN ? -1 : cuts.reduce(0) { $0 + (v > $1 ? 1 : 0) } }
     }
 
+    /// R survival's `minmin`: first time with S < 0.5 + 1.5e-8; when S equals 0.5 there, the
+    /// midpoint of that time and the next time S is lower; nil = "not reached"
+    static func minmin(_ times: [Double], _ survival: [Double]) -> Double? {
+        let tol = 1.4901161193847656e-8     // .Machine$double.eps^0.5
+        let keep = zip(times, survival).filter { !$0.1.isNaN && $0.1 < 0.5 + tol }
+        guard let first = keep.first else { return nil }
+        if abs(first.1 - 0.5) < tol, let next = keep.first(where: { $0.1 < first.1 }) {
+            return (first.0 + next.0) / 2
+        }
+        return first.0
+    }
+
     /// One Kaplan-Meier curve: survival just after each distinct event time.
     public struct KMCurve: Sendable, Equatable {
         public let times: [Double]
@@ -80,8 +92,9 @@ public enum Stats {
         public let atRisk: [Int]
         public let n: Int
         public let events: Int
-        /// first time survival is <= 0.5, or nil ("not reached")
-        public var medianTime: Double? { zip(times, survival).first { $0.1 <= 0.5 }?.0 }
+        /// median as R's survival (minmin): first time with S < 0.5 + 1.5e-8; when S equals 0.5
+        /// there, the midpoint of that time and the next time S is lower; nil = "not reached"
+        public var medianTime: Double? { Stats.minmin(times, survival) }
     }
     /// `event`: 1 = event, 0 = censored. Samples with a missing time or event are dropped.
     public static func kaplanMeier(time: [Double], event: [Double]) -> KMCurve {
@@ -144,16 +157,30 @@ public enum Stats {
     /// P(X > x) for a chi-square variable with `df` degrees of freedom
     public static func chiSquareUpperTail(_ x: Double, df: Int) -> Double {
         guard x > 0, df > 0 else { return 1 }
-        return 1 - regularizedLowerGamma(Double(df) / 2, x / 2)
+        return regularizedUpperGamma(Double(df) / 2, x / 2)
     }
-    // regularized lower incomplete gamma P(a, x): series for x < a + 1, continued fraction otherwise
+    /// regularized lower incomplete gamma P(a, x)
     static func regularizedLowerGamma(_ a: Double, _ x: Double) -> Double {
-        let lg = log(tgamma(a))     // (lgamma is ambiguous between platforms; a = df/2 is small)
-        if x < a + 1 {
-            var term = 1 / a, sum = term, n = a
-            for _ in 0..<500 { n += 1; term *= x / n; sum += term; if abs(term) < abs(sum) * 1e-15 { break } }
-            return sum * exp(-x + a * log(x) - lg)
-        }
+        guard x > 0 else { return 0 }
+        if x < a + 1 { return gammaSeriesP(a, x) }
+        return 1 - gammaContinuedFractionQ(a, x)
+    }
+    /// regularized upper incomplete gamma Q(a, x), computed directly in the tail so that
+    /// small p-values keep their digits (1 - P would be exactly 0 beyond about 1e-16)
+    static func regularizedUpperGamma(_ a: Double, _ x: Double) -> Double {
+        guard x > 0 else { return 1 }
+        if x < a + 1 { return 1 - gammaSeriesP(a, x) }
+        return gammaContinuedFractionQ(a, x)
+    }
+    // (lgamma is ambiguous between platforms; a = df/2 is small)
+    private static func gammaSeriesP(_ a: Double, _ x: Double) -> Double {
+        let lg = log(tgamma(a))
+        var term = 1 / a, sum = term, n = a
+        for _ in 0..<500 { n += 1; term *= x / n; sum += term; if abs(term) < abs(sum) * 1e-15 { break } }
+        return sum * exp(-x + a * log(x) - lg)
+    }
+    private static func gammaContinuedFractionQ(_ a: Double, _ x: Double) -> Double {
+        let lg = log(tgamma(a))
         var b = x + 1 - a, c = 1 / 1e-300, d = 1 / b, h = d
         for i in 1..<500 {
             let an = -Double(i) * (Double(i) - a)
@@ -165,6 +192,6 @@ public enum Stats {
             h *= delta
             if abs(delta - 1) < 1e-15 { break }
         }
-        return 1 - exp(-x + a * log(x) - lg) * h
+        return exp(-x + a * log(x) - lg) * h
     }
 }

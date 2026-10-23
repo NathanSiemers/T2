@@ -76,6 +76,9 @@ public enum PlotBuilder {
         return part + " " + dataset[open...]
     }
 
+    /// categories of a categorical X, Y and colour (T2_LIMITS in gitr.R)
+    static let maxXLevels = 300, maxYLevels = 300, maxColourLevels = 200
+
     static func buildScene(_ request: PlotRequest, columns: [String: Column], keep: Mask, context: Context) -> PlotScene {
         let n = keep.count
         var warnings: [String] = []
@@ -151,6 +154,22 @@ public enum PlotBuilder {
         guard !rows.isEmpty else {
             return .empty("No samples have data for these variables. Some classifications only cover some tumor types, and some mutations are not present.",
                           summary: summary, warnings: warnings)
+        }
+        // the website's T2_LIMITS: an ID-like column (11,081 patients) is no X, Y or colour
+        let axisLimits: [(Variable, Int)] = [(x, maxXLevels), (y, maxYLevels)]
+        for (v, limit) in axisLimits where !v.isNumeric {
+            let k = Set(rows.map { v.codes[$0] }.filter { $0 >= 0 }).count
+            if k > limit {
+                return .empty("\(v.name) has \(k) categories; the limit is \(limit). Filter the samples or choose another variable.",
+                              summary: summary, warnings: warnings)
+            }
+        }
+        if let c = color, !c.isNumeric {
+            let k = distinctCount(c, rows: rows)
+            if k > maxColourLevels {
+                return .empty("\(request.color) has \(k) categories; the limit is \(maxColourLevels). Filter the samples or choose another variable.",
+                              summary: summary, warnings: warnings)
+            }
         }
         if let c = color, distinctCount(c, rows: rows) < 2 { color = nil }
         if let s = size, Set(rows.map { s[$0] }.filter { !$0.isNaN }).count < 2 { size = nil }

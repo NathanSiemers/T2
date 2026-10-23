@@ -194,7 +194,7 @@ What NOT to do: convert the account to an organization (D-U-N-S number, legal en
 concede that the app is a regulated-services app), or add a login (there is nothing to gate). Keep the
 submission alive: reply in the thread first (lesson of 2026-10-20), do not cancel.
 
-### Reply to the 5.1.3(iv) / 5.1.1(ix) rejection (draft for Nathan; 2,860 characters)
+### Reply to the 5.1.3(iv) / 5.1.1(ix) rejection (draft for Nathan; about 3,700 characters, under the 4,000 limit)
 
 Thank you for the review. We believe both issues rest on a misunderstanding of what the app does, and we
 would like to clarify.
@@ -214,6 +214,15 @@ Proteomic Data Commons, and the UCSC Xena hub). The app is in the same class as 
 or a textbook: it draws summary plots of these public tables. There is no participant from whom consent
 could be obtained, no study to approve, and no data of the user to protect.
 
+On the approval you asked for: every data set in the app was approved for public release by the review
+bodies of its program. TCGA specimens were collected under informed consent and institutional review board
+approval at each tissue source site, and the NCI's "TCGA Human Subjects Protection and Data Access
+Policies" define the open-access tier of de-identified data that the app uses (the controlled-access tier,
+which requires an NIH data access committee, is not in the app). CPTAC and TARGET data are released under
+the same NIH Genomic Data Sharing Policy, and GTEx donors' families gave informed consent for public release
+of the de-identified data. We have attached these policy documents in the App Review notes; the app's About
+screen cites the primary publications of every data set and of every data type.
+
 Guideline 5.1.1(ix): the app provides no regulated service and requires no sensitive user information. It is
 not used in healthcare delivery. It states at first launch and on its About screen that it gives no medical
 advice and must not be used for diagnosis or treatment decisions. Its audience is scientists in biomedical
@@ -228,7 +237,11 @@ We would welcome a review appointment if that would help resolve this quickly.
 ### Steps (Nathan decides; none taken yet)
 
 1. In App Store Connect, change the categories to Education / Reference (App Information; allowed on a rejected
-   version), and paste the reply in the Resolution Center thread of submission 635f739b. Request an App Review
+   version), and paste the reply in the Resolution Center thread of submission 635f739b. Attach as "proof of
+   approval" (App Review notes / attachments): the NCI "TCGA Human Subjects Protection and Data Access
+   Policies" (PDF from cancer.gov), the NIH Genomic Data Sharing Policy (NOT-OD-14-124), the GDC and PDC
+   data access policy pages, the GTEx consent/ethics statement (gtexportal.org, "Documentation"); Nathan
+   (TCGA was his field) can add the words of someone who worked within these policies. Request an App Review
    appointment (Meet with Apple, Tuesdays/Thursdays) if the reply does not resolve it within a few days.
 2. If Apple accepts the clarification, the same build 2 can be resubmitted (no upload). If they ask for
    in-app wording, build 3 from PR #14 with the notice reworded ("a tool for scientists", "published data"),

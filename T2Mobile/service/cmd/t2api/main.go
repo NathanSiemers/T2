@@ -297,8 +297,7 @@ func (s *server) strictQuery(h http.HandlerFunc, allowed ...string) http.Handler
 				}
 			}
 			if len(bad) > 0 {
-				sort.Strings(bad)
-				s.fail(w, http.StatusBadRequest, "unknown query parameter: "+clip(bad[0]))
+				s.fail(w, http.StatusBadRequest, "unknown query parameter: "+clip(slices.Min(bad)))
 				return
 			}
 		}
@@ -466,20 +465,22 @@ func (s *server) handleDatasets(w http.ResponseWriter, r *http.Request) {
 	w.Write(s.listJSON)
 }
 
-func (s *server) handleMeta(w http.ResponseWriter, r *http.Request, d *Dataset) {
-	if s.cacheable(w, r, d, "meta", true) {
+// serveStatic answers with a prebuilt JSON body, after the caching headers and conditional
+// requests (see cacheable).
+func (s *server) serveStatic(w http.ResponseWriter, r *http.Request, d *Dataset, key string, body []byte) {
+	if s.cacheable(w, r, d, key, true) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(d.metaJSON)
+	w.Write(body)
+}
+
+func (s *server) handleMeta(w http.ResponseWriter, r *http.Request, d *Dataset) {
+	s.serveStatic(w, r, d, "meta", d.metaJSON)
 }
 
 func (s *server) handleClinical(w http.ResponseWriter, r *http.Request, d *Dataset) {
-	if s.cacheable(w, r, d, "clinical", true) {
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(d.clinicalJSON)
+	s.serveStatic(w, r, d, "clinical", d.clinicalJSON)
 }
 
 // handleProbes searches the selectable variable names (allprobes): case-insensitive, names
@@ -488,25 +489,22 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 	// ?all=1: the whole list (about 1.5 MB for TCGA, 300 KB gzipped), cacheable by version
 	// value rules (one canonical, cacheable spelling per answer): all is "1" or absent; limit, when
 	// present, is a positive integer; anything else is a 400, not a silent fallback
-	if av, ok := r.URL.Query()["all"]; ok && av[0] != "1" {
-		s.fail(w, http.StatusBadRequest, "all must be 1")
-		return
-	}
-	if r.URL.Query().Get("all") == "1" {
-		if s.cacheable(w, r, d, "probes-all", true) {
+	qv := r.URL.Query()
+	if av, ok := qv["all"]; ok {
+		if av[0] != "1" {
+			s.fail(w, http.StatusBadRequest, "all must be 1")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(d.probesJSON)
+		s.serveStatic(w, r, d, "probes-all", d.probesJSON)
 		return
 	}
-	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	q := strings.ToLower(strings.TrimSpace(qv.Get("q")))
 	if len(q) > maxProbeNameLen {
 		s.fail(w, http.StatusBadRequest, "query too long")
 		return
 	}
 	limit, canonical := 50, true
-	if lv, ok := r.URL.Query()["limit"]; ok {
+	if lv, ok := qv["limit"]; ok {
 		v, err := strconv.Atoi(lv[0])
 		if err != nil || v <= 0 {
 			s.fail(w, http.StatusBadRequest, "limit must be a positive integer")
@@ -517,7 +515,7 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 		}
 		limit = v
 	}
-	if q != strings.TrimSpace(r.URL.Query().Get("q")) || strings.ToLower(r.URL.Query().Get("q")) != r.URL.Query().Get("q") {
+	if rq := qv.Get("q"); q != strings.TrimSpace(rq) || strings.ToLower(rq) != rq {
 		canonical = false
 	}
 	// same caching rules as the other endpoints: long with a matching ?v=, else revalidate
@@ -624,14 +622,7 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 	}
 	// names are checked against the dataset's variable list first, in memory
 	if len(names) >= unknownPrefix {
-		anyKnown := false
-		for _, n := range names[:unknownPrefix] {
-			if d.isKnown(n) {
-				anyKnown = true
-				break
-			}
-		}
-		if !anyKnown {
+		if !slices.ContainsFunc(names[:unknownPrefix], d.isKnown) {
 			s.fail(w, http.StatusBadRequest, fmt.Sprintf("none of the first %d names is a variable of this dataset", unknownPrefix))
 			return
 		}

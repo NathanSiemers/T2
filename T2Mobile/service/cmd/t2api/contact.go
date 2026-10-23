@@ -159,7 +159,7 @@ func parseTrustedProxies(list string) ([]*net.IPNet, error) {
 // validClientIP: a header value is used only if it is a plain IP address (no port, no text).
 func validClientIP(s string) (string, bool) {
 	s = strings.TrimSpace(s)
-	if s == "" || len(s) > 45 || net.ParseIP(s) == nil {
+	if len(s) > 45 || net.ParseIP(s) == nil {
 		return "", false
 	}
 	return s, true
@@ -210,7 +210,7 @@ func validEmail(s string) bool {
 		return false
 	}
 	at := strings.LastIndex(s, "@")
-	return at > 0 && !strings.Contains(s[at+1:], "..") && emailPattern.MatchString(s)
+	return !strings.Contains(s[at+1:], "..") && emailPattern.MatchString(s)
 }
 
 func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {

@@ -31,11 +31,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 	"unicode/utf8"
 
 	_ "modernc.org/sqlite"
-	"syscall"
-	"time"
 )
 
 type Roles struct {
@@ -266,14 +266,13 @@ func (d *Dataset) loadRoles() error {
 	if m["label"] != "" {
 		d.Label = m["label"]
 	}
-	for _, k := range []string{"x", "y", "color", "size", "condition", "cohorts"} {
-		v := m["default_"+k]
-		if k == "cohorts" {
-			v = joinCohorts(v)
-		}
-		if v != "" {
+	for _, k := range []string{"x", "y", "color", "size", "condition"} {
+		if v := m["default_"+k]; v != "" {
 			d.Defaults[k] = v
 		}
+	}
+	if v := joinCohorts(m["default_cohorts"]); v != "" {
+		d.Defaults["cohorts"] = v
 	}
 	d.sourceCol = m["source_col"]
 	d.sourceLevels, d.sourceLabels, d.sourceDescs = splitMeta(m["sources"]), splitMeta(m["source_labels"]), splitMeta(m["source_descriptions"])
@@ -365,7 +364,7 @@ func (d *Dataset) loadClinical() error {
 		}
 		byName["cohort"] = byName[c]
 	}
-	if _, ok := byName["cohort"]; !ok || !slices.Contains(order, "cohort") {
+	if _, ok := byName["cohort"]; !ok {
 		// a dataset that declares no cohort column still has the virtual `cohort`: one level, its label
 		byName["cohort"] = cohortFromLabel(d.Label, len(sc))
 		order = append(order, "cohort")
@@ -377,10 +376,7 @@ func (d *Dataset) loadClinical() error {
 	d.clinNum = map[string]bool{}
 	for _, n := range order {
 		d.clinText[n] = textOf(byName[n])
-		typ := "clinical"
-		if isVirtualColumn(n) {
-			typ = "virtual"
-		}
+		typ := clinicalTypeName(n)
 		var levels []string
 		if n == d.Roles.SampletypeCol && len(d.Roles.SampletypeLevels) > 0 {
 			levels = d.Roles.SampletypeLevels
@@ -408,18 +404,7 @@ func (d *Dataset) loadClinical() error {
 // every numeric clinical column X that has a numeric X.time.
 func (d *Dataset) loadTTE() error {
 	d.tte = []TTEVariable{}
-	ok := func(v TTEVariable) bool {
-		if v.Name == "" {
-			return false
-		}
-		if _, have := d.clin[v.EventCol]; !have || !d.clinNum[v.EventCol] {
-			return false
-		}
-		if _, have := d.clin[v.TimeCol]; !have || !d.clinNum[v.TimeCol] {
-			return false
-		}
-		return true
-	}
+	ok := func(v TTEVariable) bool { return v.Name != "" && d.clinNum[v.EventCol] && d.clinNum[v.TimeCol] }
 	if raw := strings.TrimSpace(d.meta["tte_variables"]); raw != "" {
 		var decl []TTEVariable
 		if err := json.Unmarshal([]byte(raw), &decl); err != nil {
@@ -447,11 +432,17 @@ func (d *Dataset) loadTTE() error {
 	return nil
 }
 
-func (d *Dataset) loadSamples() error {
+// sampleRows: sample name -> row index in the sample order.
+func (d *Dataset) sampleRows() map[string]int32 {
 	row := map[string]int32{}
 	for i, s := range d.samples {
 		row[s] = int32(i)
 	}
+	return row
+}
+
+func (d *Dataset) loadSamples() error {
+	row := d.sampleRows()
 	rows, err := d.db.Query("SELECT key, sample FROM samples")
 	if err != nil {
 		return err
@@ -472,10 +463,7 @@ func (d *Dataset) loadSamples() error {
 }
 
 func (d *Dataset) loadTested() error {
-	row := map[string]int32{}
-	for i, s := range d.samples {
-		row[s] = int32(i)
-	}
+	row := d.sampleRows()
 	// the view joins tested to samples by name: a tested sample with no `samples` row is not in it
 	rows, err := d.db.Query("SELECT t.type, t.sample FROM tested t JOIN samples sa ON sa.sample = t.sample")
 	if err != nil {
@@ -524,11 +512,7 @@ func (d *Dataset) loadSparse() error {
 		if err := rows.Scan(&typ, &sp, &def); err != nil {
 			return err
 		}
-		st := sparseType{sparse: !sp.Valid || sp.Int64 == 1}
-		if def.Valid {
-			st.def = def.Float64
-		}
-		d.sparse[typ] = st
+		d.sparse[typ] = sparseType{sparse: !sp.Valid || sp.Int64 == 1, def: def.Float64}
 	}
 	return rows.Err()
 }
@@ -604,7 +588,7 @@ func parseFillOptions(v string) []string {
 	return out
 }
 
-// fillOffers: does the data type list this fill?
+// fillOptionsOf: the fills the data type lists (`na` only when it lists none).
 func (d *Dataset) fillOptionsOf(typ string) []string {
 	if o := d.fillOpts[typ]; len(o) > 0 {
 		return o
@@ -612,6 +596,7 @@ func (d *Dataset) fillOptionsOf(typ string) []string {
 	return []string{"na"}
 }
 
+// fillOffers: does the data type list this fill?
 func (d *Dataset) fillOffers(typ, fill string) bool {
 	return slices.Contains(d.fillOpts[typ], fill) // fill is zero or floor here
 }
@@ -1040,14 +1025,9 @@ type metaDoc struct {
 // ---------------------------------------------------------------------------------------
 // one column
 
-// column returns the encoded JSON object for one name, or nil if the dataset has no such
-// variable. Probe columns are cached; concurrent requests for the same probe share one query.
-func (d *Dataset) column(name string) ([]byte, error) {
-	b, _, err := d.columnFill(name, "na")
-	return b, err
-}
-
-// columnFill is column plus the fill (see fetchProbe): a probe whose data type does not list
+// columnFill returns the encoded JSON object for one name (nil if the dataset has no such
+// variable) with the fill applied (see fetchProbe). Probe columns are cached; concurrent
+// requests for the same probe share one query. A probe whose data type does not list
 // the fill is served unchanged, and aux tells the caller whether the fill was applied
 // (aux.filled counts the cells changed; applied = the type lists it).
 func (d *Dataset) columnFill(name, fill string) (col []byte, aux colAux, err error) {
@@ -1392,11 +1372,13 @@ type typedHit struct {
 	Kind    string `json:"kind"` // num | cat
 }
 
+var sectionNames = [...]string{"handle", "probe", "clinical"}
+
 // typedHits: the typed fields of search hits (indexes into probeNames), as words
 func (d *Dataset) typedHits(idx []int) []typedHit {
 	out := make([]typedHit, 0, len(idx))
 	for _, i := range idx {
-		h := typedHit{Name: d.probeNames[i], Section: []string{"handle", "probe", "clinical"}[d.typedSection[i]],
+		h := typedHit{Name: d.probeNames[i], Section: sectionNames[d.typedSection[i]],
 			Type: d.typedTypes[d.typedType[i]], Kind: "num"}
 		if d.typedKind[i] == 1 {
 			h.Kind = "cat"
@@ -1462,10 +1444,7 @@ func (d *Dataset) buildTyped(ptypes map[string]probeType) {
 		var sec, kind uint8 = 1, 0
 		var typ string
 		if _, isClin := d.clin[n]; isClin {
-			sec, typ = 2, "clinical"
-			if isVirtualColumn(n) {
-				typ = "virtual"
-			}
+			sec, typ = 2, clinicalTypeName(n)
 			if !d.clinNum[n] {
 				kind = 1
 			}
@@ -1490,6 +1469,14 @@ func (d *Dataset) buildTyped(ptypes map[string]probeType) {
 }
 
 func isVirtualColumn(n string) bool { return n == "cohort" || n == "subtype" || n == "lcohort" }
+
+// clinicalTypeName: the type label of a clinical column ("virtual" for the added ones).
+func clinicalTypeName(n string) string {
+	if isVirtualColumn(n) {
+		return "virtual"
+	}
+	return "clinical"
+}
 
 // hasColumn: does the table have this column? (PRAGMA table_info)
 func (d *Dataset) hasColumn(table, col string) bool {

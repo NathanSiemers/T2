@@ -44,7 +44,7 @@ missing. `codes`: index into `levels` from 0, `-1` = missing. `type`: the data t
 | `GET /v1/datasets` | every dataset: `name`, `title`, `label`, `n_samples`, `n_probes`, `version`, `roles`, `defaults`, `sources` (the same list as `/meta`'s, so a client can build its data-source menu from this one answer), `handles`, `hidden` (boolean, always present: `true` for a dataset the apps must not list, e.g. DEMO; the dataset is still served by every endpoint) |
 | `GET /v1/{ds}/meta` | one dataset in full: the above plus `presets`, `sources`, `clinical_columns`, `clinical_descriptions` (what each clinical column means and where it comes from: `column`, `description`, `source`; from `cmd/t2api/clinical_descriptions.tsv`), `survival_endpoints`, `tte_variables`, `handles`, `type_labels`, `about`, `default_cohorts` (array form of `defaults.cohorts`; cohort names can contain commas), `cohorts` (display names), `types` (data-type descriptions, with `label`), `datatypes`. The rules are in [DATASET-CONTRACT.md](DATASET-CONTRACT.md). |
 | `GET /v1/{ds}/clinical` | `samples` (ids, in order) and `columns`: every clinical and virtual column. About 2.7 MB for TCGA (0.5 MB gzipped); fetch once per dataset version and keep it. |
-| `GET /v1/{ds}/probes?q=cd8&limit=50` | names of selectable variables containing `q` (case-insensitive; the exact name first, then names starting with `q`, then the rest; shorter first); `total_matches` |
+| `GET /v1/{ds}/probes?q=cd8&limit=50` | names of selectable variables containing `q` (case-insensitive; the exact name first, then names starting with `q`, then the rest; shorter first); `total_matches`. Cached like the other endpoints: with `&v=` immutable, without it `no-cache` + `ETag` (304); `/v1/datasets` also answers `If-None-Match` with 304 |
 | `GET /v1/{ds}/probes?all=1` | every selectable name, in menu order (`subtype`, `cohort`, the probes, the sample-type column): `n`, `probes`. 1.7 MB for TCGA (0.6 MB gzipped); cacheable by version (`&v=`). For a client that fills its own menus (the R app's selectize). The body also carries parallel integer arrays, one entry per name: `section` (0 handle, 1 probe, 2 clinical), `type` (index into `types`, the list of type names used; clinical columns are type `clinical`, the virtual `cohort` / `subtype` `virtual`, a probe with no type row `unknown`), `kind` (0 numeric, 1 categorical). Search (`?q=`) adds `hits_typed`: `[{name, section, type, kind}]` with words instead of codes (`handle`/`probe`/`clinical`, `num`/`cat`); `probes` is unchanged. |
 | `GET /v1/{ds}/values?probes=CD8A,TP53.mut,gender` | `columns` for those names (probes, clinical columns or `cohort` / `subtype`), `missing`: names the dataset does not have. At most 100 names per request. The body also carries the dataset `version`, `fill_options` and, with `&fill=`, `fill`, `filled`, `tested_n` (see [Not-detected values](#not-detected-values-fill)). |
 | `GET /statz` | request and cache counters, and `usage` (see [Usage metrics](#usage-metrics-and-dos-visibility)); internal only, Nginx does not route it |
@@ -153,6 +153,17 @@ with the file; listed by `/v1/datasets`, in `/meta` and in every `/values` body)
 client accepts it (a 12,804-value numeric column: 64 KB plain, 24 KB gzipped).
 
 ## Errors
+
+**Request rules: unknown query parameters are refused with `400`**
+(`{"error":"unknown query parameter: junk"}`, `no-store`). The cache in front of the service
+keys on the full URL, so a parameter the service ignored would let a client fill the cache
+with copies of one answer. Each GET route accepts only the parameters it reads:
+`/healthz`, `/statz`, `/v1/datasets`: none; `/meta`, `/clinical`: `v`;
+`/probes`: `v`, `q`, `limit`, `all`; `/values`: `v`, `probes`, `probe`, `fill`. A parameter given
+twice is a `400` too (`repeated query parameter: probes`; list several names in one
+`probes=A,B`). A malformed
+query string (bad `%` escape, `;`, empty pieces such as `?&&`) is also a `400`
+(`malformed query string`).
 
 `400` bad request (no probes, more than 100, a name over 200 characters, or **none of the
 first 10 names is a variable of the dataset**), `404` unknown dataset or path, `405` not

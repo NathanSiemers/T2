@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -210,20 +209,9 @@ func latencyBucket(d time.Duration) int {
 	return 4
 }
 
-// clientAddr: the address the per-minute map is keyed by (first X-Real-IP, else the first
-// X-Forwarded-For element, else the connection's host).
-func clientAddr(r *http.Request) string {
-	if v := strings.TrimSpace(r.Header.Get("X-Real-IP")); v != "" {
-		return v
-	}
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		return strings.TrimSpace(strings.Split(v, ",")[0])
-	}
-	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return h
-	}
-	return r.RemoteAddr
-}
+// clientAddr: the address the per-minute map is keyed by; one rule with the contact limiter
+// (see clientIP).
+func clientAddr(r *http.Request) string { return clientIP(r) }
 
 // record counts one finished request.
 func (u *usageStats) record(endpoint, dataset, status, client, addr string, lat int, bytes int64, busy bool) {

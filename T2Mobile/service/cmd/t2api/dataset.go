@@ -19,6 +19,7 @@ package main
 //     dataset's declared level order; a value outside it is missing.
 
 import (
+	"encoding/binary"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -141,7 +142,7 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 	db.SetMaxIdleConns(dbConns)
 	d := &Dataset{Name: name, Path: path, db: db, known: map[string]struct{}{},
 		fileSize: fi.Size(), fileMtime: fi.ModTime(), fileIno: inode(fi),
-		version: fmt.Sprintf("%x%x", fi.Size(), fi.ModTime().Unix()),
+		version: fileVersion(path, fi),
 		cache:   newColumnCache(cacheBytes)}
 	steps := []func() error{d.loadRoles, d.loadClinical, d.loadTTE, d.loadReferences, d.loadSamples, d.loadTested, d.loadSparse, d.loadDatatypes, d.loadProbeNames, d.loadPresets, d.loadSources, d.buildMeta}
 	for _, f := range steps {
@@ -151,6 +152,22 @@ func openDataset(name, path string, cacheBytes int64) (*Dataset, error) {
 		}
 	}
 	return d, nil
+}
+
+// fileVersion: size and mtime, plus the SQLite header's file change counter (bytes 24..27)
+// when it can be read, so a rebuild of equal size within one second still differs.
+func fileVersion(path string, fi os.FileInfo) string {
+	v := fmt.Sprintf("%x%x", fi.Size(), fi.ModTime().Unix())
+	f, err := os.Open(path)
+	if err != nil {
+		return v
+	}
+	defer f.Close()
+	var h [4]byte
+	if _, err := f.ReadAt(h[:], 24); err != nil {
+		return v
+	}
+	return v + fmt.Sprintf("%x", binary.BigEndian.Uint32(h[:]))
 }
 
 func inode(fi os.FileInfo) uint64 {

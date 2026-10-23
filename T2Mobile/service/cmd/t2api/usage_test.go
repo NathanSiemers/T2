@@ -84,7 +84,7 @@ func TestClientAddr(t *testing.T) {
 		t.Errorf("remote: %s", a)
 	}
 	r.Header.Set("X-Forwarded-For", "203.0.113.5, 10.0.0.1")
-	if a := clientAddr(r); a != "203.0.113.5" {
+	if a := clientAddr(r); a != "10.0.0.1" { // the LAST element: the proxy's word
 		t.Errorf("xff: %s", a)
 	}
 	r.Header.Set("X-Real-IP", "198.51.100.7")

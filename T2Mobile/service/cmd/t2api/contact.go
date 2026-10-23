@@ -70,12 +70,28 @@ func (l *contactLimiter) allow(ip string, now time.Time) bool {
 	return true
 }
 
+// allowIP counts against the per-address budget only: bot-like submissions must not use up the
+// shared daily quota (a flood of honeypot posts would lock real visitors out for the day)
+func (l *contactLimiter) allowIP(ip string, now time.Time) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if now.Sub(l.day) > 24*time.Hour {
+		l.day, l.byIP, l.total = now, map[string]int{}, 0
+	}
+	if l.byIP[ip] >= contactPerIP {
+		return false
+	}
+	l.byIP[ip]++
+	return true
+}
+
 // oneLine keeps printable text on one line (a name, an affiliation): no control characters,
 // so it can never break a mail header or a log line
 func oneLine(s string, max int) string {
 	s = strings.ToValidUTF8(strings.TrimSpace(s), "")
 	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) ||
+			(r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) { // line/paragraph separators, bidi controls
 			return -1
 		}
 		return r
@@ -120,10 +136,10 @@ type contactMessage struct {
 
 // clientIP: the visitor's address as our own proxy states it. The service is reachable
 // only through Nginx (or, on the Docker network, the Shiny app), so these headers are ours:
-// X-Real-IP is set by replacement (a visitor cannot forge it); X-Forwarded-For is appended
-// to, so only its LAST entry is the proxy's word — the first entries are whatever the
-// client sent, and taking the first would let a visitor pick the address the per-address
-// limit counts.
+// X-Real-IP is set by replacement (a visitor cannot forge it) but is only trustworthy behind
+// Nginx; X-Forwarded-For is appended to, so only its LAST entry is the proxy's word: the
+// first entries are whatever the client sent, and taking the first would let a visitor pick
+// the address the per-address limit counts. Used by the contact limiter and by usage.go.
 func clientIP(r *http.Request) string {
 	if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
 		return real
@@ -132,7 +148,9 @@ func clientIP(r *http.Request) string {
 		if i := strings.LastIndex(xff, ","); i >= 0 {
 			xff = xff[i+1:]
 		}
-		return strings.TrimSpace(xff)
+		if xff = strings.TrimSpace(xff); xff != "" {
+			return xff
+		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -172,8 +190,13 @@ func (s *server) handleContact(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, map[string]any{"ok": true})
 	}
-	if in.Website != "" || in.Started < contactMinSeconds {
-		log.Printf("contact: dropped a bot-like submission")
+	// bot-like submissions: the per-address budget bounds the log lines a client can write; over
+	// it they get the same silent ok (no 429: a bot learns nothing) and never touch the shared quota
+	bot := in.Website != "" || in.Started < contactMinSeconds
+	if bot {
+		if s.contactLimit.allowIP(ip, time.Now()) {
+			log.Printf("contact: dropped a bot-like submission")
+		}
 		ok()
 		return
 	}

@@ -181,7 +181,7 @@ func TestFileVersion(t *testing.T) {
 }
 
 func TestOneLineStripsSeparatorsAndBidi(t *testing.T) {
-	if got := oneLine("a b c‮d⁦e⁩f", 50); got != "abcdef" {
+	if got := oneLine("a\u2028b\u2029c\u202ed\u2066e\u2069f", 50); got != "abcdef" {
 		t.Errorf("%q", got)
 	}
 }

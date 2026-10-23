@@ -232,7 +232,7 @@ survival_km <- function(y, endpoint = "OS", cohort = "all", n_groups = 3,
       if (capped) sprintf(", ≤%d%s", as.integer(max_time), unit$short) else "", cond_note,
       if (dropped) sprintf(", %d small panel(s) dropped", dropped) else ""),
       if (isTRUE(nonormal)) "  Normal-tissue samples are excluded." else "")
-    attr(g, "km_data") <- df                          # sample, grp, facet — for tests
+    attr(g, "km_data") <- df                          # sample, grp, facet - for tests
     attr(g, "t2fill") <- t2_fill_of(d, rows = as.character(d[["sample"]]) %in% df$sample)   # the answer's word on not-detected values (lib.R)
     return(g)
   }

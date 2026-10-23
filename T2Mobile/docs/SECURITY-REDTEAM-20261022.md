@@ -110,3 +110,22 @@ else hardened.
   (2) DoS + resource exhaustion + compression, (3) trust boundary + cache + contact. Prior static review A
   found no critical/high and the Go hardening round (committed 01a1fee) already closed A1/A3/A4/A6-A9/A12 and
   the unknown/repeated/malformed-parameter cache route; this round is active fuzzing to find what reading missed.
+
+## Security scan after the round (2026-10-23, `security/scan.sh --quick`): 72 PASS, 11 FAIL, all process/review
+Two real code-hygiene hits found and FIXED by the lead:
+- survival_prototype.R:235 had an em-dash in a trailing comment -> hyphen (ASCII).
+- round2_test.go:184 held literal bidi/zero-width chars as contact-stripping TEST INPUT -> rewritten as \u escapes
+  (identical codepoints, pure-ASCII source; go test still passes).
+The remaining 11 FAIL are NOT vulnerabilities; they are the expected "review me" state after a large round:
+- Baseline-stale "CHANGED since the reviewed baseline" (go.mod/go.sum, the scan suite + allowlists, deploy.sh/ops,
+  git refs, untracked root files, Claude allow-rule lists) and the ~/bin mail script differing from the repo copy.
+  Nathan clears these with `security/scan.sh --baseline` after reviewing `git diff security/` (the audited session
+  never baselines its own work) and re-syncs ~/bin/t2-contact-mail* after the freeze.
+- Detector "N hit(s) not on allowlist" (go 14, r 9, swift 7): all benign NEW hardening/simplification code that
+  matches a security-relevant pattern and needs an allowlist/<lang>.txt entry after review:
+  - Go: hardening_test.go os.WriteFile (temp files) and r.RemoteAddr assignments (trusted-proxy tests); main.go
+    "syscall" + `go func(){ srv.ListenAndServe() }()` (graceful shutdown); r.URL.Query/RawQuery (strictQuery).
+  - R: TCGA/310-optimize.R system2+shQuote (C7 path-quoting), t2_download_lib.R system2 sha256sum + download.file
+    (C11 checksums), test_contract_check.R system2 Rscript calls + Sys.setenv/chmod (the new CLI-driving test).
+  - Swift: URLSession/URLCache from the iOS round (the dedicated caching session).
+  Action for Nathan: review these lines, add them to security/allowlist/{go,r,swift}.txt, then `--baseline`.

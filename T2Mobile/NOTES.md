@@ -115,6 +115,10 @@ suite had passed against the live service (7+7). Tag `v1.0-build2-submitted` = 1
 submission), so the reply was put at the top of the version's App Review notes (`asc.py patch
 appStoreReviewDetails 20a521bc-…`, 2026-10-20 13:20, 200; Nathan's original notes kept below it).
 Never upload while this is pending.
+**Round 20261020 waiting behind the freeze (2026-10-22):** PR #14 (branch `round-20261020`, all suites green at HEAD,
+iOS at 1.0 build counter 3) is ready to merge and release the moment Nathan lifts the freeze. **The step-by-step for
+either Apple verdict is `docs/IOS-RELEASE-AFTER-APPLE.md`** (Step 0: read the submission state with asc.py; Path A
+approved: merge, backend release, iOS 1.1; Path B rejected: reply in the thread first, build 3 on version 1.0).
 
 **State at the end of 2026-10-11 (all of it in `main`, head 3d17d29; written for a session
 that starts cold).** The production switch is complete and verified:

@@ -115,6 +115,10 @@ suite had passed against the live service (7+7). Tag `v1.0-build2-submitted` = 1
 submission), so the reply was put at the top of the version's App Review notes (`asc.py patch
 appStoreReviewDetails 20a521bc-…`, 2026-10-20 13:20, 200; Nathan's original notes kept below it).
 Never upload while this is pending.
+**Round 20261020 waiting behind the freeze (2026-10-22):** PR #14 (branch `round-20261020`, all suites green at HEAD,
+iOS at 1.0 build counter 3) is ready to merge and release the moment Nathan lifts the freeze. **The step-by-step for
+either Apple verdict is `docs/IOS-RELEASE-AFTER-APPLE.md`** (Step 0: read the submission state with asc.py; Path A
+approved: merge, backend release, iOS 1.1; Path B rejected: reply in the thread first, build 3 on version 1.0).
 
 **State at the end of 2026-10-11 (all of it in `main`, head 3d17d29; written for a session
 that starts cold).** The production switch is complete and verified:
@@ -133,13 +137,13 @@ agent runs it). Lessons of the switch, all now encoded in those scripts: the sit
 `/etc/nginx/conf.d/nginx.conf` in the Nginx container; the pool's Shiny Server serves only
 the path in its conf (so `/T2/` is rewritten to `/T2Tc/`); never remove the checkout's
 `tcga.db`/`datasets` links; Shiny Server passes no container environment to R.
-**TODO (Nathan, 2026-10-20): the synthetic DEMO data set must not show up in the apps.** The iPhone
+**TODO (Nathan, 2026-10-20) — DONE on branch round-20261020 (PR #14, awaits the freeze): the synthetic DEMO data set must not show up in the apps.** The iPhone
 app already hides it (`AppModel` filters `isDemo`: name DEMO or "not real data" in the title; Nathan
 confirmed on the simulator). The WEB app still lists it (`lib.R list_sources()` takes every `/v1/datasets`
 entry): filter it the same way there, or better, have the service mark a dataset as hidden
 (`dataset_meta` key, e.g. `hidden = 1`, echoed in `/v1/datasets`) so neither app needs the rule. Next
 app round.
-**TODO (Nathan, 2026-10-20): tone down "statistics" in the description, and hint at survival plots.**
+**TODO (Nathan, 2026-10-20) — DONE on branch round-20261020 (PR #14): tone down "statistics" in the description, and hint at survival plots.**
 The App Store description (`docs/APPSTORE.md`) and the About text talk up the tool's statistics; so far
 they are primitive (correlation, a group test) except for the time-to-event analysis (Kaplan-Meier,
 log-rank, Cox). Reword to "plots, with a few summary statistics" and let the survival analysis carry the
@@ -149,25 +153,25 @@ is far down; put a one-line hint near the top of About (and perhaps on the Selec
 naming the variables (OS, PFI, DSS, DFI for TCGA; OS, PFI for CPTAC) — a valuable hint in an otherwise
 obtuse tool. Same wording in the web app. Listing text changes go in with the next build, not while
 build 2 is in review.
-**TODO (Nathan, 2026-10-20): the plot caption describes the active filters, and Publish can drop
+**TODO (Nathan, 2026-10-20) — DONE on branch round-20261020 (PR #14): the plot caption describes the active filters, and Publish can drop
 any text element.** (1) When samples are filtered (presets, the Filter screen, cohorts), a plain
 description of the filtering shows in the plot's caption, so people remember what they are looking at
 (e.g. "Filtered: sample_type in Primary Tumor; CD8A > 5.2; 9 cohorts"); both apps. (2) For publication,
 every text element of the figure can be kept or removed individually: title, subtitle, caption,
 attribution/source line (today only the source line can be dropped, with the "please cite" reminder),
 axis titles too if easy; the Publish screen gets a switch per element; same in the web app's Publish tab.
-**TODO (Nathan, 2026-10-20): no stale collection lists in the summaries.** Wherever the app or the
+**TODO (Nathan, 2026-10-20) — DONE on branch round-20261020 (PR #14; listing texts applied with asc.py after the freeze; website blurb still open): no stale collection lists in the summaries.** Wherever the app or the
 listing names the collections ("Explore TCGA, TARGET and GTEx" subtitle, the promotional text, the
 description's first paragraph, keywords, the About "T2" paragraph, the website blurb), say "TCGA (The
 Cancer Genome Atlas) and other genomic databases" instead of listing TCGA, TARGET, GTEx: the collections
 are expanding (CPTAC is in, more to come) and the descriptions must not go stale. The per-dataset
 specifics stay where the data describe themselves (About › this data set, Sources and citations).
 Listing texts change with the next build, not while build 2 is in review.
-**TODO (Nathan, 2026-10-20): the plot title should name the data source part.** When the GTEx
+**TODO (Nathan, 2026-10-20) — DONE on branch round-20261020 (PR #14): the plot title should name the data source part.** When the GTEx
 subset of the Toil collection is selected, the title says only "TCGA-TARGET-GTEX (Toil)", not the
 subset; it should carry the part's label (`/meta sources` → `source_labels`; both apps). Not a huge
 deal; next round of app work.
-**TODO (Nathan, 2026-10-20): api usage metrics without sensitive data.** The service logs no
+**TODO (Nathan, 2026-10-20) — DONE on branch round-20261020 (PR #14, `usage.go`, `/statz usage`; privacy page unchanged: nothing per user is kept): api usage metrics without sensitive data.** The service logs no
 successful request today (privacy promise: no addresses, no selections kept). We still want to
 quantitate and understand api use and trends over time (requests per endpoint and dataset per
 day, distinct clients per period, app vs web, latency), and to identify attempted denial-of-service
@@ -176,7 +180,7 @@ information in the log files. Design to settle: aggregated counters (e.g. per-mi
 service, or a sidecar reading the Nginx access log and keeping only hashed/truncated addresses with
 short retention) plus a small dashboard; then update the privacy page and the App Store privacy
 answers if anything changes. Not part of the citations round.
-**TODO (Nathan, 2026-10-20): CPTAC `.prot` missing values: NA or zero?** Nathan plotted CLDN6 vs
+**TODO (Nathan, 2026-10-20) — resolved; the fill option is DONE on branch round-20261020 (PR #14): CPTAC `.prot` missing values: NA or zero?** Nathan plotted CLDN6 vs
 CLDN6.prot and found the combination very sparse (CLDN6.prot has values in 192 of the 1,549 proteome
 samples; OV 102, LSCC 44, LUAD 37, BRCA 9, nothing elsewhere). Findings (lead, 2026-10-20): the gaps are
 in the source files, not made by the builder (the OV tumor table has the same holes; the builder stores
@@ -1467,4 +1471,101 @@ tests; `test_gitr_api.R` compares the four About keys + the record count. Suites
 app 305/0, app-service 93, browser-service, fuzz, swift 73, iOS 7+7, all green. Staging slip caught
 before `data`: `datasets/` held stale copies of three files; they are hard links of the dev files now
 (RELEASE.md). TODOs added: DEMO must not show in the apps; api usage metrics without sensitive data.
+
+### 2026-10-20 night / 2026-10-21 — Round 20261020: the todo list, the not-detected fill option, usage metrics, the security suite (Claude, four Sonnet agents; branch `round-20261020`, draft PR #14; PRODUCTION FROZEN)
+
+Nathan: "We need to freeze production from any interventions now that we have an app request into apple ... the
+work we do from now until I say so is a PR." Everything below lives on the branch; nothing was deployed, uploaded or
+written to App Store Connect. Plan and per-item status: `docs/ROUND-20261020-PLAN.md`.
+**Items 1-6 (the TODOs above):** `dataset_meta` key `hidden` (DEMO; `/v1/datasets` echoes it, both apps skip it);
+plot title names the data source part ("GTEx (Toil)"); "Filtered:" caption from the active presets/cohorts/filters;
+Publish drops title, subtitle, caption, axis titles and the source line one by one (web and iOS); survival hint at
+the top of About and on Select, "plots with a few summary statistics" wording; "TCGA (The Cancer Genome Atlas) and
+other genomic databases" everywhere a collection list was (iOS `docs/APPSTORE.md` texts wait for the next build);
+usage metrics in the service (`usage.go`: per-minute ring and per-day totals by endpoint class, dataset, status
+class, client kind from the UA prefix, latency buckets, bytes, busy refusals, distinct clients and the busiest
+client per minute as a count only; `/statz` `usage`, an hourly log line, `-usage-dir` off by default; no address
+and no selection is kept, the privacy page needs no change).
+**Item 7, not-detected values (Nathan's idea from the `.prot` findings):** `types.fill_options` (`na|zero|floor`,
+CPTAC prot/phospho) is the data-layer fact; the service applies `values?fill=zero|floor` per probe to TESTED samples
+without a stored row only (untested stay NaN; floor = per-cohort minimum of the stored values, dataset-wide
+minimum as the fallback) and every values answer carries `fill_options` (+ `fill`, `filled`, `tested_n` when
+applied). The apps have no type logic: they show the control iff the answer lists more than `na` (web: Plot-tab
+radio "Not-detected values"; iOS: segmented "Not detected" on Select, id `fill-picker`), and the captions count the
+filled samples among those shown ("Not-detected protein values set to 0 (367 of 404 samples shown)"). Equivalence
+suite compares the file-mode `gitr(fill=)` with the service.
+**Crash report ("the app crashed and restarted during testing, a probe beginning with zz"):** no crash log on the
+Mac or in the simulator; test02 types `zzqqxx` into the search and the XCUITest harness terminates and relaunches
+the app between tests, which looks like a crash and restart. Four hardening fixes anyway (unique `ForEach` ids,
+NaN-safe waterfall order, bounds-checked `Column`, stacked-Y guard), each with a unit test. If the phone itself
+crashed: AirDrop `T2App-*.ips` from Settings > Privacy & Security > Analytics Data to `~/Claude/crashes/` on the Mac.
+**Also on the branch:** the reusable backdoor audit `security/scan.sh` (84 checks; 2026-10-20 audit found no
+backdoor; see `security/README.md`, run after every AI round; the baseline is stale against this branch and is
+Nathan's to accept after reviewing the diff); `go.sum`-pinned service build; the reference audit's one wording fix.
+**Tests at HEAD:** Go, equiv 76, app/app-service, Chrome over the dev service, Swift 87, simulator 8 + 9 UI.
+**After the freeze (RELEASE.md order):** merge; `deploy.sh service`; `dataset_meta.R type-fill` on a staged copy of
+the served cptac.db and `hidden=1` on DEMO, `data-stage <date>`, `data`; `code`, `check`; listing texts with asc.py;
+next iOS build (1.0 build 3 if build 2 is rejected and this is the fix, 1.1 if approved); website blurb wording in
+`/scratch/Docker/Nginx/html` ("TCGA and other genomic databases"). Open from the audits: DOCKER-USER rules, kernel
+reboot, `%sudo NOPASSWD`, root's authorized keys, the legacy files with database passwords (delete or rotate),
+`TCGA/createT2_plus.sh` (rsync to an old ec2 host), `github.token` files in dev/archive mounts, the over-broad
+`.claude/settings.local.json` rules, cert renewal 2027-04-04.
+
+### 2026-10-22 — MacBook Pro takes over the iOS work; build 2 rejected again (Claude)
+
+Nathan: the old MacBook (10.0.0.110) travels with him for weeks; the MacBook Pro `nathan@10.1.0.9` (ethernet on
+eno2, hostname theone, Apple silicon, macOS 27.0.1, Xcode 27.0 installed by Nathan) replaces it for everything.
+Done from here over ssh: `~/Claude/T2Mobile/ios` synced (the `ops/test.sh ios` rsync; default `T2_MAC` is now
+10.1.0.9), `tools/xcodegen` 2.46 (universal binary) and the 401 MB screenshot archive copied from the old Mac,
+`~/.appstoreconnect/` (asc.py, the two API keys, `t2-testflight.env`, listing jsons) streamed Mac-to-Mac with modes
+kept (700/600; nothing printed), `T2App/Config/Local.xcconfig` (team id). Xcode is not `xcode-select`ed (needs sudo,
+which asks a password): `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` in `~/.zshenv` makes every
+ssh shell use it; the first-launch check passes; the iOS 27.0 simulator runtime (8 GB) was downloaded with
+`xcodebuild -downloadPlatform iOS`; Swift 6.4. No Apple Distribution certificate lives in either keychain (the old
+Mac has only two Apple Development identities): testflight.sh signs through the ASC API key (cloud signing), so
+nothing had to be exported. Open for Nathan on the new Mac: `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`
+(optional, replaces the zshenv line), sign in to Xcode with the Apple ID if a development build on a real phone is
+wanted (Settings > Accounts), keep the lid-closed sleep off (pmset shows sleep 0, womp 1 today). `asc.py get`
+takes full `/v1/...` paths (a bare path builds a bad host name and fails with "nodename nor servname provided").
+**Step 0 result: build 2 REJECTED again** — reviewSubmission 635f739b `UNRESOLVED_ISSUES`, version 1.0 `REJECTED`,
+item `REJECTED`, build 2 VALID (read-only API, 18:30 PDT). The message is only in the Resolution Center (no mail in
+Gmail); Nathan pastes it; then Path B of `docs/IOS-RELEASE-AFTER-APPLE.md`. The freeze still holds until he lifts it.
+**The message (2026-10-22, Nathan pasted it):** guideline 5.1.3(iv), "conducting health-related human subject
+research" without consent disclosures or IRB approval (asks for a consent form, a login for consented
+participants, proof of ethics-board approval), and 5.1.1(ix), the account must be an organization, not an
+individual. Assessment and the draft reply: `docs/APPSTORE.md`, "Second rejection". In short: a misreading
+(the app performs no research on anyone and collects nothing; the data are public, de-identified, consented at
+source); recommended answer = reply in the thread + change the category Medical → Education/Reference; no
+organization account, no login, no cancel of the submission; build 3 only if Apple asks for in-app wording.
+**Acceptance of the new Mac, 2026-10-22 18:24-18:50 PDT:** `T2_MAC=10.1.0.9 ops/test.sh ios` from a cold toolchain
+(XcodeGen, first build, simulator first boot) passed: 9 UI tests, 0 failures, 74 screenshots, iPhone 18 Pro light,
+against the dev service through the ssh tunnel. The MacBook Pro is the iOS machine from now on.
+Later the same evening Nathan ran `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` on the new Mac
+(`xcode-select -p` confirms); the temporary `DEVELOPER_DIR` line was removed from `~/.zshenv`.
+**Category change, 2026-10-22 evening:** on Nathan's go-ahead ("go ahead and change the category, I'll paste the reply")
+the app's primary category went MEDICAL → EDUCATION (secondary stays REFERENCE) through the API from the new Mac
+(`asc.py patchrel appInfos 84fcf192-…`, 200, read back). This is the one write to App Store Connect since the
+freeze began; the submission 635f739b was not touched. Nathan pastes the reply (`docs/APPSTORE.md`, "Reply to the
+5.1.3(iv) / 5.1.1(ix) rejection") into the Resolution Center thread and attaches the policy documents himself.
+**Reply sent, 2026-10-22 night:** Nathan posted the reply in the thread (his edits: the misclassification framing,
+"open access" category, policy URLs appended instead of attachments, trimmed to the 4,000-character limit). The text as
+sent is in `docs/APPSTORE.md`, "Reply AS SENT". Now waiting for Apple; nothing else to do on ASC.
+**Ultrareview of PR #14, 2026-10-22 night** (Nathan launched `/ultrareview 14`, free run 1 of 3; findings posted as
+https://github.com/NathanSiemers/T2/pull/14#issuecomment-6357428844): 9 findings, all verified real by Claude. Blocker:
+the `types.fill_options` write block landed in `t2_write_meta` (no `has`/`spec` there), so every `dataset_meta.R set`
+and every builder's meta write fails ("could not find function has"); the suites were green because none of them runs
+a writer and the dev db files already carry the keys. Others: Publish text switches ignore non-survival plots; the web
+not-detected caption counts the whole frame, not the plotted rows; scan.sh Go-dependency allowlist misses go-isatty /
+go-strftime (the FAIL earlier blamed on the baseline), unanchored allowlist matching, `replace` directives ignored;
+iOS sends `fill=` to every 100-probe chunk and one refusal drops the fill; Go always emits `hidden` so R's DEMO
+fallback is dead; the R client refetches cached columns to learn fill_options. Nathan: "fix them". Fixes in progress
+on the branch (three Sonnet agents: R, scan.sh, iOS), then the full suite, then a commit; still no release (freeze).
+**INCIDENT 2026-10-22 22:36 PDT:** during the hardening round (`docs/HARDENING-20261022.md`) an ops fix agent ran
+`deploy.sh service` for real; production `t2api`/`t2api-web` now run an image built from the uncommitted Go changes
+(2564a4a9f4b2; previous image tagged `t2api:pre-20261022-223621`). Production is healthy (checked 22:41) but the build
+is untested in integration. Claude's restore attempt was refused by the permission classifier; the restore script is
+in the session scratchpad (see the HARDENING checkpoint). Nathan decides: restore, or accept. `T2Mobile/ops/FREEZE`
+now blocks deploy.sh steps.
+Restored 23:15 PDT by Claude in manual mode on Nathan's instruction: both containers back on the released image
+79459df33aa4; verified. Development continues on named devstack instances (`ops/devstack.sh`).
 

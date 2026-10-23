@@ -51,13 +51,10 @@ func (d *Dataset) rulesMask(rules []PresetRule) []bool {
 		for _, v := range r.Values {
 			in[v] = true
 		}
+		want := r.Op == "in"
 		for i := range m {
 			hit := col.ok[i] && in[col.val[i]]
-			if r.Op == "in" {
-				m[i] = m[i] && hit
-			} else {
-				m[i] = m[i] && !hit
-			}
+			m[i] = m[i] && hit == want
 		}
 	}
 	return m
@@ -110,6 +107,17 @@ func sameWithin(a, b, base []bool) bool {
 	return true
 }
 
+// distinctWithin: the distinct non-missing values of a text column over the rows of base.
+func distinctWithin(col textCol, base []bool) map[string]bool {
+	out := map[string]bool{}
+	for i := range base {
+		if base[i] && col.ok[i] {
+			out[col.val[i]] = true
+		}
+	}
+	return out
+}
+
 // loadSources computes the preset sample counts and the data sources. Runs after
 // loadPresets (needs the presets) and before buildMeta (which publishes the result).
 func (d *Dataset) loadSources() error {
@@ -121,15 +129,16 @@ func (d *Dataset) loadSources() error {
 	}
 	// the cohort values in the order of the `cohorts` table (the R app's menu order)
 	cohortOrder := []string{}
-	if d.db == nil {
-	} else if rows, err := d.db.Query("SELECT cohort FROM cohorts"); err == nil {
-		for rows.Next() {
-			var c string
-			if rows.Scan(&c) == nil {
-				cohortOrder = append(cohortOrder, c)
+	if d.db != nil {
+		if rows, err := d.db.Query("SELECT cohort FROM cohorts"); err == nil {
+			for rows.Next() {
+				var c string
+				if rows.Scan(&c) == nil {
+					cohortOrder = append(cohortOrder, c)
+				}
 			}
+			rows.Close()
 		}
-		rows.Close()
 	}
 	describe := func(label, desc string, rules []PresetRule) Source {
 		base := d.rulesMask(rules)
@@ -137,20 +146,10 @@ func (d *Dataset) loadSources() error {
 			Cohorts: []string{}, Groups: []string{}, Exclusions: []string{}, SingleLevel: []string{}}
 		// cohorts present
 		if col, ok := d.clinText["cohort"]; ok {
-			present := map[string]bool{}
-			for i := range base {
-				if base[i] && col.ok[i] {
-					present[col.val[i]] = true
-				}
-			}
+			present := distinctWithin(col, base)
 			listed := map[string]bool{}
-			for _, c := range cohortOrder {
-				if present[c] && !listed[c] {
-					src.Cohorts = append(src.Cohorts, c)
-					listed[c] = true
-				}
-			}
-			for _, c := range d.levels["cohort"] { // any present value the table does not list
+			// the table's order first, then any present value the table does not list
+			for _, c := range slices.Concat(cohortOrder, d.levels["cohort"]) {
 				if present[c] && !listed[c] {
 					src.Cohorts = append(src.Cohorts, c)
 					listed[c] = true
@@ -170,12 +169,9 @@ func (d *Dataset) loadSources() error {
 			if isExclusion(p) || !narrows(masks[p.Label], base) {
 				continue
 			}
-			dup := false
-			for _, e := range excl {
-				if sameWithin(masks[p.Label], masks[e.Label], base) {
-					dup = true
-				}
-			}
+			dup := slices.ContainsFunc(excl, func(e Preset) bool {
+				return sameWithin(masks[p.Label], masks[e.Label], base)
+			})
 			if !dup {
 				src.Groups = append(src.Groups, p.Label)
 			}
@@ -186,13 +182,7 @@ func (d *Dataset) loadSources() error {
 			if !ok || len(d.levels[n]) == 0 {
 				continue
 			}
-			seen := map[string]bool{}
-			for i := range base {
-				if base[i] && col.ok[i] {
-					seen[col.val[i]] = true
-				}
-			}
-			if len(seen) <= 1 {
+			if len(distinctWithin(col, base)) <= 1 {
 				src.SingleLevel = append(src.SingleLevel, n)
 			}
 		}

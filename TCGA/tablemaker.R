@@ -4,6 +4,8 @@
 ## with separate probe and sample lookup tables
 
 tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE, tsep = '.', deleteType = TRUE, sparse = TRUE, r_datatype = NULL ) {
+    if (length(unique(dat$type)) != 1) stop('tablemaker: dat$type must hold exactly one type, got: ',
+                                            paste(head(unique(as.character(dat$type)), 5), collapse = ', '))
     thistype = dat$type[[1]]  ## there can be only one
     ## a sample name repaired by a file reader ("...123") is a duplicated sample
     ## column that was not resolved: see average_duplicate_columns()
@@ -23,6 +25,17 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     }
     cat(sprintf("tablemaker: type=%s dest=%s sparse=%s suffix=%s\n", thistype, dest_table, sparse, suffix))
 
+    ## the delete of the type's old rows and the insert of the new ones are ONE transaction (a savepoint, so it
+    ## nests in a caller's): a failure half-way leaves the previous load of the type, never half of each
+    if (mysql) { dbBegin(connection); .tm_done = function() dbCommit(connection); .tm_undo = function() try(dbRollback(connection), silent = TRUE) }
+    else {
+        dbExecute(connection, 'SAVEPOINT tablemaker_type')
+        .tm_done = function() dbExecute(connection, 'RELEASE tablemaker_type')
+        .tm_undo = function() { try(dbExecute(connection, 'ROLLBACK TO tablemaker_type'), silent = TRUE); try(dbExecute(connection, 'RELEASE tablemaker_type'), silent = TRUE) }
+    }
+    .tm_ok = FALSE
+    on.exit(if (!.tm_ok) .tm_undo(), add = TRUE)
+
     ## add to "tested" table
     the_type = dat$type[[1]]
     mytested = data.frame(
@@ -34,7 +47,7 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     clin = Q('select * from clin')
     mytested$type = the_type
     cat(sprintf("  tested: %d samples\n", nrow(mytested)))
-    dbWriteTable(con, name="tested", value=mytested, append=TRUE)
+    dbWriteTable(connection, name="tested", value=mytested, append=TRUE)
 
     ## SAMPLES - add any new sample keys
     usample = dat %>% dplyr::select( sample ) %>%
@@ -153,5 +166,6 @@ tablemaker = function( dat, connection = con, categorical = FALSE, suffix = TRUE
     cat(sprintf("  %s\n", sql_string))
     dbExecute(connection, sql_string)
     dbExecute(connection, paste('delete from', dest_tmp) )
+    .tm_done(); .tm_ok = TRUE
     cat(sprintf("  done: %s\n", thistype))
 }

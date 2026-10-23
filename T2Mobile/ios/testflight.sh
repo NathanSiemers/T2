@@ -35,6 +35,8 @@ Usage: testflight.sh [options]
 
   --archive-only     build the .xcarchive and stop (upload it from Xcode's Organizer later)
   --upload-only      upload the .xcarchive of the last run (build/T2.xcarchive) without rebuilding
+  --force            with --upload-only: upload although the archive's version/build differ from
+                     MARKETING_VERSION / CURRENT_PROJECT_VERSION in T2App/Config/T2.xcconfig
   --key-id ID        App Store Connect API key id (with --issuer-id); default: $T2_ASC_KEY_ID
   --issuer-id ID     the key's issuer id; default: $T2_ASC_ISSUER_ID
   --key-path FILE    the .p8 file; default: the AuthKey_<ID>.p8 that xcodebuild finds itself
@@ -66,12 +68,13 @@ if [ -f "$ENVFILE" ]; then
     # shellcheck disable=SC1090
     . "$ENVFILE"
 fi
-ARCHIVE_ONLY=0; UPLOAD_ONLY=0; KEY_ID="${T2_ASC_KEY_ID:-}"; ISSUER_ID="${T2_ASC_ISSUER_ID:-}"; KEY_PATH=""; TEAM="${T2_TEAM:-}"
+ARCHIVE_ONLY=0; UPLOAD_ONLY=0; FORCE=0; KEY_ID="${T2_ASC_KEY_ID:-}"; ISSUER_ID="${T2_ASC_ISSUER_ID:-}"; KEY_PATH=""; TEAM="${T2_TEAM:-}"
 need_value() { [ $# -ge 2 ] || { echo "testflight.sh: $1 needs a value" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
     case "$1" in
         --archive-only) ARCHIVE_ONLY=1; shift ;;
         --upload-only)  UPLOAD_ONLY=1; shift ;;
+        --force)        FORCE=1; shift ;;
         --key-id)       need_value "$@"; KEY_ID="$2"; shift 2 ;;
         --issuer-id)    need_value "$@"; ISSUER_ID="$2"; shift 2 ;;
         --key-path)     need_value "$@"; KEY_PATH="$2"; shift 2 ;;
@@ -130,6 +133,17 @@ ARCHIVE="$BUILD/T2.xcarchive"
 if [ "$UPLOAD_ONLY" = 1 ]; then
     step "Using the archive of the last run"
     [ -d "$ARCHIVE" ] || die "no $ARCHIVE: run without --upload-only first"
+    # the archive of the last run may be older than the repo: show both and refuse a mismatch
+    A_VER="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$ARCHIVE/Info.plist" 2>/dev/null || echo '?')"
+    A_BLD="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$ARCHIVE/Info.plist" 2>/dev/null || echo '?')"
+    R_VER="$(sed -n 's/^MARKETING_VERSION *= *//p' "$APPDIR/Config/T2.xcconfig" | tail -1 | tr -d ' \r')"
+    R_BLD="$(sed -n 's/^CURRENT_PROJECT_VERSION *= *//p' "$APPDIR/Config/T2.xcconfig" | tail -1 | tr -d ' \r')"
+    printf '    archive: CFBundleShortVersionString %s, CFBundleVersion %s\n' "$A_VER" "$A_BLD"
+    printf '    repo:    MARKETING_VERSION %s, CURRENT_PROJECT_VERSION %s\n' "$R_VER" "$R_BLD"
+    if [ "$A_VER" != "$R_VER" ] || [ "$A_BLD" != "$R_BLD" ]; then
+        [ "$FORCE" = 1 ] || die "the archive ($A_VER build $A_BLD) differs from the repo ($R_VER build $R_BLD)." "Rebuild without --upload-only, or pass --force if the archive is the one to upload."
+        printf '    --force: uploading the mismatching archive\n'
+    fi
 else
 step "Archiving (Release, any iPhone)"
 rm -rf "$ARCHIVE"

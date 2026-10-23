@@ -1,0 +1,15 @@
+# Go modules T2Mobile/service/go.mod may require (direct and indirect), one module path per line (fixed string, whole line).
+# Reviewed 2026-10-22: modernc.org/sqlite and its transitive set. Any other module is a FAIL.
+# go.mod must contain no replace, exclude or retract directive (scan.sh checks that separately), so the module
+# path in a require line is the code that is built.
+modernc.org/sqlite
+modernc.org/libc
+modernc.org/mathutil
+modernc.org/memory
+github.com/dustin/go-humanize
+github.com/google/uuid
+github.com/mattn/go-isatty
+github.com/ncruces/go-strftime
+github.com/remyoudompheng/bigfft
+golang.org/x/exp
+golang.org/x/sys

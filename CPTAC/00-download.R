@@ -25,6 +25,12 @@ if (is.na(here)) {
 DATADIR <- file.path(here, "Data")
 dir.create(DATADIR, showWarnings = FALSE, recursive = TRUE)
 options(timeout = max(3600, getOption("timeout")))
+## verified downloads (t2_download_lib.R): checksums.sha256 next to this script ("<sha256>  <name relative to Data/>");
+## a file it does not list stops the run unless T2_RECORD_CHECKSUMS=1 (first run records, later runs verify)
+.root <- Filter(function(d) file.exists(file.path(d, "t2_download_lib.R")), c(dirname(here), ".", ".."))[1]
+if (is.na(.root)) stop("t2_download_lib.R not found next to the repository root")
+source(file.path(.root, "t2_download_lib.R"))
+MANIFEST <- file.path(here, "checksums.sha256")
 
 COHORTS <- c("BRCA","CCRCC","COAD","GBM","HNSCC","LSCC","LUAD","OV","PDAC","UCEC")
 WANTED_ZIPS <- c("Proteome_BCM_GENCODE_v34_harmonized_v1.zip",
@@ -49,7 +55,7 @@ record <- function(rel) {
   save_ledger(); sz
 }
 fetch <- function(url, rel) {
-  if (have(rel)) { cat(sprintf("[skip] %s\n", rel)); return(invisible(TRUE)) }
+  if (have(rel)) { t2_verify_checksum(file.path(DATADIR, rel), rel, MANIFEST); cat(sprintf("[skip] %s\n", rel)); return(invisible(TRUE)) }
   dest <- file.path(DATADIR, rel); dir.create(dirname(dest), FALSE, TRUE)
   tmp <- paste0(dest, ".part")
   cat(sprintf("[get ] %s\n", rel))
@@ -57,7 +63,9 @@ fetch <- function(url, rel) {
                  error = function(e) { cat("   failed:", conditionMessage(e), "\n"); FALSE },
                  warning = function(w) { cat("   failed:", conditionMessage(w), "\n"); FALSE })
   if (!ok || !file.exists(tmp) || file.info(tmp)$size == 0) { unlink(tmp); return(invisible(FALSE)) }
-  file.rename(tmp, dest); cat(sprintf("[done] %s (%d bytes)\n", rel, record(rel)))
+  tryCatch(t2_verify_checksum(tmp, rel, MANIFEST), error = function(e) { unlink(tmp); stop(e) })   # mismatch / unlisted: stop, nothing renamed
+  if (!file.rename(tmp, dest)) stop("could not rename ", tmp, " to ", dest)
+  cat(sprintf("[done] %s (%d bytes)\n", rel, record(rel)))
   invisible(TRUE)
 }
 
@@ -87,7 +95,7 @@ for (i in seq_len(nrow(sel))) {
     url <- if (is.list(su) && is.character(su$data)) su$data else NULL
     if (is.null(url)) { cat("[fail] no signed URL for", nm, "\n"); next }
     fetch(url, nm)
-  } else cat(sprintf("[skip] %s\n", nm))
+  } else { t2_verify_checksum(file.path(DATADIR, nm), nm, MANIFEST); cat(sprintf("[skip] %s\n", nm)) }
   if (grepl("\\.zip$", nm) && have(nm)) {
     d <- file.path(DATADIR, sub("\\.zip$", "", nm))
     stamp <- file.path(d, ".unzipped")          # written after a COMPLETE extraction only

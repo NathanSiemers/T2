@@ -40,10 +40,17 @@ contact_ui = function() {
   r$REMOTE_ADDR %||% ""
 }
 
+## one text field of the form: a single string of at most n characters, else "" (a
+## client can send a vector, a number or NULL where the page sends one string)
+.t2_text = function(v, n) {
+  if (length(v) != 1 || is.na(v)) return("")
+  substr(as.character(v), 1, n)
+}
+
 ## send one message; returns what to show the user
 t2_contact_send = function(fields, started, session) {
-  body = list(name = trimws(fields$name %||% ""), email = trimws(fields$email %||% ""),
-              affiliation = trimws(fields$affiliation %||% ""), message = fields$message %||% "",
+  body = list(name = trimws(.t2_text(fields$name, 200)), email = trimws(.t2_text(fields$email, 200)),
+              affiliation = trimws(.t2_text(fields$affiliation, 200)), message = .t2_text(fields$message, 5000),
               started = as.numeric(started), app = "T2 website", website = "")
   if (!nzchar(body$name) || !nzchar(body$email) || !nzchar(trimws(body$message)))
     return("Please give your name, your email address and a message.")
@@ -68,9 +75,13 @@ contact_server = function(input, output, session) {
       status("Please wait a minute before sending another message."); return()
     }
     last_sent <<- Sys.time()
-    status(t2_contact_send(list(name = input$contact_name, email = input$contact_email,
+    status(tryCatch(t2_contact_send(list(name = input$contact_name, email = input$contact_email,
                                 affiliation = input$contact_affiliation, message = input$contact_message),
-                           as.numeric(Sys.time() - started, units = "secs"), session))
+                           as.numeric(Sys.time() - started, units = "secs"), session),
+      error = function(e) {
+        message("contact form error: ", conditionMessage(e))
+        "The message could not be sent. Please try again later."
+      }))
     if (startsWith(status(), "Thank")) shiny::updateTextAreaInput(session, "contact_message", value = "")
   })
   output$contact_status = shiny::renderText(status())

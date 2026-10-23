@@ -6,8 +6,12 @@
 ##                 tte = list(t2_tte("OS", "Overall Survival", "OS", "OS.time")))
 ##   t2_write_types(con, spec)       spec: data.frame(type, description, example, reference, source_url,
 ##                                   source_file, label, r_datatype, sparse, default_value); only `type`
-##                                   is required, a column that is absent or NA is left as it is
-##   t2_finalize_dataset(con, name, filters = name)
+##                                   is required, a column that is absent or NA is left as it is;
+##                                   optional fill_options ("na|zero|floor", see T2_FILL_OPTIONS) is added as a column
+##   t2_refuse_served(path)          stop() when path is a served location (/scratch/shinyusb, /scratch/Docker,
+##                                   and the prefixes of $T2_SERVED_ROOTS, ":" or "," separated); call it at
+##                                   every entry point that writes a dataset file
+##   t2_finalize_dataset(con, name, filters = name, deep = TRUE)
 ##                                   drop_t2_dataless_probes + finalize_t2_core + write_default_filters
 ##                                   + check_dataset_contract; stops when the check FAILS
 
@@ -15,8 +19,54 @@
 T2_META_KEYS <- c("title", "label", "cohort_col", "subtype_col", "sampletype_col", "sampletype_levels",
                   "normal_label", "heme_values", "default_x", "default_y", "default_color", "default_size",
                   "default_condition", "default_cohorts", "source_col", "sources", "source_labels",
-                  "source_descriptions", "tte_variables", "references", "about", "citation", "attribution", "about_url", "order")   # order: optional integer, ascending in the dataset list
+                  "source_descriptions", "tte_variables", "references", "about", "citation", "attribution", "about_url", "order",
+                  "hidden")   # order: optional integer, ascending in the dataset list; hidden: "1" = served but left out of the apps' menus (DEMO), "0"/absent = listed
+## the not-detected fills a data type may offer (types.fill_options, "|"-separated, `na` first):
+## na = a tested sample with no stored value is missing; zero = it is 0; floor = the smallest stored
+## value of the probe among the tested samples of the same cohort (else of the dataset)
+T2_FILL_OPTIONS <- c("na", "zero", "floor")
+## t2_fill_options_check(x): the validated "|" string (a subset of T2_FILL_OPTIONS in display order,
+## `na` first, no repeats) or stop(); x may be a vector of words or one "|" string; "" / NA = "na"
+t2_fill_options_check <- function(x) {
+  w <- if (length(x) == 1 && !is.na(x)) strsplit(as.character(x), "|", fixed = TRUE)[[1]] else as.character(x)
+  w <- trimws(w[!is.na(w)]); w <- w[nzchar(w)]
+  if (!length(w)) return("na")
+  bad <- setdiff(w, T2_FILL_OPTIONS)
+  if (length(bad)) stop("unknown fill option(s): ", paste(bad, collapse = ", "), " (known: ", paste(T2_FILL_OPTIONS, collapse = ", "), ")")
+  if (anyDuplicated(w)) stop("fill_options repeats a word: ", paste(w, collapse = "|"))
+  if (w[1] != "na") stop("fill_options must start with na: ", paste(w, collapse = "|"))
+  if (!identical(w, T2_FILL_OPTIONS[T2_FILL_OPTIONS %in% w])) stop("fill_options must be in the order na|zero|floor: ", paste(w, collapse = "|"))
+  paste(w, collapse = "|")
+}
 T2_TTE_FIELDS <- c("name", "label", "event_col", "time_col", "time_unit", "description")
+
+## Served-path guard. A served dataset file is read by the live service and must never be written in
+## place: build in a staging area and promote by an atomic rename (T2Mobile/ops/deploy.sh). The check is
+## on the normalized path (symlinks of the directory resolved, the file itself not required to exist)
+## and on the path as given.
+t2_served_roots <- function() {
+  extra <- strsplit(Sys.getenv("T2_SERVED_ROOTS", ""), "[:,]")[[1]]
+  r <- c("/scratch/shinyusb", "/scratch/Docker", trimws(extra))
+  unique(sub("/+$", "", r[nzchar(r)]))
+}
+t2_refuse_served <- function(path) {
+  if (length(path) != 1 || is.na(path) || !nzchar(path)) stop("t2_refuse_served: empty path")
+  forms <- unique(c(path, normalizePath(path, mustWork = FALSE),
+                    file.path(normalizePath(dirname(path), mustWork = FALSE), basename(path))))
+  for (r in t2_served_roots()) for (f in forms)
+    if (identical(f, r) || startsWith(f, paste0(r, "/"))) stop("refusing a served path: ", path, " (under ", r, ")", call. = FALSE)
+  invisible(path)
+}
+
+## A transaction that nests (SAVEPOINT, not BEGIN): t2_write_meta / t2_write_types may run inside a
+## caller's savepoint (dataset_meta.R wraps write + contract check in one and rolls both back on a FAIL).
+.t2_sp_n <- 0L
+t2_tx_begin <- function(con) {
+  .t2_sp_n <<- .t2_sp_n + 1L; nm <- sprintf("t2_tx_%d", .t2_sp_n)
+  DBI::dbExecute(con, paste("SAVEPOINT", nm)); nm
+}
+t2_tx_commit   <- function(con, nm) invisible(DBI::dbExecute(con, paste("RELEASE", nm)))
+t2_tx_rollback <- function(con, nm) { try(DBI::dbExecute(con, paste("ROLLBACK TO", nm)), silent = TRUE); try(DBI::dbExecute(con, paste("RELEASE", nm)), silent = TRUE) }
 
 if (!exists("set_t2_sparse")) stop("source t2_views.R before t2_build_lib.R")
 
@@ -91,7 +141,7 @@ t2_write_meta <- function(con, meta = list(), tte = NULL) {
   if (!is.null(tte)) meta$tte_variables <- t2_tte_json(tte)
   vals <- vapply(meta, function(v) if (is.null(v) || (length(v) == 1 && is.na(v))) NA_character_ else paste(as.character(v), collapse = "|"), "")
   vals <- vals[!is.na(vals)]
-  DBI::dbBegin(con)
+  tx <- t2_tx_begin(con)
   tryCatch({
     if (!"dataset_meta" %in% DBI::dbListTables(con))
       DBI::dbExecute(con, "CREATE TABLE dataset_meta(key TEXT PRIMARY KEY, value TEXT)")
@@ -99,8 +149,8 @@ t2_write_meta <- function(con, meta = list(), tte = NULL) {
       DBI::dbExecute(con, "DELETE FROM dataset_meta WHERE key = ?", params = list(k))
       DBI::dbExecute(con, "INSERT INTO dataset_meta(key, value) VALUES (?, ?)", params = list(k, unname(vals[[k]])))
     }
-    DBI::dbCommit(con)
-  }, error = function(e) { try(DBI::dbRollback(con), silent = TRUE); stop(e) })
+    t2_tx_commit(con, tx)
+  }, error = function(e) { t2_tx_rollback(con, tx); stop(e) })
   invisible(names(vals))
 }
 
@@ -109,7 +159,7 @@ t2_write_types <- function(con, spec, allow_new = TRUE) {
   stopifnot("type" %in% names(spec), !anyDuplicated(spec$type))
   has <- function(k) k %in% names(spec)
   tcols <- c("description", "example", "reference", "source_url", "source_file", "label")
-  DBI::dbBegin(con)
+  tx <- t2_tx_begin(con)
   tryCatch({
     if (!"types" %in% DBI::dbListTables(con)) {
       if (!allow_new) stop("no types table")
@@ -133,6 +183,12 @@ t2_write_types <- function(con, spec, allow_new = TRUE) {
       if (has("label")) for (i in seq_len(nrow(spec))) if (!is.na(spec$label[i]))
         DBI::dbExecute(con, "UPDATE types SET label = ? WHERE type = ?", params = list(as.character(spec$label[i]), spec$type[i]))
     }
+    if (has("fill_options")) {               # optional column, added when absent; validated
+      t2_ensure_columns(con, "types", c(fill_options = "TEXT"))
+      for (i in seq_len(nrow(spec))) if (!is.na(spec$fill_options[i]))
+        DBI::dbExecute(con, "UPDATE types SET fill_options = ? WHERE type = ?",
+                       params = list(t2_fill_options_check(spec$fill_options[i]), spec$type[i]))
+    }
     if (has("r_datatype")) {
       s <- spec[!is.na(spec$r_datatype), , drop = FALSE]
       if (!"datatypes" %in% DBI::dbListTables(con))
@@ -142,8 +198,8 @@ t2_write_types <- function(con, spec, allow_new = TRUE) {
         DBI::dbExecute(con, "INSERT INTO datatypes(type, r_datatype) VALUES (?, ?)", params = list(s$type[i], s$r_datatype[i]))
       }
     }
-    DBI::dbCommit(con)
-  }, error = function(e) { try(DBI::dbRollback(con), silent = TRUE); stop(e) })
+    t2_tx_commit(con, tx)
+  }, error = function(e) { t2_tx_rollback(con, tx); stop(e) })
   if (has("sparse")) for (i in which(!is.na(spec$sparse))) {      # same semantics as set_t2_sparse()
     dv <- if (has("default_value") && !is.na(spec$default_value[i])) spec$default_value[i] else 0
     set_t2_sparse(con, spec$type[i], isTRUE(as.logical(spec$sparse[i])), dv)
@@ -151,13 +207,13 @@ t2_write_types <- function(con, spec, allow_new = TRUE) {
   invisible(spec$type)
 }
 
-t2_finalize_dataset <- function(con, name, filters = name) {
+t2_finalize_dataset <- function(con, name, filters = name, deep = TRUE) {   # deep: the row scans of tcgai / tcgacati
   n <- drop_t2_dataless_probes(con)
   message("probes with no data at all removed from probes/allprobes: ", n)
   if (!is.null(filters) && !isFALSE(filters)) write_default_filters(con, filters)
   finalize_t2_core(con)
   if (!exists("check_dataset_contract")) stop("source dataset_contract_check.R before t2_finalize_dataset()")
-  chk <- check_dataset_contract(con, name)
+  chk <- check_dataset_contract(con, name, deep = deep)
   if (!chk$ok) stop("dataset contract check FAILED for '", name, "'")
   invisible(list(dropped = n, contract = chk))
 }

@@ -44,8 +44,13 @@ T2_API_VALUES_CACHE = 400                       # probe columns kept per process
 .t2_api$values = t2_cache(T2_API_VALUES_CACHE)  # "<ds>|<version>|<probe>" -> column (or "missing")
 .t2_api$meta   = t2_cache(8)                    # "<ds>|<version>" -> /meta
 .t2_api$clin   = t2_cache(8)                    # "<ds>|<version>" -> the clinical frame (character / numeric)
+.t2_api$fillopts = t2_cache(200)                # "<ds>|<version>|set|<probes>" -> the fills the answer offered for that set
 .t2_api$frames = t2_cache(8)                    # "<ds>|<version>|<roles>" -> list(raw, fac): the frame and its factored twin
 .t2_api$menu   = t2_cache(8)                    # "<ds>|<version>" -> the typed variable list
+
+## percent-encode every reserved character of one value; unlike utils::URLencode it
+## also encodes a value that already contains %XX ("x%41y" -> "x%2541y")
+t2_urlencode = function(x) utils::URLencode(as.character(x), reserved = TRUE, repeated = TRUE)
 
 ## GET a path of the service, parsed JSON. `simplify = FALSE` gives lists (for
 ## /meta, which is small and nested); TRUE gives vectors for the big answers
@@ -57,21 +62,23 @@ T2_API_VALUES_CACHE = 400                       # probe columns kept per process
 ## restarts with a new version): the datasets list is forgotten so the next
 ## t2_api_version() re-reads it, and the condition `t2_api_version_changed` is
 ## signalled for t2_api_versioned() to retry.
-t2_api_get = function(path, retry = 2, simplify = FALSE) {
+t2_api_get = function(path, retry = 1, simplify = FALSE) {
   url = paste0(T2_API_URL, path)
-  h = curl::new_handle(accept_encoding = "gzip", followlocation = TRUE, connecttimeout = 10, timeout = 120)
+  ## a worker is held for at most about a minute (2 tries, 3 s to connect, 30 s in all):
+  ## during a service restart the visitor gets "busy" quickly rather than a stuck page
+  h = curl::new_handle(accept_encoding = "gzip", followlocation = TRUE, connecttimeout = 3, timeout = 30)
   curl::handle_setheaders(h, "User-Agent" = "T2-shiny (gitr over t2api)")
   for (i in seq_len(retry + 1)) {
     r = tryCatch(curl::curl_fetch_memory(url, handle = h), error = function(e) e)
-    if (inherits(r, "error")) { if (i > retry) stop("t2api: ", conditionMessage(r), " (", url, ")"); Sys.sleep(1); next }
-    if (r$status_code == 503 && i <= retry) { Sys.sleep(3); next }
+    if (inherits(r, "error")) { if (i > retry) stop("t2api: the service is busy or not answering: ", conditionMessage(r), " (", substr(url, 1, 200), ")"); Sys.sleep(1); next }
+    if (r$status_code == 503 && i <= retry) { Sys.sleep(1); next }
     if (r$status_code == 409) {
       .t2_api$datasets = NULL
       stop(structure(class = c("t2_api_version_changed", "error", "condition"),
                      list(message = paste("t2api: dataset version changed for", path), call = NULL)))
     }
     if (r$status_code != 200)
-      stop("t2api: HTTP ", r$status_code, " for ", path, ": ", substr(rawToChar(r$content), 1, 200))
+      stop("t2api: HTTP ", r$status_code, " for ", substr(path, 1, 200), ": ", substr(rawToChar(r$content), 1, 200))
     return(jsonlite::fromJSON(rawToChar(r$content), simplifyVector = simplify,
                               simplifyDataFrame = FALSE, simplifyMatrix = FALSE))
   }
@@ -112,8 +119,8 @@ t2_api_meta = function(ds) {
   key = paste(ds, t2_api_version(ds))
   hit = .t2_api$meta$get(key)
   if (!is.null(hit)) return(hit)
-  m = t2_api_get(sprintf("/v1/%s/meta", ds))
   what = sprintf("/v1/%s/meta", ds)
+  m = t2_api_get(what)
   for (f in c("handles", "tte_variables", "type_labels", "about", "default_cohorts", "survival_endpoints"))
     t2_api_need(m, f, what)
   .t2_api$meta$put(key, m)
@@ -170,30 +177,78 @@ t2_api_frames = function(ds, roles) {
 ## the values of probes (not clinical columns): a named list of vectors in
 ## sample order, each carrying its data type in attr "t2type"; a name the
 ## dataset lacks is absent from the result (and remembered as missing, so it is
-## not asked for again on every plot)
-t2_api_values = function(ds, probes) {
+## not asked for again on every plot).
+## fill: the not-detected values ("na" | "zero" | "floor", the service's `fill`). The ANSWER
+## decides what is on offer: the list carries attr "fill_options", the union the service
+## reported for exactly these probes (cached per probe set: the cached columns alone
+## cannot tell), and, for a fill that was applied, attrs "fill", "filled", "tested_n"
+## (named by probe; only probes with cells changed). A fill the answer does not list is
+## not asked for: the values come back as "na" and attr "fill" is absent.
+t2_api_values = function(ds, probes, fill = "na") {
   v = t2_api_version(ds)
-  key = function(p) paste0(ds, "|", v, "|", p)
-  out = list()
-  todo = character(0)
-  for (p in unique(probes)) {
-    hit = .t2_api$values$get(key(p))
-    if (is.null(hit)) todo = c(todo, p)
-    else if (!identical(hit, "missing")) out[[p]] = hit
-  }
-  for (chunk in split(todo, ceiling(seq_along(todo) / 100))) {
-    got = t2_api_versioned(ds, function(vv) sprintf("/v1/%s/values?v=%s&probes=%s", ds, vv,
-                                                    utils::URLencode(paste(chunk, collapse = ","), reserved = TRUE)),
-                           simplify = TRUE)
-    res = got$result
-    if (!identical(got$version, v)) { v = got$version }
-    for (col in res$columns) {
-      out[[col$name]] = structure(t2_api_vector(col), t2type = col$type)
-      .t2_api$values$put(key(col$name), out[[col$name]])
+  fill = if (fill %in% c("zero", "floor")) fill else "na"
+  probes = unique(probes)
+  key = function(p, f = "na") paste0(ds, "|", v, "|", p, if (f != "na") paste0("|fill=", f))
+  ask = function(chunk, f) t2_api_versioned(ds, function(vv) sprintf("/v1/%s/values?v=%s&probes=%s%s", ds, vv,
+                                  t2_urlencode(paste(chunk, collapse = ",")),
+                                  if (f != "na") paste0("&fill=", f) else ""), simplify = TRUE)
+  ## the values of all the probes under fill f: list(cols, options). `force` asks for every probe
+  ## (the answer's fill_options is for the probes of THAT request), else only for the uncached ones.
+  fetch = function(f, force = FALSE) {
+    out = list(); todo = character(0); opts = character(0)
+    for (p in probes) {
+      hit = if (force) NULL else .t2_api$values$get(key(p, f))
+      if (is.null(hit)) todo = c(todo, p)
+      else if (!identical(hit, "missing")) out[[p]] = hit
     }
-    for (p in as.character(unlist(res$missing))) .t2_api$values$put(key(p), "missing")
+    for (chunk in split(todo, ceiling(seq_along(todo) / 100))) {
+      f1 = f
+      got = tryCatch(ask(chunk, f), error = function(e)
+        if (f != "na" && grepl("fill not available", conditionMessage(e), fixed = TRUE)) NULL else stop(e))
+      if (is.null(got)) { got = ask(chunk, "na"); f1 = "na" }     # a chunk none of whose probes offers the fill
+      res = got$result
+      if (!identical(got$version, v)) v <<- got$version
+      opts = union(opts, as.character(unlist(res$fill_options)))
+      fl = unlist(res$filled); tn = unlist(res$tested_n)
+      one = function(x, nm) if (length(x) && nm %in% names(x)) as.integer(x[[nm]]) else NULL
+      for (col in res$columns) {
+        out[[col$name]] = structure(t2_api_vector(col), t2type = col$type,
+                                    t2filled = one(fl, col$name), t2tested = one(tn, col$name))
+        .t2_api$values$put(key(col$name, f1), out[[col$name]])
+      }
+      for (p in as.character(unlist(res$missing))) .t2_api$values$put(key(p, f1), "missing")
+    }
+    list(cols = out, options = opts, fresh = length(todo) == length(probes))
   }
-  out
+  ## the options the answer gave for this exact set of probes: asked once per set, then remembered
+  setkey = paste0(ds, "|", v, "|set|", paste(sort(probes), collapse = ","))
+  opts = .t2_api$fillopts$get(setkey)
+  base = NULL
+  if (is.null(opts)) {
+    ## the cached columns carry their type (attr t2type) and the meta says which fills a type offers; only
+    ## when the meta says nothing is the answer asked (once, forced if some columns came from the cache)
+    base = fetch("na")
+    mt = tryCatch(t2_api_meta(ds)$types, error = function(e) NULL)
+    tf = list(); for (t in mt) tf[[t$type]] = as.character(unlist(t$fill_options))
+    if (!any(lengths(tf) > 0) && !base$fresh) base = fetch("na", force = TRUE)
+    tys = unique(unlist(lapply(base$cols, function(x) attr(x, "t2type"))))
+    say = unlist(tf[intersect(tys, names(tf))])
+    opts = c("na", "zero", "floor")[c("na", "zero", "floor") %in% c("na", say, base$options)]
+    .t2_api$fillopts$put(setkey, opts)
+  }
+  if (fill != "na" && fill %in% opts) {
+    out = fetch(fill)$cols
+    fl = vapply(out, function(x) attr(x, "t2filled") %||% 0L, 0L)
+    tn = vapply(out, function(x) attr(x, "t2tested") %||% NA_integer_, 0L)
+    fl = fl[fl > 0]
+    ## the samples whose cell the fill set: missing in the na frame, a value in the filled one
+    nacols = fetch("na")$cols
+    smp = t2_api_clinical(ds)$sample
+    ids = lapply(stats::setNames(names(fl), names(fl)), function(p) smp[is.na(nacols[[p]]) & !is.na(out[[p]])])
+    return(structure(out, fill_options = opts, fill = fill, filled = fl, tested_n = tn[names(fl)], filled_ids = ids))
+  }
+  if (is.null(base)) base = fetch("na")
+  structure(base$cols, fill_options = opts)
 }
 
 ## drop the unused levels of the factor columns `cols` of a frame; only a column
@@ -213,7 +268,7 @@ t2_droplevels_cols = function(df, cols) {
 ## the filters emptied.
 gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                     cohort = 'all', makefactors = TRUE, dbfile = "TCGA",
-                    roles = NULL, keep_samples = NULL, rules = list(), ...) {
+                    roles = NULL, keep_samples = NULL, rules = list(), fill = "na", ...) {
   ds = dbfile
   if (is.null(roles)) roles = t2_api_resolve(ds)$roles
   stc = t2_role(roles, 'sampletype_col')
@@ -226,7 +281,7 @@ gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   is_clin = probes %in% colnames(clin) & !(probes %in% virtual_cols)
   is_virtual = probes %in% virtual_cols
   db_probes = probes[!is_clin & !is_virtual]
-  vals = if (length(db_probes)) t2_api_values(ds, db_probes) else list()
+  vals = if (length(db_probes)) t2_api_values(ds, db_probes, fill) else list()
   base = if (makefactors) fr$fac else {
     ## no factors, except the sample-type column's declared level order (as gitr())
     b = clin
@@ -272,6 +327,12 @@ gitr_api = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   }
   out = t2_droplevels_cols(out, c('sample', stc, probes))
   rownames(out) = NULL
+  ## the answer's word on not-detected values (what the app reads to offer the choice)
+  attr(out, "fill_options") = attr(vals, "fill_options") %||% "na"
+  if (!is.null(attr(vals, "fill", exact = TRUE))) {
+    attr(out, "fill") = attr(vals, "fill", exact = TRUE); attr(out, "filled") = attr(vals, "filled"); attr(out, "tested_n") = attr(vals, "tested_n")
+    attr(out, "filled_rows") = lapply(attr(vals, "filled_ids"), function(i) as.character(out$sample) %in% as.character(i))   # after the filters, as gitr()
+  }
   out
 }
 

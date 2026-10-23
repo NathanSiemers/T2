@@ -1,0 +1,30 @@
+# the app's data layer: curl to the t2api service named by T2_API_URL / T2_CONTACT_URL (docs/API.md); the only network code in the Shiny app
+t2_api_client\.R:[0-9]+:.*(curl::|Sys\.getenv\("T2_API_URL")
+t2_contact\.R:[0-9]+:.*(curl::|Sys\.getenv\("T2_(CONTACT|API)_URL")
+# where the app finds Thanos (the sibling checkout /srv/shiny-server/Thanos, or T2_THANOS in tests)
+t2_thanos\.R:25:|t2_thanos\.R:[0-9]+:.*Sys\.getenv\("T2_THANOS"
+# builders: downloads from the data sources listed in hosts.txt (GDC viral table, Cell supplement, CPTAC/PDC, TCGA-TARGET-GTEx), run by hand
+(CPTAC/00-download|TCGATARGETGTEX/00-download|TCGA/135-viral|TCGA/275-MSI)\.R:[0-9]+:.*(download\.file|httr2)
+CPTAC/00-download\.R:[0-9]+:.*options\(timeout
+# builders: package installation on a build machine (pinned neither by version nor by hash: see report, hygiene)
+(TCGA/020-database_connection|TCGA/035-download|TCGA/270-estimate|install_packages|Testing/test_download)\.R:[0-9]+:.*(install\.packages|install_github)
+TCGA/035-download\.R:[0-9]+:.*system\('mkdir Data'\)
+TCGA/280-add_signatures_to_db\.R:[0-9]+:.*system\('touch restart\.txt'\)
+TCGA/310-optimize\.R:[0-9]+:.*system\(paste0\('sqlite3 '
+sqlite_vacuum\.R:[0-9]+:.*system\('sqlite3 tcga\.db "VACUUM;"'\)
+Util/generate_erd\.R:[0-9]+:.*system\((pdf_cmd|html_cmd)
+# builders' own environment variables (output paths, subsets); Sys.setenv sets build-local variables only
+(CPTAC/test_cptac|TCGA/00-master)\.R:[0-9]+:.*Sys\.setenv
+plot_style\.R:37:.*Sys\.setenv\(XDG_DATA_HOME
+# builder records the build environment (variable NAMES and values) in the env_env table; scan flags it so a secret in the build shell is noticed (see report)
+TCGA/290-record_environment\.R:[0-9]+:.*(Sys\.getenv\(\)|devtools::)
+# test harness: eval of a fixed local prototype file; evil-input strings of the fuzzers (payloads, never executed by us)
+Testing/benchmark_queries\.R:20:
+(Testing/)?test_[A-Za-z_]+\.R:[0-9]+:.*system\('id'\)
+(Testing/)?test_[A-Za-z_]+\.R:[0-9]+:.*(rm -rf|file\.remove)
+# `.First`-like names inside comments or data (Frame_Shift etc.) are not hooks
+# a commented-out line and an error message that tells the operator to install packages (not calls)
+TCGA/270-estimate\.R:69:##try
+app\.R:15:.*install\.packages\(c\(
+# root copy of the benchmark harness: evaluates the first lines of a fixed local prototype file
+benchmark_queries\.R:20:

@@ -1,0 +1,52 @@
+--- /scratch/Docker/Nginx/nginx.conf	2026-10-20 18:54:40.063711494 -0700
++++ pending/nginx.conf.proposed	2026-10-22 22:39:16.890906455 -0700
+@@ -81,7 +81,10 @@
+     ##ssl_certificate_key /etc/nginx/certs/wildcard_fiveprime2.key;
+     ssl_certificate_key /etc/nginx/certs/wildcard_fiveprime2.key;
+     ##ssl_certificate_key /etc/nginx/certs/1bff564570e944b1bff564570e944b.key;
+-    error_log /var/log/fiveprime.ssl.log;
++    ## to the container's stderr (docker logs, rotated by the json-file driver), not a file that grows
++    ## inside the container; limit_req_log_level: rejected requests are logged as warn
++    error_log /dev/stderr warn;
++    limit_req_log_level warn;
+ 
+     ## basic abuse limits (a Shiny page load pulls ~30 assets, hence the burst)
+     client_max_body_size 1m;
+@@ -151,11 +154,14 @@
+     ## (T2Mobile/). Only /v1/... and /healthz are public: /api/t2/v1/X -> /v1/X.
+     ## The API's access log keeps failed requests only (see $t2api_failed above); the
+     ## error log is unchanged (rate limiting and upstream failures are reported there too).
+-    location = /api/t2/healthz { rewrite ^ /healthz break; proxy_pass http://t2api_up; proxy_set_header Connection ""; access_log /var/log/nginx/access.log main if=$t2api_failed; }
++    location = /api/t2/healthz { rewrite ^ /healthz break; proxy_pass http://t2api_up; proxy_set_header Connection ""; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header Host $host; access_log /var/log/nginx/access.log main if=$t2api_failed; }
+     location = /api/t2/v1/contact {
+         rewrite ^/api/t2/(.*)$ /$1 break;
+         proxy_pass http://t2api_up;
+         proxy_set_header Connection "";
++        proxy_set_header X-Real-IP $remote_addr;
++        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
++        proxy_set_header Host $host;
+         client_max_body_size 32k;
+         limit_req zone=t2contact_req burst=3 nodelay;
+         limit_conn fiveprime_conn 5;
+@@ -166,10 +172,20 @@
+         rewrite ^/api/t2/(.*)$ /$1 break;
+         proxy_pass http://t2api_up;
+         proxy_set_header Connection "";          # keep-alive to the service (no websocket here)
++        ## a location that sets any proxy_set_header inherits none from the server level: the client
++        ## address must be repeated here, or the service sees only the Nginx container
++        proxy_set_header X-Real-IP $remote_addr;
++        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
++        proxy_set_header Host $host;
+         proxy_buffering on;                      # a cached answer needs buffering (off site-wide for Shiny)
+         proxy_read_timeout 90s;
+         proxy_cache t2api_cache;
+-        proxy_cache_key "$request_uri|$t2api_enc";
++        ## the key is the path plus the arguments the service reads (probes, probe, v, fill, q, limit,
++        ## all), so a made-up parameter cannot make a new cache entry; a repeated probes= or probe=
++        ## (the key sees only the first) is refused rather than answered from the wrong entry
++        if ($args ~ "(^|&)probes=[^&]*&(.*&)?probes=") { return 400; }
++        if ($args ~ "(^|&)probe=[^&]*&(.*&)?probe=") { return 400; }
++        proxy_cache_key "$uri|$arg_probes|$arg_probe|$arg_v|$arg_fill|$arg_q|$arg_limit|$arg_all|$t2api_enc";
+         proxy_cache_methods GET HEAD;
+         proxy_cache_lock on;                     # one fetch per key, the others wait for it
+         proxy_cache_lock_timeout 5s;

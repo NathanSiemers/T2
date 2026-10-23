@@ -39,22 +39,30 @@ T2_CONTROLS = list(
     head(v, max_n)
 }
 
+## The cohort choice. Rule: "all" together with named cohorts means all (the
+## dataset-wide choice contains every cohort; gitr() would otherwise draw only the
+## named ones while the subtitle said "all"), so the pick is reduced to "all".
+.t2_cohort_pick = function(v, cohorts, max_n) {
+    v = .t2_pick(v, c('all', cohorts), Inf)
+    if ('all' %in% v) 'all' else head(v, max_n)
+}
+
 ## single value from `allowed`, else default
 .t2_one = function(v, allowed, default) {
     v = as.character(unlist(v))[1]
-    if (length(v) == 1 && !is.na(v) && v %in% allowed) v else default
+    if (!is.na(v) && v %in% allowed) v else default
 }
 
 ## single logical, else default
 .t2_flag = function(v, default = FALSE) {
     v = suppressWarnings(as.logical(unlist(v))[1])
-    if (length(v) == 1 && !is.na(v)) v else default
+    if (!is.na(v)) v else default
 }
 
 ## nearest value from a numeric choice list, else default
 .t2_num = function(v, choices, default) {
     v = suppressWarnings(as.numeric(unlist(v))[1])
-    if (length(v) != 1 || is.na(v)) return(default)
+    if (is.na(v)) return(default)
     choices[which.min(abs(choices - v))]
 }
 
@@ -68,7 +76,7 @@ sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable 
         y         = .t2_pick(input$y, vars, T2_LIMITS$y_vars),
         color     = .t2_one(input$color, c('probe', vars), ""),
         size      = .t2_one(input$size, vars, ""),
-        cohort    = .t2_pick(input$cohort, c('all', unname(b$mycohorts)), T2_LIMITS$cohorts),
+        cohort    = .t2_cohort_pick(input$cohort, unname(b$mycohorts), T2_LIMITS$cohorts),
         facet     = .t2_pick(input$facet, vars, T2_LIMITS$facet_vars),
         condition = .t2_pick(input$condition, vars, T2_LIMITS$condition_vars),
         pcortype  = .t2_one(input$pcortype, T2_CONTROLS$pcortype$choices, T2_CONTROLS$pcortype$default),

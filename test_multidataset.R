@@ -5,6 +5,7 @@
 suppressMessages({
   source("global.R")
   source("lib.R")                          # builds the default bundle + globals; stops without T2_API_URL
+  source("input_validation.R")
 })
 
 source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
@@ -15,7 +16,9 @@ cat("  datasets:", paste(ds, collapse = ", "), "\n")
 ok(all(c("TCGA", "DEMO") %in% ds), "TCGA and DEMO both listed")
 ok(t2_default_dataset() == "TCGA", "default dataset is TCGA")
 srcs <- list_sources()
-ok(all(ds %in% sub("\\|.*", "", srcs)), "the Data set menu is built from /v1/datasets and covers every dataset")
+hid <- vapply(t2_api_datasets(), function(d) t2_dataset_hidden(d), NA)
+ok(all(ds[!hid] %in% sub("\\|.*", "", srcs)) && !any(ds[hid] %in% sub("\\|.*", "", srcs)),
+   "the Data set menu is built from /v1/datasets and covers every dataset that is not hidden")
 
 cat("\n== Bundles: what the service declares ==\n")
 bt <- load_dataset_bundle("TCGA")
@@ -77,6 +80,16 @@ if ("cptac" %in% ds) {
 bw <- list(menu = bt$menu, type_labels = bt$type_labels)
 ok(identical(t2_title_name(c("TP53.mut", "CD8A", "TP53.cnv"), bw), c("TP53 mutation", "CD8A", "TP53 CNA")), "title words from type_labels (TP53.mut -> 'TP53 mutation', bare RNA unchanged)")
 
+## a part of a collection names itself in the plot title (not the whole collection)
+btg <- load_source_bundle("tcgatargetgtex|GTEx")
+whole <- load_source_bundle("tcgatargetgtex")
+ok(identical(t2_plot_ctx(btg)$label, btg$source$label) && !identical(t2_plot_ctx(btg)$label, whole$label) &&
+   identical(t2_plot_ctx(whole)$label, whole$label),
+   sprintf("source part: the title's dataset word is the part's label ('%s', not '%s')", t2_plot_ctx(btg)$label, whole$label))
+pg <- t2_figure_object(quiet(fun_plot1(list(x = "TP53", y = "CD8A", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(btg))))
+ok(grepl(paste0("across ", btg$source$label), pg$labels$title, fixed = TRUE) && !grepl(whole$label, pg$labels$title, fixed = TRUE),
+   "the plot title reads 'across <part label>'")
+
 cat("\n== gitr against TCGA ==\n")
 dt <- gitr(c("CD8A", "cohort", "sample_type"),
            dbfile = bt$path, roles = bt$roles)
@@ -132,5 +145,19 @@ if (!"cptac" %in% ds) {
   ok(nrow(dn) < nrow(dc), "nonormal drops the normal adjacent tissue")
   ok(is.numeric(dc$OS.time) && all(dc$OS %in% c(0, 1, NA)), "survival columns OS / OS.time")
 }
+
+## t2_write_meta / t2_write_types round trip on a throwaway file (dataset_meta + types.fill_options)
+cat("\n== t2_write_meta / t2_write_types ==\n")
+if (!exists("T2_META_KEYS")) { if (!exists("set_t2_sparse")) source("t2_views.R"); source("t2_build_lib.R") }
+wf <- tempfile(fileext = ".db"); wc <- DBI::dbConnect(RSQLite::SQLite(), wf)
+invisible(quiet(t2_write_types(wc, data.frame(type = c("expr", "mut"), fill_options = c("na|zero|floor", "na"), stringsAsFactors = FALSE))))
+ok(identical(t2_write_meta(wc, list(hidden = 1, title = "round trip")), c("hidden", "title")), "t2_write_meta runs (no error, returns the keys written)")
+dm <- DBI::dbGetQuery(wc, "SELECT key, value FROM dataset_meta"); ok(identical(dm$value[dm$key == "hidden"], "1") && identical(dm$value[dm$key == "title"], "round trip"), "dataset_meta read back")
+ty <- DBI::dbGetQuery(wc, "SELECT type, fill_options FROM types ORDER BY type")
+ok(identical(ty$fill_options, c("na|zero|floor", "na")), "types.fill_options read back")
+invisible(quiet(t2_write_types(wc, data.frame(type = "expr", fill_options = "na|zero", stringsAsFactors = FALSE), allow_new = FALSE)))
+ok(DBI::dbGetQuery(wc, "SELECT fill_options f FROM types WHERE type = 'expr'")$f == "na|zero", "t2_write_types updates fill_options on an existing type")
+ok(inherits(try(t2_write_types(wc, data.frame(type = "expr", fill_options = "zero"), allow_new = FALSE), silent = TRUE), "try-error"), "a bad fill_options is refused")
+DBI::dbDisconnect(wc); unlink(wf)
 
 finish("test_multidataset")

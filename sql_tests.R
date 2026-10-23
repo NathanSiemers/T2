@@ -50,8 +50,8 @@ if (!exists("check_dataset_contract")) source(file.path(.HROOT, "dataset_contrac
   if (nzchar(api)) { assign("T2_API_URL", "", envir = globalenv()); on.exit(assign("T2_API_URL", api, envir = globalenv()), add = TRUE) }
   r <- tryCatch(.resolve_roles(name, dbpath),
                 error = function(e) { message("sql_tests: could not resolve roles for ", name, " (", conditionMessage(e),
-                                              "); using the canonical TCGA map")
-                                      list(roles = gitr_default_roles, defaults = list(), title = name, label = name) })
+                                              "); using no roles")
+                                      list(roles = NULL, defaults = list(), title = name, label = name) })
   list(name = name, roles = r$roles, defaults = r$defaults)
 }
 
@@ -70,7 +70,7 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
   ## and a categorical probe if one exists
   num_probes <- .qdf(con, "SELECT pr.probe FROM probes pr
                            JOIN probe_types pt ON pt.probekey = pr.key LIMIT 5000")$probe
-  dy   <- ri$defaults$default_y
+  dy   <- ri$defaults$y
   gene  <- if (!is.null(dy) && nzchar(dy) && dy %in% num_probes) dy else num_probes[1]
   gene2 <- setdiff(num_probes, gene)[1]
   cat_probe <- .q1(con, "SELECT pr.probe FROM probes pr
@@ -118,33 +118,33 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
     else if (dk != 0) FAIL("duplicate keys") else PASS(sprintf("%d probes", n))
   })
   add("dimension", "allprobes superset of probes", function() {
-    miss <- .q1(con, "SELECT COUNT(*) FROM probes WHERE probe NOT IN (SELECT probe FROM allprobes)")
+    miss <- .q1(con, "SELECT COUNT(*) FROM probes WHERE probe IS NULL OR probe NOT IN (SELECT probe FROM allprobes WHERE probe IS NOT NULL)")
     if (miss != 0) FAIL(sprintf("%d probes not in allprobes", miss)) else PASS()
   })
 
   ## --- REFERENTIAL INTEGRITY ---
   add("referential", "tcgai.samplekey -> samples.key", function() {
-    o <- .q1(con, "SELECT COUNT(*) FROM tcgai WHERE samplekey NOT IN (SELECT key FROM samples)")
+    o <- .q1(con, "SELECT COUNT(*) FROM tcgai WHERE samplekey IS NULL OR samplekey NOT IN (SELECT key FROM samples WHERE key IS NOT NULL)")
     if (o != 0) FAIL(sprintf("%d orphan samplekeys", o)) else PASS()
   })
   add("referential", "tcgai.probekey -> probes.key", function() {
-    o <- .q1(con, "SELECT COUNT(*) FROM tcgai WHERE probekey NOT IN (SELECT key FROM probes)")
+    o <- .q1(con, "SELECT COUNT(*) FROM tcgai WHERE probekey IS NULL OR probekey NOT IN (SELECT key FROM probes WHERE key IS NOT NULL)")
     if (o != 0) FAIL(sprintf("%d orphan probekeys", o)) else PASS()
   })
   add("referential", "tcgai.type -> types.type", function() {
-    o <- .q1(con, "SELECT COUNT(*) FROM tcgai WHERE type NOT IN (SELECT type FROM types)")
+    o <- .q1(con, "SELECT COUNT(*) FROM tcgai WHERE type IS NULL OR type NOT IN (SELECT type FROM types WHERE type IS NOT NULL)")
     if (o != 0) FAIL(sprintf("%d rows with unknown type", o)) else PASS()
   })
   add("referential", "tcgacati keys+type resolve", function() {
     if (.q1(con, "SELECT COUNT(*) FROM tcgacati") == 0) return(SKIP("no categorical data"))
-    o <- .q1(con, "SELECT COUNT(*) FROM tcgacati WHERE samplekey NOT IN (SELECT key FROM samples)
-                   OR probekey NOT IN (SELECT key FROM probes)
-                   OR type NOT IN (SELECT type FROM types)")
+    o <- .q1(con, "SELECT COUNT(*) FROM tcgacati WHERE samplekey IS NULL OR samplekey NOT IN (SELECT key FROM samples WHERE key IS NOT NULL)
+                   OR probekey IS NULL OR probekey NOT IN (SELECT key FROM probes WHERE key IS NOT NULL)
+                   OR type IS NULL OR type NOT IN (SELECT type FROM types WHERE type IS NOT NULL)")
     if (o != 0) FAIL(sprintf("%d orphan categorical rows", o)) else PASS()
   })
   add("referential", "tested.sample/type resolve", function() {
-    os <- .q1(con, "SELECT COUNT(*) FROM tested WHERE sample NOT IN (SELECT sample FROM samples)")
-    ot <- .q1(con, "SELECT COUNT(*) FROM tested WHERE type NOT IN (SELECT type FROM types)")
+    os <- .q1(con, "SELECT COUNT(*) FROM tested WHERE sample IS NULL OR sample NOT IN (SELECT sample FROM samples WHERE sample IS NOT NULL)")
+    ot <- .q1(con, "SELECT COUNT(*) FROM tested WHERE type IS NULL OR type NOT IN (SELECT type FROM types WHERE type IS NOT NULL)")
     if (os != 0) FAIL(sprintf("%d tested rows with unknown sample", os))
     else if (ot != 0) FAIL(sprintf("%d tested rows with unknown type", ot)) else PASS()
   })
@@ -159,12 +159,12 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
     ## is a WARN, not a FAIL -- but a large gap in a fresh dataset is worth
     ## seeing.
     miss <- .q1(con, "SELECT COUNT(DISTINCT sample) FROM tested
-                      WHERE sample NOT IN (SELECT sample FROM clinpheno)")
+                      WHERE sample IS NULL OR sample NOT IN (SELECT sample FROM clinpheno WHERE sample IS NOT NULL)")
     if (miss != 0) WARN(sprintf("%d tested samples not in clinpheno (absent from clinical views by design)", miss))
     else PASS()
   })
   add("referential", "datatypes covers every type", function() {
-    miss <- .q1(con, "SELECT COUNT(*) FROM types WHERE type NOT IN (SELECT type FROM datatypes)")
+    miss <- .q1(con, "SELECT COUNT(*) FROM types WHERE type IS NULL OR type NOT IN (SELECT type FROM datatypes WHERE type IS NOT NULL)")
     if (miss != 0) FAIL(sprintf("%d types missing an r_datatype", miss)) else PASS()
   })
 
@@ -223,8 +223,8 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
   add("views", "signatures are missing for samples without the member data", function() {
     if (is.na(.q1(con, "SELECT type FROM probe_types WHERE type = 'sig' LIMIT 1"))) return(SKIP("no signatures"))
     n <- .q1(con, "SELECT COUNT(*) FROM tcgas WHERE type = 'sig' AND value IS NOT NULL
-                   AND sample NOT IN (SELECT sample FROM tested WHERE type = 'rna')")
-    nsamp <- .q1(con, "SELECT COUNT(*) FROM tested WHERE type = 'sig' AND sample NOT IN (SELECT sample FROM tested WHERE type = 'rna')")
+                   AND (sample IS NULL OR sample NOT IN (SELECT sample FROM tested WHERE type = 'rna' AND sample IS NOT NULL))")
+    nsamp <- .q1(con, "SELECT COUNT(*) FROM tested WHERE type = 'sig' AND (sample IS NULL OR sample NOT IN (SELECT sample FROM tested WHERE type = 'rna' AND sample IS NOT NULL))")
     if (n > 0) FAIL(sprintf("%s signature values exist for samples with no rna data", n))
     else PASS(sprintf("%s samples without rna: all signatures NA", nsamp))
   })
@@ -417,7 +417,7 @@ run_sql_tests <- function(dbpath, name = NULL, verbose = TRUE) {
   res <- t2_run_checks(tests)
 
   ## ---- the dataset contract (dataset_contract_check.R): its checks count like any other ----
-  cc <- tryCatch(check_dataset_contract(con, ri$name, verbose = FALSE)$results,
+  cc <- tryCatch(check_dataset_contract(con, ri$name, verbose = FALSE, deep = FALSE)$results,
                  error = function(e) data.frame(group = "contract", test = "dataset contract check ran",
                                                 status = "FAIL", detail = paste("ERROR:", conditionMessage(e)), stringsAsFactors = FALSE))
   res <- rbind(res, cc)

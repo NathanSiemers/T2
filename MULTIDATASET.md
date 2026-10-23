@@ -65,6 +65,7 @@ small **`dataset_meta(key, value)`** table naming its **role map**:
 | `heme_values` | comma-sep cohort values to drop for *Exclude heme* | `LAML,THYM,DLBC` |
 | `sampletype_levels` | ordered factor levels for the sample-type column | (7 TCGA levels) |
 | `default_x/y/color/size/condition` | initial selectize selections | `cohort` / `CD8A` / `sample_type` / … |
+| `hidden` | `1` = served but left out of the apps' dataset menus (DEMO); `0` or absent = listed | `1` |
 
 The canonical `tcga.db` predates this convention, so its role map is supplied as
 a hard-coded fallback in `dataset_registry.R`. Any column a dataset lacks simply
@@ -76,7 +77,7 @@ automatically.
 
 | File | Change |
 |---|---|
-| `dataset_registry.R` | **new** — discovers datasets (`tcga.db` + `datasets/*.db`), resolves each one's role map (TCGA fallback → `dataset_meta` → generic introspection), exposes `list_datasets()`, `dataset_info()`, `dataset_db_path()`. |
+| `dataset_registry.R` | **new** — discovers datasets (`tcga.db` + `datasets/*.db`), resolves each one's role map (TCGA fallback → `dataset_meta` → generic introspection), exposes `discover_datasets()`, `dataset_info()`. |
 | `database_connection_shiny.R` | added `open_dataset_con(dbfile)`; default `con` still points at `tcga.db` for startup. |
 | `gitr.R` | added `dbfile` + `roles` params; the TCGA-specific clinical synthesis (`subtype`/`cohort`/`lcohort`), the nonormal/noheme filters, and sample-type factoring are now driven by the role map and guarded by column presence. |
 | `lib.R` | added `load_dataset_bundle(name)` — opens the chosen db and computes every dataset-anchored object (probe lists, cohorts, role map, defaults, title); `plotter`/`fun_plot1`/`fun_table1` thread `dbfile`/`roles`/`dataset_label`; de-hardcoded the TCGA-only `complete.cases` columns and plot caption. |
@@ -99,6 +100,13 @@ carries its suffix (`CD8A.prot`, `MAPK1_Y187.phospho`, `CD8A.cnv`, `TP53.mut`, `
 because both readers take the type from the text after the last dot and `probes.probe` is
 unique. Its proteome, phosphoproteome and copy number are `sparse = 0` types (no row = NA), its
 RNA and binary mutations `sparse = 1` (no row = 0). The data decisions are in `CPTAC/SPEC.md`.
+
+The optional `types.fill_options` column (`na|zero|floor`, `na` first; absent = `na` only; only on
+`sparse = 0` types) says how a sample that was TESTED for the type but has no stored value may be
+served: missing (`na`), 0 (`zero`) or the probe's detection floor (`floor`: the smallest stored value
+among the tested samples of the same cohort, else of the dataset). Samples never tested stay missing.
+`Rscript dataset_meta.R type-fill <db> prot=na|zero|floor ...` sets it; `gitr(..., fill = )` and the
+service (`values?fill=`) read it, and the answer's `fill_options` tells the app whether to offer the choice.
 
 ## How to add a new dataset
 

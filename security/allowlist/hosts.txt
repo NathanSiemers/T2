@@ -1,0 +1,40 @@
+# --- this deployment ---
+www.fiveprime.org
+fiveprime.org
+t2api
+t2api-web
+t2api-dev
+127.0.0.1
+# upstream name defined in nginx.conf (resolves to t2api:8080)
+t2api_up
+# --- data sources used by the builders (TCGA/, CPTAC/, TCGATARGETGTEX/) and the citations ---
+xenabrowser.net
+pancanatlas.xenahubs.net
+toil-xena-hub.s3.us-east-1.amazonaws.com
+gdc.cancer.gov
+api.gdc.cancer.gov
+pdc.cancer.gov
+cptac-pancancer-data.s3.us-west-2.amazonaws.com
+kb.linkedomics.org
+gtexportal.org
+www.cancer.gov
+ocg.cancer.gov
+www.cell.com
+pubmed.ncbi.nlm.nih.gov
+doi.org
+# --- toolchain downloads ---
+cloud.r-project.org
+r-forge.r-project.org
+# --- iOS release tooling and docs ---
+appstoreconnect.apple.com
+developer.apple.com
+www.apple.com
+# GitHub: git remote and the CI/XcodeGen release download in mac_setup.sh
+github.com
+# --- placeholders that never resolve to a real service (tests, string fragments) ---
+example.org
+x.org
+stub.invalid
+x
+host
+cptac-pancancer-data

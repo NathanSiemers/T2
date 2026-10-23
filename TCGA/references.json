@@ -74,7 +74,7 @@
     "pmid": "29625050",
     "doi": "10.1016/j.cell.2018.03.035",
     "url": "",
-    "note": "Describes the cancer signaling pathways that are altered in these tumors, used for pathway-level annotations."
+    "note": "Describes the ten cancer signaling pathways altered in these tumors; background for reading the mutation and copy-number data (no variable of this database is computed from it)."
   },
   {
     "group": "The TCGA Pan-Cancer Atlas (2018)",

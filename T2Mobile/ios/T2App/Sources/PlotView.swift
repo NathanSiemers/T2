@@ -62,12 +62,12 @@ struct PlotView: View {
             }
             if !scene.warnings.isEmpty {
                 Section("Notes") {
-                    ForEach(scene.warnings, id: \.self) { Text($0).font(.footnote) }
+                    ForEach(Array(scene.warnings.enumerated()), id: \.offset) { _, warning in Text(warning).font(.footnote) }
                 }
             }
             if !scene.stats.isEmpty {
                 Section("Statistics") {
-                    ForEach(scene.stats, id: \.label) { line in
+                    ForEach(Array(scene.stats.enumerated()), id: \.offset) { _, line in
                         LabeledContent(line.label) { Text(line.value).monospacedDigit() }
                     }
                     Button { sourcesOpen = true } label: {
@@ -110,7 +110,7 @@ struct PlotView: View {
                 }
             }
             Section {
-                Button("Export the table (CSV)") { tableURL = model.writeTable() }
+                Button("Export the table (CSV)") { Task { tableURL = await model.writeTable() } }
                     .accessibilityIdentifier("table-make")
                 if let tableURL {
                     ShareLink(item: tableURL) { Label("Share or save the table", systemImage: "square.and.arrow.up") }

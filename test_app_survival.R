@@ -57,8 +57,19 @@ testServer(shiny::shinyAppDir("."), {
   b <- bundle()
   ok(length(b$tte) == 0 && is.null(sanitize_t2_input(list(x = "OS", y = "CD8A"), b)$x),
      "a data set without time-to-event variables does not accept OS as X")
+  ## the survival hint: the dataset's own tte names, only when it has some
+  ok(is.null(t2_survival_hint(b)), "no time-to-event variables: no survival hint")
+  session$setInputs(dataset = "TCGA")
+  ok(identical(t2_survival_hint_text(bundle()$tte), "Survival curves: choose OS, PFI, DSS or DFI as X (Kaplan-Meier by groups of Y)"),
+     "TCGA hint: choose OS, PFI, DSS or DFI as X (Kaplan-Meier by groups of Y)")
+  hh <- as.character(t2_survival_hint(bundle()))
+  ok(grepl("OS: Overall Survival", hh, fixed = TRUE) && grepl("t2-survival-hint", hh, fixed = TRUE), "the hint carries the labels of the variables")
+  ok(grepl("choose OS, PFI, DSS or DFI as X", as.character(output$about_survival_hint$html), fixed = TRUE) &&
+     grepl("t2-hint-x", as.character(output$x_survival_hint$html), fixed = TRUE),
+     "the hint shows on the About tab and under the X selector")
   session$setInputs(dataset = "cptac")
   b <- bundle()
+  ok(identical(t2_survival_hint_text(b$tte), "Survival curves: choose OS or PFI as X (Kaplan-Meier by groups of Y)"), "cptac hint: OS or PFI")
   ok(identical(tte_names(b), c("OS", "PFI")) && identical(sanitize_t2_input(list(x = "PFI", y = "CD8A"), b)$x, "PFI") &&
      is.null(sanitize_t2_input(list(x = "DSS", y = "CD8A"), b)$x),
      "cptac offers OS and PFI as X, not TCGA's DSS")
@@ -69,5 +80,22 @@ testServer(shiny::shinyAppDir("."), {
   session$setInputs(dataset = "DEMO", x = "OS", y = "GENE01", plot_btn = 21)
   rd <- plot_result()
   ok(inherits(rd, "ggsurvplot") && grepl("Overall Survival", rd$plot$labels$title), "DEMO: the label of its tte entry titles the plot (Overall Survival)")
+
+  ## ---- B3: a sparse marker (60% equal values) merges cut points: the groups are
+  ## named by position among the surviving cuts, the count is the real one, and a
+  ## grouping with a group under 5 samples is refused ----
+  set.seed(7)
+  sparse <- c(rep(0, 60), rnorm(40, 5))
+  qg <- t2_quantile_groups(sparse, 3)
+  ok(!is.null(qg$grp) && qg$n == 2 && identical(levels(qg$grp), c("Low", "High")),
+     "sparse marker, 3 asked: 2 groups named Low/High (not Low/Mid)")
+  ok(identical(levels(t2_quantile_groups(rnorm(100), 3)$grp), c("Low", "Mid", "High")), "a continuous marker keeps Low/Mid/High")
+  ok(identical(levels(t2_quantile_groups(rnorm(100), 4)$grp), paste0("Q", 1:4)), "4 groups: Q1..Q4")
+  tiny <- c(rep(0, 50), rep(1, 47), 2, 3, 4)
+  ok(!is.null(t2_quantile_groups(tiny, 3)$refused), "a grouping that leaves a group with fewer than 5 samples is refused")
+  ## ---- B5: a covariate fit that is not possible says so ----
+  adj <- residualize_on(rnorm(50), data.frame(f = factor(rep("a", 50))))
+  ok(identical(attr(adj, "adjusted"), FALSE) && length(adj) == 50, "one-level factor condition: residualize_on reports adjusted = FALSE")
+  ok(is.null(attr(residualize_on(rnorm(50), data.frame(z = rnorm(50))), "adjusted")), "a possible fit carries no adjusted flag")
 })
 finish("test_app_survival")

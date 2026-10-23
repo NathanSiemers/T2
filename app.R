@@ -123,7 +123,13 @@ publish_tab_ui = function() {
                     sty('title_size'), sty('subtitle_size'), sty('axis_title_size'), sty('axis_text_size'),
                     sty('strip_size'), sty('legend_size'), sty('point_size'), sty('alpha'), sty('ncols')),
                 inline(checkboxInput("pub_show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
-                inline(checkboxInput("pub_source", "Show source line", value = TRUE)),
+                ## a switch per text element of the figure (all on by default)
+                div(class = "t2-pub-text", tags$b("Text on the figure: "),
+                    inline(checkboxInput("pub_show_title", "Title", value = TRUE)),
+                    inline(checkboxInput("pub_show_subtitle", "Subtitle", value = TRUE)),
+                    inline(checkboxInput("pub_show_caption", "Caption (filters)", value = TRUE)),
+                    inline(checkboxInput("pub_source", "Source line", value = TRUE)),
+                    inline(checkboxInput("pub_show_axis_titles", "Axis titles", value = TRUE))),
                 div(class = "t2-cite",
                     conditionalPanel("!input.pub_source",
                         tags$b("You have removed the source line."), " That is fine, but please cite T2 in any ",
@@ -155,12 +161,21 @@ publish_tab_ui = function() {
 ## data sources known at startup (every dataset and its parts): the Filter tab
 ## holds one (hidden) Thanos panel set per source, shown for whichever is selected
 T2_SOURCES = list_sources()
+## ...and every served source, hidden ones included: a hidden dataset (DEMO) is not offered in the
+## menu but still opens by name (the test suites, a deliberate link)
+T2_SOURCES_SERVED = list_sources(include_hidden = TRUE)
 
 ## the host of a link, for its label ("https://xenabrowser.net/datapages/" -> "xenabrowser.net")
 t2_url_host = function(url) {
     h = sub("^[a-zA-Z][a-zA-Z0-9+.-]*://", "", url)
     h = sub("[/?#].*$", "", h)
     sub("^www\\.", "", h)
+}
+
+## a link target that is safe to put in an href: http(s) only, else ""
+t2_safe_href = function(url) {
+    url = as.character(url)[1]
+    if (is.na(url) || !grepl("^https?://", url)) "" else url
 }
 
 ## The About note on time-to-event analysis, from the bundle's tte list
@@ -215,7 +230,7 @@ filter_tab_ui = function() {
                  tags$i("other"), " filters, with this variable's own selection highlighted. ",
                  "The data set, cohort and sample choices on the Select tab decide which samples are shown here at all. ",
                  "Filters take effect on the plot when you press ", tags$b("Plot"), "."),
-        lapply(unname(T2_SOURCES), function(key) {
+        lapply(unname(T2_SOURCES_SERVED), function(key) {
             conditionalPanel(
                 condition = sprintf("input.dataset == %s",
                                     jsonlite::toJSON(key, auto_unbox = TRUE)),
@@ -261,6 +276,11 @@ ui = fluidPage(
         .t2-copy { font-size: 90%; }
         .t2-statement { font-size: 105%; margin: 8px 0 14px 0; padding: 10px 14px; background: #fff8e1;
             border-left: 4px solid #e08e0b; max-width: 1100px; }
+        .t2-survival-hint { margin: 0 0 12px 0; max-width: 1100px; }
+        .t2-survival-hint.t2-hint-x { font-size: 88%; color: #555; margin: 0 0 8px 0; }
+        .t2-fill { margin: 2px 0 6px 0; font-size: 90%; }
+        .t2-fill .form-group { margin-bottom: 0; }
+        .t2-fill label.control-label { font-weight: 600; margin-right: 8px; }
         .t2-ref { margin: 0 0 8px 0; max-width: 1100px; }
         .t2-footer { font-size: 80%; color: #666; margin: 18px 0 8px 0; border-top: 1px solid #dce4ec; padding-top: 6px; }
     "))),
@@ -275,6 +295,7 @@ ui = fluidPage(
             inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE ) ),
             inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
             inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
+            uiOutput('x_survival_hint'),
             inline( selectizeInput('color', 'color', choices = NULL) ),
             inline( selectizeInput('size', 'size', choices = NULL )),
             inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
@@ -300,6 +321,8 @@ ui = fluidPage(
         ## ---- (b) the result; every Plot button lands here ----
         tabPanel("Plot", value = "plot",
             div(class = "t2-filter-status", textOutput('filter_status')),
+            ## "Not-detected values": shown only when the values answer of this plot offers more than "missing"
+            uiOutput('fill_ui'),
             ## the plot area is rebuilt at the chosen Plot height (Appearance tab)
             fluidRow( column(12, align="center", uiOutput('main_plot_ui')) ),
             h4("Data Summary"),
@@ -353,9 +376,11 @@ ui = fluidPage(
             h4(paste("About", T2_SITE)),
             div(class = "t2-statement", id = "t2_research_statement",
                 tags$b("T2 is a research tool for scientists in biomedical research. "),
-                "It shows public research data and statistics computed from them. It gives no medical advice ",
+                "It shows public research data as plots, with a few summary statistics. It gives no medical advice ",
                 "and must not be used for diagnosis or treatment decisions."),
-            tags$p("T2 is a database and plotting tool for large tumor-profiling compendia. Every measurement ",
+            ## the survival analysis is the heart of T2: point at it first (from /meta tte_variables)
+            uiOutput('about_survival_hint'),
+            tags$p("T2 is a database and plotting tool for TCGA (The Cancer Genome Atlas) and other genomic databases. Every measurement ",
                    "(expression, mutation, copy number, signatures, clinical annotation, survival) ",
                    "is stored per sample, so any variable can be plotted against any other."),
             ## the active data set's own words (from the service: /meta `about`)
@@ -379,8 +404,8 @@ ui = fluidPage(
             h5( Sys.Date() ),
             h4("Types of Data Available"),
             htmlOutput('datatypes'),
-            h4("Statistical methods"),
-            tags$p("The survival curves and tests in T2 use these methods:"),
+            h4("Survival analysis methods"),
+            tags$p("The survival analysis in T2 (Kaplan-Meier curves, log-rank test, Cox model) uses these methods:"),
             HTML(paste(vapply(T2_METHOD_REFERENCES, t2_reference_html, ""), collapse = "")),
             h4("Clinical variables"),
             htmlOutput('clinical_help'),
@@ -398,6 +423,17 @@ ui = fluidPage(
 ################################################################
 
 server = function(input, output, session) {
+    ## An observer body must never end the session: a client can send any shape for
+    ## an input. Errors are logged and the visitor gets a generic line; req() / validate()
+    ## conditions (silent errors) pass through.
+    t2_guarded = function(what, expr) {
+        tryCatch(expr, error = function(e) {
+            if (inherits(e, c("shiny.silent.error", "validation"))) stop(e)
+            message("T2 ", what, " failed: ", conditionMessage(e))
+            showNotification("Something went wrong with that request; please try again.", type = "error", duration = 8)
+            invisible(NULL)
+        })
+    }
     ## ---- active source bundle (the single object that "knows" the data source) ----
     init_bundle = load_source_bundle(t2_default_dataset())
     bundle = reactiveVal(init_bundle)
@@ -452,6 +488,9 @@ server = function(input, output, session) {
     })
 
     output$app_title = renderUI(h4(site_title(bundle()$title)))
+    ## the survival hint of the active data set (nothing when it has no time-to-event variable)
+    output$about_survival_hint = renderUI(t2_survival_hint(bundle()))
+    output$x_survival_hint = renderUI(t2_survival_hint(bundle(), "t2-survival-hint t2-hint-x"))
 
     ## (re)populate every dataset-dependent selectize from a bundle. The picks
     ## in `keep` (the previous source's) stay where the new source has them
@@ -495,11 +534,12 @@ server = function(input, output, session) {
 
     ## switching datasets: take the bundle of the new data source (cached per
     ## dataset version) and repopulate all inputs from it.
-    observeEvent(input$dataset, {
-        req(input$dataset)
-        if (identical(input$dataset, bundle()$key)) return()
-        if (!(input$dataset %in% T2_SOURCES)) return()
-        b = load_source_bundle(input$dataset)
+    observeEvent(input$dataset, t2_guarded("dataset switch", {
+        ## a client may send any shape for an input: take one value from the served list or nothing
+        ds = .t2_one(input$dataset, T2_SOURCES_SERVED, "")
+        req(nzchar(ds))
+        if (identical(ds, bundle()$key)) return()
+        b = load_source_bundle(ds)
         old = isolate(selected_vars()$vars)
         prev = isolate(sanitize_t2_input(input, bundle()))   # the picks to carry over
         bundle(b)
@@ -510,19 +550,21 @@ server = function(input, output, session) {
         new = unique(new[!is.na(new) & nzchar(new)])
         ## arm the guard, unless the old picks ARE the new selections (then pushing them is right)
         stale_picks <<- if (setequal(old, new)) NULL else old
-    }, ignoreInit = TRUE)
+        ## the not-detected choice belongs to the data source it was made on
+        fill_choice("na"); fill_state(NULL)
+    }), ignoreInit = TRUE)
 
     ## when multi_y is toggled on, add "probe" to color choices and select it
-    observeEvent(input$multi_y, {
+    observeEvent(input$multi_y, t2_guarded("multi-Y switch", {
         b = bundle()
         mgp = b$mygenesplus
         stc = b$handles$name[b$handles$role == "sample_type"]     # the sample-type handle, if the data set has one
-        if (input$multi_y) {
+        if (.t2_flag(input$multi_y)) {
             update_selectize_ranked(session, 'color', c('probe', mgp), 'probe')
         } else {
             update_selectize_ranked(session, 'color', t2_menu(mgp, lower = b$names_lower), if (length(stc)) stc[1] else "")
         }
-    }, ignoreInit = TRUE)
+    }), ignoreInit = TRUE)
 
     ## ---- Thanos: one instance per dataset, started on first use ----
     ## A Thanos instance is bound to one backend (= one dataset) for life, so
@@ -531,7 +573,7 @@ server = function(input, output, session) {
     ## applied to another whose fields may not even exist.
     th_env = new.env(parent = emptyenv())
     th_for = function(b) {
-        if (!HAVE_THANOS || !(b$key %in% T2_SOURCES)) return(NULL)
+        if (!HAVE_THANOS || !(b$key %in% T2_SOURCES_SERVED)) return(NULL)
         if (!is.null(th_env[[b$key]])) return(th_env[[b$key]])
         be = backend_t2_shared(b)
         ds = b$key
@@ -591,20 +633,26 @@ server = function(input, output, session) {
     ##   note  one line for the plot summary (NULL when there is no Filter tab)
     filter_state = function(b) {
         h = th_for(b)
-        if (is.null(h)) return(list(keep = NULL, note = NULL))
+        if (is.null(h)) return(list(keep = NULL, note = NULL, active = character(0), n_kept = NA, n_base = NA))
         m = h$th$mask()
         base = h$base()
         base = if (is.null(base)) rep(TRUE, length(m)) else (base & !is.na(base))
         active = t2_describe_filters(h$th$filters(), h$backend)
         if (identical(m, base)) {
-            return(list(keep = NULL,
+            return(list(keep = NULL, active = character(0), n_kept = sum(m), n_base = sum(base),
                         note = sprintf("Filter tab: no additional filtering (%d samples).", sum(m))))
         }
-        list(keep = h$backend$samples[m],
+        list(keep = h$backend$samples[m], active = active, n_kept = sum(m), n_base = sum(base),
              note = sprintf("Filter tab: %d of %d samples pass. %s", sum(m), sum(base),
                             if (length(active)) paste0("Active filters: ", paste(active, collapse = "; "), ".")
                             else "Samples with missing values (NA) are excluded for at least one variable."))
     }
+
+    ## the caption line "Filtered: ..." for bundle b with the current Select-tab picks and Filter
+    ## tab (fs = filter_state(b)); "" when nothing is filtered
+    filter_caption_for = function(b, inp, samp, fs)
+        t2_filter_caption(samp = samp, b = b, cohort = inp$cohort, rules = fs$active,
+                          n_kept = fs$n_kept, n_base = fs$n_base)
 
     ## live count next to the Filter tab's Plot button
     output$filter_count = renderText({
@@ -638,7 +686,12 @@ server = function(input, output, session) {
     output$tweak_inputs = renderUI(tweak_widgets(input))
 
     ## ---- plotting: any of the three Plot buttons ----
-    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3))
+    ## the not-detected values choice (per session): "na" | "zero" | "floor". The control itself is drawn
+    ## only from what the last plot's values answer offered (fill_state), never from types or dataset names.
+    fill_choice = reactiveVal("na")
+    fill_state = reactiveVal(NULL)       # t2_fill_of() of the last plot's data (NULL: no plot yet / a new source)
+    fill_bump = reactiveVal(0)           # a changed choice draws the plot again, like pressing Plot
+    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump()))
     ## the plot's height on the page is, like every Appearance setting, taken at
     ## the moment Plot is pressed
     plot_height = reactiveVal(t2_style_default('plot_height'))
@@ -648,7 +701,10 @@ server = function(input, output, session) {
     })
     ## what the last plot was drawn from; the download hands out the same table
     plot_snapshot = NULL
+    plot_seq = 0           # which plot this is: a refusal is announced once per plot, not on every resize redraw
+    last_notice = list(seq = -1, text = "")
     plot_result = eventReactive(plot_clicks(), {
+        plot_seq <<- plot_seq + 1
         ## nothing is drawn until a Plot button has been pressed
         req(plot_clicks() > 0)
         b = bundle()
@@ -659,30 +715,65 @@ server = function(input, output, session) {
         samp = sanitize_t2_samples(input, b)
         gg = sanitize_t2_tweaks(input)
         note = paste0("Samples: ", samp$label, ".", if (!is.null(fs$note)) paste0(" ", fs$note) else "")
-        ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules)
+        ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules, fill = fill_choice())
         plot_snapshot <<- list(inp = inp, b = b, ctx = ctx, note = note, gg = gg)
+        fcap = filter_caption_for(b, inp, samp, fs)
         withProgress(message = 'Working...', value = 0, {
             incProgress(0.20, message = "Plotting")
-            fun_plot1(inp, reactive = FALSE, ctx = ctx, gg = gg)
+            ## an answer of the data service that failed is not shown as it is (URLs, host names)
+            tryCatch(fun_plot1(inp, reactive = FALSE, ctx = ctx, gg = gg, filter_caption = fcap),
+                     error = function(e) {
+                         m = conditionMessage(e)
+                         safe = t2_user_message(m)
+                         if (identical(safe, m)) stop(e)
+                         list(warning = safe)
+                     })
         })
     })
+    observe({
+        res = tryCatch(plot_result(), error = function(e) NULL)
+        fill_state(t2_result_fill(res))
+    })
+    output$fill_ui = renderUI({
+        info = fill_state()
+        opts = info$options
+        if (length(opts) < 2) return(NULL)           # nothing but "missing" applies: no control at all
+        lab = c(na = "Missing", zero = "Zero", floor = "Detection floor")
+        cur = isolate(fill_choice())
+        div(class = "t2-fill",
+            radioButtons('not_detected', "Not-detected values", inline = TRUE,
+                         choices = stats::setNames(opts, lab[opts]), selected = if (cur %in% opts) cur else "na"))
+    })
+    observeEvent(input$not_detected, {
+        v = .t2_one(input$not_detected, c("na", "zero", "floor"), "na")
+        if (!identical(v, fill_choice())) { fill_choice(v); fill_bump(fill_bump() + 1) }
+    }, ignoreInit = TRUE)
     ## pressing Plot anywhere shows the result
     observeEvent(input$plot_btn,  updateTabsetPanel(session, 'tabs', selected = 'plot'))
     observeEvent(input$plot_btn2, updateTabsetPanel(session, 'tabs', selected = 'plot'))
     observeEvent(input$plot_btn3, updateTabsetPanel(session, 'tabs', selected = 'plot'))
 
+    ## the size comes from the browser (clientData), which a client can forge: both
+    ## sides are clamped, so a hostile page cannot ask for a 30000 x 16000 px plot
+    clamp_px = function(v) if (length(v) != 1 || !is.numeric(v) || is.na(v)) NULL else min(max(v, 200), 3000)
     output$main_plot = renderPlot({
         res = plot_result()
         if (is.null(res)) return(NULL)
         if (is.list(res) && !is.null(res$warning)) {
-            showNotification(res$warning, type = "warning", duration = 10)
+            txt = t2_user_message(res$warning)
+            if (!(identical(last_notice$seq, plot_seq) && identical(last_notice$text, txt))) {
+                last_notice <<- list(seq = plot_seq, text = txt)
+                showNotification(txt, type = "warning", duration = 10)
+            }
             if (is.null(res$plot)) return(NULL)
         }
         ## Survival mode returns a ggsurvplot (a list with $plot + $table); print
         ## the whole object so the risk table renders too, not just the curve.
         if (inherits(res, "ggsurvplot")) return(res)
         if (is.list(res) && !is.null(res$plot)) res$plot else res
-    })
+    },
+    width  = function() clamp_px(session$clientData$output_main_plot_width),
+    height = function() clamp_px(plot_height()))
     ## a fixed-height container (not height = "auto": an auto-height plot
     ## collapses while it redraws, the page scrollbar comes and goes, the width
     ## changes, and the plot redraws for ever)
@@ -723,6 +814,8 @@ server = function(input, output, session) {
     pub_fig = reactive(sanitize_t2_figure(input))
     ## everything that decides what is drawn (not how large the file is)
     pub_spec = reactive({
+        ## only the Publish tab draws a figure: no work on every input change elsewhere
+        req(identical(input$tabs, "publish"))
         b = bundle()
         inp = sanitize_t2_input(input, b)
         if (length(inp$x) == 0 || length(inp$y) == 0) return(NULL)
@@ -733,14 +826,22 @@ server = function(input, output, session) {
         inp[names(st)] = st
         ## the preset's own defaults for unlisted settings, then the user's picks
         gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input, "pub_"))
-        list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = filter_state(b)$keep, rules = sanitize_t2_samples(input, b)$rules), gg = gg,
+        fs = filter_state(b)
+        samp = sanitize_t2_samples(input, b)
+        list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules, fill = fill_choice()), gg = gg,
              base_size = fig$base_size, family = fig$family, fig_width = fig$width,
-             caption = if (fig$source_line) T2_CITATION else "")
+             ## each text element of the figure has its own switch (Publish tab)
+             caption = if (fig$source_line) T2_CITATION else "",
+             filter_caption = if (fig$show_caption) filter_caption_for(b, inp, samp, fs) else "",
+             fill_caption = fig$show_caption,           # the not-detected line is part of the caption
+             show = fig[c("show_title", "show_subtitle", "show_axis_titles")])
     })
     pub_draw = function(s) {
-        fun_plot1(s$inp, reactive = FALSE, ctx = s$ctx, gg = s$gg,
-                  base_size = s$base_size, base_family = s$family, caption = s$caption,
-                  fig_width = s$fig_width)
+        t2_apply_text_switches(
+            fun_plot1(s$inp, reactive = FALSE, ctx = s$ctx, gg = s$gg,
+                      base_size = s$base_size, base_family = s$family, caption = s$caption,
+                      fig_width = s$fig_width, filter_caption = s$filter_caption, fill_caption = s$fill_caption),
+            title = s$show$show_title, subtitle = s$show$show_subtitle, axis_titles = s$show$show_axis_titles)
     }
     ## redraw about a second after the last change, not on every keystroke
     pub_spec_d = debounce(pub_spec, 900)
@@ -789,6 +890,8 @@ server = function(input, output, session) {
         type_df = b$types      # read with the bundle (files or service)
         ## convert PMID references to clickable PubMed links
         type_df$reference = sapply(type_df$reference, function(ref) {
+            if (is.na(ref)) return(ref)
+            ref = htmltools::htmlEscape(ref)       # the data is trusted; escaped anyway
             pmid = regmatches(ref, regexpr("PMID:\\d+", ref))
             if (length(pmid) > 0) {
                 pmid_num = sub("PMID:", "", pmid)
@@ -798,7 +901,7 @@ server = function(input, output, session) {
         })
         ## make source_url clickable, labelled by the host of the link
         type_df$source_link = sapply(type_df$source_url, function(url) {
-            if (!is.na(url) && url != "")
+            if (!is.na(url) && nzchar(t2_safe_href(url)))
                 paste0('<a href="', htmltools::htmlEscape(url, attribute = TRUE), '" target="_blank">',
                        htmltools::htmlEscape(t2_url_host(url)), '</a>')
             else ""
@@ -837,7 +940,6 @@ server = function(input, output, session) {
             survival_note
         )
     })
-    ## the data set's own About prose (/meta about): description, citation, attribution, link
     ## the dataset's bibliography: full titles, authors, journal, year and links, grouped
     output$about_references = renderUI({
         refs = bundle()$about$references
@@ -848,6 +950,7 @@ server = function(input, output, session) {
                 if (nzchar(g)) h5(g),
                 HTML(paste(vapply(refs[grp == g], t2_reference_html, ""), collapse = "")))))
     })
+    ## the data set's own About prose (/meta about): description, citation, attribution, link
     output$about_dataset = renderUI({
         a = bundle()$about
         if (!any(nzchar(unlist(a)))) return(NULL)
@@ -855,7 +958,7 @@ server = function(input, output, session) {
             if (nzchar(a$description)) tags$p(a$description),
             if (nzchar(a$citation)) tags$p(tags$b("Citation: "), a$citation),
             if (nzchar(a$attribution)) tags$p(tags$i(a$attribution)),
-            if (nzchar(a$url)) tags$p(tags$a(href = a$url, target = "_blank", t2_url_host(a$url))))
+            if (nzchar(t2_safe_href(a$url))) tags$p(tags$a(href = t2_safe_href(a$url), target = "_blank", t2_url_host(a$url))))
     })
     ## the table behind the last plot (same dataset, variables and samples);
     ## before any plot, the table for the current selections
@@ -867,7 +970,8 @@ server = function(input, output, session) {
                 b = bundle()
                 snap = list(inp = sanitize_t2_input(input, b), b = b,
                             ctx = t2_plot_ctx(b, keep = isolate(filter_state(b))$keep,
-                                              rules = isolate(sanitize_t2_samples(input, b))$rules))
+                                              rules = isolate(sanitize_t2_samples(input, b))$rules,
+                                              fill = isolate(fill_choice())))
             }
             write.csv(fun_table1(snap$inp, ctx = snap$ctx), file)
         })

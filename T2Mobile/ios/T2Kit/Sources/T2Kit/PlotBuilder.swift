@@ -24,10 +24,14 @@ public enum PlotBuilder {
         public var handleColumns: [String]
         /// the most panels a faceted plot may have
         public var maxPanels: Int
+        /// the active filters, for the figure's "Filtered: ..." caption (empty = none)
+        public var filters: FilterNote
+        /// the not-detected cells the service filled in (empty = none), for the caption and the statistics
+        public var fills: FillNote
         public init(datasetLabel: String = "", tte: [TTEVariable] = [], typeLabels: [String: String] = [:],
-                    handleColumns: [String] = [], maxPanels: Int = 36) {
+                    handleColumns: [String] = [], maxPanels: Int = 36, filters: FilterNote = FilterNote(), fills: FillNote = FillNote()) {
             self.datasetLabel = datasetLabel; self.tte = tte; self.typeLabels = typeLabels
-            self.handleColumns = handleColumns; self.maxPanels = maxPanels
+            self.handleColumns = handleColumns; self.maxPanels = maxPanels; self.filters = filters; self.fills = fills
         }
     }
 
@@ -47,6 +51,35 @@ public enum PlotBuilder {
     ///   - columns: every loaded column by name (clinical columns and fetched probes)
     ///   - keep: the samples that pass the presets, the cohort choice and the Filter screen
     public static func build(_ request: PlotRequest, columns: [String: Column], keep: Mask, context: Context = Context()) -> PlotScene {
+        var scene = buildScene(request, columns: columns, keep: keep, context: context)
+        if scene.kind != .empty {
+            var lines = [context.filters.text]
+            if !context.fills.isEmpty {
+                // the samples shown: those passing the filters with a value for every plotted variable
+                let vars = request.variables.filter { columns[$0] != nil }
+                let rows = (0..<keep.count).filter { i in keep[i] && vars.allSatisfy { !(columns[$0]?.isMissing(i) ?? true) } }
+                let d = context.fills.describe(shown: rows, plotted: Set(vars))
+                lines.append(d.caption)
+                scene.stats += d.stats
+            }
+            scene.caption = lines.filter { !$0.isEmpty }.joined(separator: "\n")
+        }
+        return scene
+    }
+
+    /// The word a title uses for the data source: the dataset's label, or, when one part of
+    /// it is the source ("GTEx" of "TCGA-TARGET-GTEx (Toil)"), the part's label, with the
+    /// dataset label's closing parenthesis (the processing, "(Toil)") kept: "GTEx (Toil)".
+    public static func sourceWord(dataset: String, part: String?) -> String {
+        guard let part, !part.isEmpty else { return dataset }
+        guard !part.contains("("), dataset.hasSuffix(")"), let open = dataset.lastIndex(of: "(") else { return part }
+        return part + " " + dataset[open...]
+    }
+
+    /// categories of a categorical X, Y and colour (T2_LIMITS in gitr.R)
+    static let maxXLevels = 300, maxYLevels = 300, maxColourLevels = 200
+
+    static func buildScene(_ request: PlotRequest, columns: [String: Column], keep: Mask, context: Context) -> PlotScene {
         let n = keep.count
         var warnings: [String] = []
         let xNames = request.x.filter { !$0.isEmpty }, yNames = request.y.filter { !$0.isEmpty }
@@ -122,7 +155,23 @@ public enum PlotBuilder {
             return .empty("No samples have data for these variables. Some classifications only cover some tumor types, and some mutations are not present.",
                           summary: summary, warnings: warnings)
         }
-        if let c = color, distinctCount(c, rows: rows) < 2 { color = nil }
+        // the website's T2_LIMITS: an ID-like column (11,081 patients) is no X, Y or colour
+        let axisLimits: [(Variable, Int)] = [(x, maxXLevels), (y, maxYLevels)]
+        for (v, limit) in axisLimits where !v.isNumeric {
+            let k = distinctCount(codes: v.codes, rows: rows)
+            if k > limit {
+                return .empty("\(v.name) has \(k) categories; the limit is \(limit). Filter the samples or choose another variable.",
+                              summary: summary, warnings: warnings)
+            }
+        }
+        if let c = color {
+            let k = distinctCount(c, rows: rows)
+            if !c.isNumeric && k > maxColourLevels {
+                return .empty("\(request.color) has \(k) categories; the limit is \(maxColourLevels). Filter the samples or choose another variable.",
+                              summary: summary, warnings: warnings)
+            }
+            if k < 2 { color = nil }
+        }
         if let s = size, Set(rows.map { s[$0] }.filter { !$0.isNaN }).count < 2 { size = nil }
 
         // colours and sizes are decided once, over every sample drawn, so that they mean the
@@ -200,7 +249,8 @@ public enum PlotBuilder {
         var values: [Double] = []
         values.reserveCapacity(n * k)
         for name in use {
-            let v = columns[name]!.numbers!
+            // (a probe that is not there, or not numeric or short: its rows are missing, never a trap)
+            guard let v = columns[name]?.numbers, v.count == n else { values += [Double](repeating: .nan, count: n); continue }
             values += request.zscoreY ? Stats.zscore(v.indices.map { keep[$0] ? v[$0] : .nan }) : v
         }
         let yName = use.count <= 3 ? use.joined(separator: ", ") : "\(use.count) Y probes"
@@ -224,11 +274,10 @@ public enum PlotBuilder {
             let both = "\(probeVariable) / \(request.facet)"
             var lv: [String] = [], cd: [Int] = []
             cd.reserveCapacity(n * k)
-            for (p, probe) in use.enumerated() {
+            for probe in use {
                 let base = lv.count
                 lv += levels.map { "\(probe) / \($0)" }
                 for i in 0..<n { cd.append(codes[i] < 0 ? -1 : base + codes[i]) }
-                _ = p
             }
             stackedColumns[both] = Column(name: both, type: "factor", data: .categorical(levels: lv, codes: cd))
             sub.facet = both
@@ -253,7 +302,7 @@ public enum PlotBuilder {
                             message: (String) -> String) -> [String] {
         let dropped = names.filter { !(columns[$0]?.isNumeric ?? false) }
         if !dropped.isEmpty { warnings.append(message(dropped.joined(separator: ", "))) }
-        return dropped.isEmpty ? names : names.filter { !dropped.contains($0) }
+        return names.filter { !dropped.contains($0) }
     }
 
     /// One variable, or several numeric ones as the median of their z-scores.
@@ -324,8 +373,12 @@ public enum PlotBuilder {
     static func distinctCount(_ c: Column, rows: [Int]) -> Int {
         switch c.data {
         case .numeric(let v): return Set(rows.map { v[$0] }.filter { !$0.isNaN }).count
-        case .categorical(_, let codes): return Set(rows.map { codes[$0] }.filter { $0 >= 0 }).count
+        case .categorical(_, let codes): return distinctCount(codes: codes, rows: rows)
         }
+    }
+
+    static func distinctCount(codes: [Int], rows: [Int]) -> Int {
+        Set(rows.map { codes[$0] }.filter { $0 >= 0 }).count
     }
 
     // MARK: colour and size of points
@@ -350,11 +403,10 @@ public enum PlotBuilder {
                 let order = Column.levelsPresent(codes: codes, levelCount: levels.count, rows: rows)
                 let colors = Palette.discrete(count: order.count)
                 var byCode = [RGB?](repeating: nil, count: levels.count)
-                for (k, code) in order.enumerated() { byCode[code] = colors[k] }
+                var slotOf = [Int](repeating: -1, count: levels.count)
+                for (k, code) in order.enumerated() { byCode[code] = colors[k]; slotOf[code] = k }
                 d.legend.entries = order.enumerated().map { PlotLegend.Entry(label: levels[$1], color: colors[$0]) }
                 d.color = { i in codes[i] >= 0 ? (byCode[codes[i]] ?? Palette.missing) : Palette.missing }
-                var slotOf = [Int](repeating: -1, count: levels.count)
-                for (k, code) in order.enumerated() { slotOf[code] = k }
                 d.groupOf = codes.map { $0 >= 0 ? slotOf[$0] : -1 }
                 d.groupColors = colors
             case .numeric(let v):
@@ -403,6 +455,20 @@ public enum PlotBuilder {
         return PlotScene(kind: .scatter, panels: [panel], legend: d.legend, stats: stats, n: rows.count)
     }
 
+    /// The levels ordered by their median; a level whose median is not a number (NaN) goes last
+    /// in either direction, and the comparison stays a strict weak order (it never traps).
+    static func waterfallOrder(_ levels: [Int], medians: [Int: Double], descending: Bool) -> [Int] {
+        func key(_ l: Int) -> Double {
+            guard let m = medians[l], !m.isNaN else { return descending ? -.infinity : .infinity }
+            return m
+        }
+        return levels.enumerated().sorted { a, b in
+            let ka = key(a.element), kb = key(b.element)
+            if ka != kb { return descending ? ka > kb : ka < kb }
+            return a.offset < b.offset
+        }.map(\.element)
+    }
+
     // MARK: categorical against numeric
 
     /// Boxes with the samples jittered over them. `horizontal`: the categories are on the Y axis.
@@ -414,7 +480,7 @@ public enum PlotBuilder {
         // ... or by the median of the values (waterfall)
         if request.waterfall {
             let med = Dictionary(uniqueKeysWithValues: order.map { ($0, Stats.median(members[$0]!.map { v[$0] })) })
-            order.sort { request.waterfallDescending ? med[$0]! > med[$1]! : med[$0]! < med[$1]! }
+            order = waterfallOrder(order, medians: med, descending: request.waterfallDescending)
         }
         let slot = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
         let categoryAxis = PlotAxis(kind: .categorical, lo: 0, hi: Double(order.count), ticks: order.indices.map { Double($0) + 0.5 },
@@ -443,7 +509,7 @@ public enum PlotBuilder {
             }
         }
         panel.points = rows.map { r in
-            let g = dodged ? (d.groupOf![r]) : -1
+            let g = dodged ? d.groupOf![r] : -1
             let along = Double(slot[codes[r]]!) + 0.5 + (g >= 0 ? offset(g) : 0) + jitter(r) * (dodged ? slotWidth * 0.3 : 0.2)
             return horizontal ? PlotPoint(x: v[r], y: along, color: d.color(r), size: d.size(r), sample: r)
                               : PlotPoint(x: along, y: v[r], color: d.color(r), size: d.size(r), sample: r)

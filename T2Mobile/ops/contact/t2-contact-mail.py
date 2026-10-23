@@ -11,7 +11,7 @@
 #     and re-sanitises here too (defence in depth);
 #   * mail HEADERS (To/Subject/Reply-To) are built only from a regex-validated address and an
 #     ASCII-only, single-line subject, so nothing a sender types can add or break a header;
-#   * delivery is to LOCAL Unix mail (sendmail -t into loopback-only Postfix), never an
+#   * delivery is to LOCAL Unix mail (sendmail -i -t into loopback-only Postfix), never an
 #     external relay, so the form can never be used to send mail to anyone but the owner;
 #   * the readable inbox.md copy puts the untrusted name/affiliation/message inside a fenced
 #     code block, so stored markdown or HTML is shown literally and cannot render active
@@ -34,6 +34,32 @@ def fenced(s):
     fence = '`' * max(3, longest + 1)
     return fence + '\n' + s + '\n' + fence
 
+def deliver(m, md):
+    name, aff = one(m.get('name')), one(m.get('affiliation'))
+    email = one(m.get('email'), 254)
+    if not EMAIL.match(email):
+        email = ''                      # never put anything but a plain address in a header
+    subject = 'T2 contact: ' + name + (' (' + aff + ')' if aff else '')
+    subject = ''.join(c for c in subject if 32 <= ord(c) < 127)[:200]
+    msg = body_text(m.get('message'))
+    # --- mail: headers are injection-proof (validated/ASCII), the message is the body ---
+    body = ('Name: %s\nAffiliation: %s\nEmail: %s\nTime: %s\nFrom app: %s\n\n%s\n'
+            % (name, aff, email or '(no valid address)', one(m.get('time')), one(m.get('app'), 60), msg))
+    hdr = 'To: nathan\nSubject: %s\n' % subject
+    if email:
+        hdr += 'Reply-To: %s\n' % email
+    hdr += 'Content-Type: text/plain; charset=utf-8\n'
+    try:
+        # -i: a line holding a single "." in the message must not end it early; -t: recipients from the header
+        subprocess.run(['/usr/sbin/sendmail', '-i', '-t'], input=(hdr + '\n' + body).encode(), check=False)
+    except Exception as e:
+        # a missing or failing MTA must not drop the message: it is still recorded below
+        sys.stderr.write('t2-contact-mail: sendmail failed: %s\n' % e)
+    # --- inbox.md: the untrusted fields go inside a code fence, shown literally ---
+    heading = one(m.get('time')) + '  ' + name + ((' (' + aff + ')') if aff else '')
+    reply = ('Reply to: ' + email) if email else '(no valid address)'
+    md.write('## %s\n\n%s\n\n%s\n\n---\n\n' % (one(heading), reply, fenced(msg)))
+
 with open(inbox, 'a') as md:
     for line in sys.stdin:
         line = line.strip()
@@ -41,28 +67,13 @@ with open(inbox, 'a') as md:
             continue
         try:
             m = json.loads(line)
+            if not isinstance(m, dict):
+                raise ValueError('not a JSON object')
         except Exception:
             continue
-        name, aff = one(m.get('name')), one(m.get('affiliation'))
-        email = one(m.get('email'), 254)
-        if not EMAIL.match(email):
-            email = ''                      # never put anything but a plain address in a header
-        subject = 'T2 contact: ' + name + (' (' + aff + ')' if aff else '')
-        subject = ''.join(c for c in subject if 32 <= ord(c) < 127)[:200]
-        msg = body_text(m.get('message'))
-        # --- mail: headers are injection-proof (validated/ASCII), the message is the body ---
-        body = ('Name: %s\nAffiliation: %s\nEmail: %s\nTime: %s\nFrom app: %s\n\n%s\n'
-                % (name, aff, email or '(no valid address)', one(m.get('time')), one(m.get('app'), 60), msg))
-        hdr = 'To: nathan\nSubject: %s\n' % subject
-        if email:
-            hdr += 'Reply-To: %s\n' % email
-        hdr += 'Content-Type: text/plain; charset=utf-8\n'
+        # one bad message must not block the batch: each is handled on its own
         try:
-            subprocess.run(['/usr/sbin/sendmail', '-t'], input=(hdr + '\n' + body).encode(), check=False)
+            deliver(m, md)
+            md.flush()
         except Exception as e:
-            # a missing or failing MTA must not drop the message: it is still recorded below
-            sys.stderr.write('t2-contact-mail: sendmail failed: %s\n' % e)
-        # --- inbox.md: the untrusted fields go inside a code fence, shown literally ---
-        heading = one(m.get('time')) + '  ' + name + ((' (' + aff + ')') if aff else '')
-        reply = ('Reply to: ' + email) if email else '(no valid address)'
-        md.write('## %s\n\n%s\n\n%s\n\n---\n\n' % (one(heading), reply, fenced(msg)))
+            sys.stderr.write('t2-contact-mail: skipped one message: %s: %s\n' % (type(e).__name__, e))

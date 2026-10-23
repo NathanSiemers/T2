@@ -49,7 +49,7 @@ rtest() {   # rtest <script> [env...]: an R test in the R container, on the dev 
 case $step in
 go)      say go; (cd $REPO/T2Mobile/service && docker run --rm -v "$PWD":/src -w /src -v "$GOCACHE_DIR":/go/pkg/mod -e GOCACHE=/tmp/gocache golang:1.23-alpine sh -c 'go vet ./... && go test ./...') > "$LOGDIR/go.log" 2>&1; tail -2 "$LOGDIR/go.log" ;;
 equiv)   say equiv; (cd $REPO/T2Mobile/service && T2API_NET=t2api-dev T2API_HOST=t2api-dev T2API_PORT=3861 T2_CODE=$REPO T2_DB=$DEV N_PROBES=${N_PROBES:-20} ./test.sh equiv) > "$LOGDIR/equiv.log" 2>&1; verdict "$LOGDIR/equiv.log" 1 ;;
-app)     for t in test_app_sources.R test_app_thanos.R test_app_server.R test_app_survival.R test_t2_backend.R test_figure_export.R test_multidataset.R test_plot_style.R test_about_references.R; do
+app)     for t in test_app_sources.R test_app_thanos.R test_app_server.R test_app_survival.R test_t2_backend.R test_figure_export.R test_multidataset.R test_plot_style.R test_about_references.R test_contract_check.R; do
              say "$t"; rapi $t > "$LOGDIR/${t%.R}.log" 2>&1; printf '%s PASS, ' "$(grep -c '^  PASS' "$LOGDIR/${t%.R}.log")"; grep -c "FAIL\|^Error" "$LOGDIR/${t%.R}.log" | sed 's/$/ FAIL+Error/'; done ;;
 app-service) say app-service; (cd $REPO/T2Mobile/service && T2API_NET=t2api-dev T2API_HOST=t2api-dev T2_CODE=$REPO T2_DB=$DEV ./test.sh shiny) > "$LOGDIR/app-service.log" 2>&1; grep -E "ALL PASS|FAILED|^  FAIL" "$LOGDIR/app-service.log" | head ;;
 browser-files)   say browser-files; echo "obsolete: the Shiny app reads everything from the service (T2_API_URL); use browser-service" ;;
@@ -64,11 +64,11 @@ fuzz)    say fuzz-api; (cd $REPO/T2Mobile/service && T2API_BASE=http://127.0.0.1
          say fuzz-shiny; rapi test_shiny_fuzz.R > "$LOGDIR/fuzz-shiny.log" 2>&1; verdict "$LOGDIR/fuzz-shiny.log" 1
          say contact; (cd $REPO/T2Mobile/ops/contact && python3 contact_fuzz.py) > "$LOGDIR/contact.log" 2>&1; tail -1 "$LOGDIR/contact.log" ;;
 swift)   say swift; (cd $REPO && docker run --rm -v "$PWD":/w -w /w/T2Mobile/ios/T2Kit swift:6.0-jammy swift test) > "$LOGDIR/swift.log" 2>&1; grep -E "Executed .* tests" "$LOGDIR/swift.log" | tail -1 ;;
-ios)     say ios; dev=${2:-iPhone 18 Pro}   ## T2_MAC=<address> overrides the Mac (LAN 10.0.0.110 on 2026-10-19; 10.13.13.4 was its VPN address)
-         rsync -a --delete --exclude '.build/' --exclude 'Info.plist' --exclude 'build/' --exclude 'tools/' --exclude 'screenshots/' --exclude 'logs/' --exclude '*.xcodeproj' --exclude 'Local.xcconfig' $REPO/T2Mobile/ios/ nathan@${T2_MAC:-10.13.13.4}:Claude/T2Mobile/ios/
-         scp -q $REPO/T2Mobile/ios/tools/sim_matrix.sh nathan@${T2_MAC:-10.13.13.4}:Claude/T2Mobile/ios/tools/ && ssh nathan@${T2_MAC:-10.13.13.4} 'chmod +x ~/Claude/T2Mobile/ios/tools/sim_matrix.sh'
-         pgrep -f 'R 3861:127.0.0.1:3861' >/dev/null || ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -R 3861:127.0.0.1:3861 nathan@${T2_MAC:-10.13.13.4}
-         ssh nathan@${T2_MAC:-10.13.13.4} "cd ~/Claude/T2Mobile && TEST_RUNNER_T2_SERVICE=http://127.0.0.1:3861 ./ios/tools/sim_matrix.sh \"$dev\":light" > "$LOGDIR/ios.log" 2>&1
+ios)     say ios; dev=${2:-iPhone 18 Pro}   ## T2_MAC=<address> overrides the Mac (default: the MacBook Pro 10.1.0.9 on eno2, since 2026-10-22; the old MacBook was 10.0.0.110 / VPN 10.13.13.4)
+         rsync -a --delete --exclude '.build/' --exclude 'Info.plist' --exclude 'build/' --exclude 'tools/' --exclude 'screenshots/' --exclude 'logs/' --exclude '*.xcodeproj' --exclude 'Local.xcconfig' $REPO/T2Mobile/ios/ nathan@${T2_MAC:-10.1.0.9}:Claude/T2Mobile/ios/
+         scp -q $REPO/T2Mobile/ios/tools/sim_matrix.sh nathan@${T2_MAC:-10.1.0.9}:Claude/T2Mobile/ios/tools/ && ssh nathan@${T2_MAC:-10.1.0.9} 'chmod +x ~/Claude/T2Mobile/ios/tools/sim_matrix.sh'
+         pgrep -f 'R 3861:127.0.0.1:3861' >/dev/null || ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -R 3861:127.0.0.1:3861 nathan@${T2_MAC:-10.1.0.9}
+         ssh nathan@${T2_MAC:-10.1.0.9} "cd ~/Claude/T2Mobile && TEST_RUNNER_T2_SERVICE=http://127.0.0.1:3861 ./ios/tools/sim_matrix.sh \"$dev\":light" > "$LOGDIR/ios.log" 2>&1
          grep -E "passed:|FAILED:|Executed" "$LOGDIR/ios.log" | tail -4 ;;
 dev-up)  say dev-up; (cd $REPO/T2Mobile/service && docker compose build && docker compose -f docker-compose.yml -f $DEV/t2api-dev-contact.yml up -d) 2>&1 | tail -2; sleep 20; curl -s http://127.0.0.1:3861/healthz ;;
 ## (browser-files is no longer in `all`: the app has no file mode)

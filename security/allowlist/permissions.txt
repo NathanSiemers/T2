@@ -1,0 +1,2 @@
+# the one standing allow in the user settings: the production deploy script by full path (documented in T2Mobile/ops/allow-deploy.py; see the report: this file is writable by the AI session)
+Bash(/scratch/nathan/R/T2/T2Mobile/ops/deploy.sh:*)

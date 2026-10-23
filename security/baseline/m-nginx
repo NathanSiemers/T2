@@ -1,0 +1,10 @@
+5c0e3b1ec592990af2969a19e535945a85c8624e7527b9c99b1bd8c822ea861e  /scratch/Docker/Nginx/nginx.conf
+f4b540841439074f8e579664b80fdbc483916bdfd1e176358a0154b92c78ad34  /scratch/Docker/Nginx/default.conf
+04c7ade4fc6e7d9bf05e524f75b46c4d27810b47baa553a8ee9ed01c90ce824e  /scratch/Docker/Nginx/Dockerfile
+d9bc9c00759a4e68c04ecef76c7f080daf5889332042da81aa36511f625dcf5f  /scratch/Docker/Nginx/docker-compose.yml
+f9e1debe49c52d381921264a99efef505c6f687b89b6ed394b8d9aa17e2bcb36  /scratch/Docker/Nginx/html/favicon.ico
+0b92797a933ade97e40554d46a8e6f50b1906dc8eca3c6b063a960721b51bdd7  /scratch/Docker/Nginx/html/fphome/custom.css
+1a5f07cdb6f834f6e8dcad4bfe00a3275f51287da7fb0976e7a44242c89d4696  /scratch/Docker/Nginx/html/fphome/master.css
+87e6f6556f6080258a100081d2a0f6bd76dec005c5a35e4f9dca6bdfae4547a2  /scratch/Docker/Nginx/html/index.html
+f92e71b0263a7a050b7e986a1603ed66365fff63804015628b91b02a16b684a3  /scratch/Docker/Nginx/html/t2app/privacy.html
+429c384931fde9e689e7b5cf734ab1e707c45cda1e0e0a6e358a0efc76c01105  /scratch/Docker/Nginx/html/t2app/support.html

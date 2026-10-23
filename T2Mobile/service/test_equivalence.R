@@ -59,6 +59,7 @@ for (ds in vapply(get("/v1/datasets")$datasets, `[[`, "", "name")) {
   ## rule "smallest value in byte order" must hold on both sides whatever index is used
   if (ds == "TCGA") pick <- unique(c("CD8A", "TP53.mut", "FOXP3", "StromalScore.estimate", "HRD.hrd",
                                      "CPN2.fmut", "TP53.fmut", "TTN.fmut", "KRAS.fmut", pick))
+  if (ds == "cptac") pick <- unique(c("CLDN6", "CLDN6.prot", "CLDN6.phospho", pick))   # the not-detected fills below
   pick <- unname(pick)
   t_api <- t_r <- 0; n_ok <- 0; kinds <- character(0); diffs <- character(0); fkinds <- character(0)
   for (chunk in split(pick, ceiling(seq_along(pick) / 20))) {
@@ -84,6 +85,28 @@ for (ds in vapply(get("/v1/datasets")$datasets, `[[`, "", "name")) {
   ok(n_ok == length(pick), sprintf("%d of %d probes equal gitr() value for value (%d numeric, %d categorical; suffixes: %s)",
                                    n_ok, length(pick), sum(kinds == "num"), sum(kinds == "cat"), paste(sort(unique(suffix)), collapse = " ")))
   cat(sprintf("    time for these probes: API %.1f s (first request for each, uncached), gitr() %.1f s\n", t_api, t_r))
+  ## not-detected fills: values?fill=zero|floor equals gitr(fill =) value for value, and the answer's
+  ## fill_options / filled / tested_n equal what the file mode reports (a dataset whose types offer none: skipped)
+  nfill <- 0; fdiffs <- character(0)
+  for (chunk in split(pick, ceiling(seq_along(pick) / 20))) {
+    res0 <- get(sprintf("/v1/%s/values?probes=%s", ds, utils::URLencode(paste(chunk, collapse = ","), reserved = TRUE)))
+    offered <- as.character(unlist(res0$fill_options))
+    g0f <- quiet(gitr(chunk, dbfile = fi$path, roles = fi$roles))
+    if (!identical(offered, attr(g0f, "fill_options"))) fdiffs <- c(fdiffs, "fill_options")
+    for (f in setdiff(offered, "na")) {
+      res <- get(sprintf("/v1/%s/values?probes=%s&fill=%s", ds, utils::URLencode(paste(chunk, collapse = ","), reserved = TRUE), f))
+      g <- quiet(gitr(chunk, dbfile = fi$path, roles = fi$roles, fill = f))
+      got <- stats::setNames(res$columns, vapply(res$columns, `[[`, "", "name"))
+      for (p in names(got)) if (!same(col_vec(got[[p]]), r_vec(g[[p]]))) fdiffs <- c(fdiffs, paste(p, f))
+      fa <- unlist(res$filled); ta <- unlist(res$tested_n)
+      if (!identical(as.integer(fa[order(names(fa))]), as.integer(attr(g, "filled")[order(names(attr(g, "filled")))])) ||
+          !identical(as.integer(ta[order(names(ta))]), as.integer(attr(g, "tested_n")[order(names(attr(g, "tested_n")))])))
+        fdiffs <- c(fdiffs, paste("counts", f))
+      nfill <- nfill + 1
+    }
+  }
+  if (length(fdiffs)) cat("    fill differs:", paste(head(fdiffs, 20), collapse = ", "), "\n")
+  ok(length(fdiffs) == 0, sprintf("not-detected fills (%d requests with zero / floor) and fill_options equal gitr(fill =)", nfill))
   ## presets and data sources: the service derives them (dataset.go, sources.go); the oracle here is the
   ## rule semantics applied to the file's own clinical frame (the sample counts, the cohorts present) and
   ## the labels the file's default_filters table declares

@@ -8,6 +8,26 @@ struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var advanced = false
     @State private var contact = false
+    /// the address being typed: applied (after a check) only by Reconnect
+    @State private var addressDraft = ""
+    @State private var addressProblem = ""
+
+    /// is `text` an http(s) address with a host?
+    private func validAddress(_ text: String) -> Bool {
+        guard let u = URL(string: text), let scheme = u.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        return !(u.host ?? "").isEmpty
+    }
+    private func applyAddress() {
+        let t = addressDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !t.isEmpty && !validAddress(t) {
+            addressProblem = "That is not an http or https address."
+            return
+        }
+        addressProblem = ""
+        model.baseURL = t.isEmpty ? t2DefaultService : t
+        addressDraft = model.baseURL
+        Task { await model.reconnect() }
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -16,6 +36,10 @@ struct AboutView: View {
                 Section {
                     Text("For scientists in biomedical research. T2 gives no medical advice and is not for diagnosis or treatment decisions.")
                         .font(.callout)
+                    // survival analysis first: the names come from the open dataset's time-to-event variables
+                    if let hint = model.meta?.survivalHint, !hint.isEmpty {
+                        Text(hint).font(.callout).accessibilityIdentifier("survival-hint")
+                    }
                     NavigationLink {
                         SourcesView()
                     } label: {
@@ -26,7 +50,7 @@ struct AboutView: View {
                     Text("Research use only")
                 }
                 Section("T2") {
-                    Text("T2 is a database and search tool for cancer genomics data collections. Pick two variables (genes, mutations, copy number, signatures, clinical annotation) and T2 draws the relationship across thousands of tumour samples, with the statistics; narrow the samples with the presets and the Filter screen; export a publication figure from the Publish screen. The phone fetches only the values of the variables you choose; filtering, statistics and drawing happen on the device.")
+                    Text("T2 is a database and search tool for TCGA (The Cancer Genome Atlas) and other genomic databases. Pick two variables (genes, mutations, copy number, signatures, clinical annotation) and T2 draws the relationship across thousands of tumour samples: plots, with a few summary statistics, and Kaplan-Meier survival analysis where the data have follow-up; narrow the samples with the presets and the Filter screen; export a publication figure from the Publish screen. The phone fetches only the values of the variables you choose; filtering, statistics and drawing happen on the device.")
                         .font(.callout)
                     Link(destination: URL(string: "https://www.fiveprime.org")!) {
                         Label("The T2 website (fiveprime.org)", systemImage: "safari")
@@ -53,7 +77,7 @@ struct AboutView: View {
                             if !about.description.isEmpty { Text(about.description).font(.callout) }
                             if !about.citation.isEmpty { Text("Please cite: \(about.citation)").font(.footnote) }
                             if !about.attribution.isEmpty { Text(about.attribution).font(.footnote).foregroundStyle(.secondary) }
-                            if let link = URL(string: about.url), !about.url.isEmpty, link.scheme == "https" || link.scheme == "http" {
+                            if let link = webURL(about.url) {
                                 Link(destination: link) { Label("About this data set", systemImage: "link") }
                             }
                         } header: {
@@ -91,15 +115,17 @@ struct AboutView: View {
                 }
                 Section {
                     DisclosureGroup("Advanced", isExpanded: $advanced) {
-                        TextField("Service address", text: $model.baseURL)
+                        TextField("Service address", text: $addressDraft)
                             .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                             .accessibilityIdentifier("service-address")
-                        Button("Reconnect") { Task { await model.reconnect() } }
+                        if !addressProblem.isEmpty { Text(addressProblem).font(.footnote).foregroundStyle(.red) }
+                        Button("Reconnect") { applyAddress() }
                     }
                 } footer: {
                     Text("For a copy of the T2 data service run elsewhere. Leave it alone otherwise.")
                 }
             }
+            .onAppear { addressDraft = model.baseURL }
             .navigationTitle("About T2")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
@@ -152,7 +178,7 @@ struct ContactView: View {
                     } header: {
                         Text("Message")
                     } footer: {
-                        Text("Up to 4,000 characters. Your message and address go to the author and nowhere else.")
+                        Text("Up to 12,000 bytes (about 4,000 to 12,000 characters, fewer for accented or non-Latin letters). Your message and address go to the author and nowhere else.")
                     }
                     if !problem.isEmpty {
                         Section { Text(problem).foregroundStyle(.red).font(.footnote).accessibilityIdentifier("contact-problem") }
@@ -179,20 +205,29 @@ struct ContactView: View {
         }
     }
 
+    /// the server's body cap is 16 KB: the message is held to 12,000 bytes of UTF-8 (the server counts bytes)
+    private static let maxMessageBytes = 12_000
+
     private func send() async {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bytes = text.utf8.count
+        guard bytes <= Self.maxMessageBytes else {
+            problem = "The message is too long (\(bytes) bytes; the limit is 12,000). Please shorten it."
+            return
+        }
         sending = true; problem = ""
         let m = APIClient.ContactMessage(
             name: String(name.trimmingCharacters(in: .whitespaces).prefix(200)),
             affiliation: String(affiliation.trimmingCharacters(in: .whitespaces).prefix(200)),
             email: email.trimmingCharacters(in: .whitespaces),
-            message: String(message.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4000)),
+            message: text,
             started: Date().timeIntervalSince(appeared),
             app: "T2 iOS \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
         do {
             try await model.sendContactMessage(m)
             sent = true
         } catch {
-            problem = "The message could not be sent: \(error). Please try again later."
+            problem = "The message could not be sent: \(error.localizedDescription). Please try again later."
         }
         sending = false
     }

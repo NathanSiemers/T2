@@ -1,6 +1,3 @@
-import SwiftUI
-import T2Kit
-
 /// How a plot is drawn. Sizes are in points, as on the T2 website's Appearance tab
 /// (0 = do not show that item).
 struct PlotStyle: Equatable {
@@ -14,6 +11,12 @@ struct PlotStyle: Equatable {
     var showLegend = true
     var showFit = true
     var showSourceLine = true
+    /// the text elements of a figure, each of which the Publish screen can drop (all on by default;
+    /// "Source line" is the attribution line)
+    var showTitle = true
+    var showSubtitle = true
+    var showCaption = true
+    var showAxisTitles = true
     /// panels side by side in a faceted plot ("Graph for each"); 0 = chosen by their number
     var facetColumns = 0
 }

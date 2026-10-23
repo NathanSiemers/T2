@@ -24,6 +24,17 @@ testServer(shiny::shinyAppDir("."), {
   ok(sum(grepl("^TCGA\\b", names(srcs))) >= 1 && any(grepl(": GTEx$", names(srcs))),
      "parts are labelled '<collection>: <part>'")
 
+  ## ---------------------------------------- hidden datasets stay out of the menu
+  ok(!any(grepl("^DEMO", unname(srcs))), "DEMO (hidden / 'not real data') is not in the Data set menu")
+  ok(all(c("TCGA", "DEMO") %in% vapply(t2_api_datasets(), `[[`, "", "name")), "...but the service still serves DEMO")
+  ok(t2_dataset_hidden(list(name = "x", title = "t", hidden = TRUE)) && !t2_dataset_hidden(list(name = "x", title = "t", hidden = FALSE)) &&
+     !t2_dataset_hidden(list(name = "x", title = "t")) && t2_dataset_hidden(list(name = "DEMO", title = "t")) &&
+     t2_dataset_hidden(list(name = "z", title = "Foo (Not Real Data)")) &&
+     t2_dataset_hidden(list(name = "DEMO", title = "t", hidden = FALSE)) &&
+     t2_dataset_hidden(list(name = "x", title = "t", hidden = TRUE)) && !t2_dataset_hidden(list(name = "x", title = "t", hidden = FALSE)),
+     "hidden: the field true hides; so do the name DEMO or 'not real data' in the title, even when the field is false (the service always emits it)")
+  ok(identical(load_source_bundle("DEMO")$name, "DEMO"), "a hidden dataset still loads by name")
+
   ## ------------------------------------------------- TCGA: groups and exclusions
   do.call(session$setInputs, c(base_inputs, list(dataset = "TCGA", x = "cohort", y = "CD8A", color = "sample_type")))
   b <- bundle()

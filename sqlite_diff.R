@@ -17,7 +17,8 @@
 ##       - for tables under DIFF_FULL_ROWS (default 2,000,000): an EXACT
 ##         row-level set diff (rows only in A / only in B) + example rows.
 ##
-## Read-only: opens a :memory: db and ATTACHes both files; only SELECTs run.
+## Read-only: opens a :memory: db and ATTACHes both files as read-only URIs (mode=ro, plus
+## PRAGMA query_only); only SELECTs run. A diff tool never writes.
 ## ============================================================================
 
 suppressMessages({ library(DBI); library(RSQLite) })
@@ -32,10 +33,13 @@ FULL_ROWS <- suppressWarnings(as.numeric(Sys.getenv("DIFF_FULL_ROWS", "2000000")
 if (is.na(FULL_ROWS)) FULL_ROWS <- 2000000
 stopifnot(file.exists(DBA), file.exists(DBB))
 
-con <- dbConnect(SQLite(), ":memory:")
+## URI filenames (file:/path?mode=ro) need the URI open flag; the path is percent-encoded for the characters of a URI
+.uri_ro <- function(p) paste0("file:", utils::URLencode(normalizePath(p), reserved = FALSE), "?mode=ro")
+con <- dbConnect(SQLite(), ":memory:", flags = bitwOr(RSQLite::SQLITE_RWC, 0x40L))   # 0x40 = SQLITE_OPEN_URI
 dbExecute(con, "PRAGMA busy_timeout=60000")
-dbExecute(con, "ATTACH DATABASE ? AS a", params = list(normalizePath(DBA)))
-dbExecute(con, "ATTACH DATABASE ? AS b", params = list(normalizePath(DBB)))
+dbExecute(con, "ATTACH DATABASE ? AS a", params = list(.uri_ro(DBA)))
+dbExecute(con, "ATTACH DATABASE ? AS b", params = list(.uri_ro(DBB)))
+dbExecute(con, "PRAGMA query_only = ON")                        # belt and braces: no write to either file, whatever the SQL
 Q  <- function(sql) dbGetQuery(con, sql)
 Q1 <- function(sql) { r <- tryCatch(Q(sql), error = function(e) NULL)
                       if (is.null(r) || !nrow(r)) NA else r[1, 1] }
@@ -132,7 +136,7 @@ for (ty in c("table", "view", "index")) {
   add(sprintf("| %s | %d | %d | %d | %d | %d | %d |", ty, length(na), length(nb),
               length(common), length(onlyA), length(onlyB), length(ddlch)))
   obj_detail[[ty]] <- list(onlyA = onlyA, onlyB = onlyB, ddlch = ddlch,
-                           sa = oa, sb = ob, common = common)
+                           common = common)
 }
 add("")
 
@@ -188,8 +192,9 @@ details <- character(0)
 for (t in common_tables) {
   ca <- cols_of("a", t); cb <- cols_of("b", t)
   same_cols <- setequal(ca$name, cb$name)
-  fa <- tryCatch(fingerprint("a", t, ca), error = function(e) NULL)
-  fb <- tryCatch(fingerprint("b", t, cb), error = function(e) NULL)
+  fp_err <- character(0)
+  fa <- tryCatch(fingerprint("a", t, ca), error = function(e) { fp_err <<- c(fp_err, paste("A:", conditionMessage(e))); NULL })
+  fb <- tryCatch(fingerprint("b", t, cb), error = function(e) { fp_err <<- c(fp_err, paste("B:", conditionMessage(e))); NULL })
   ra <- if (!is.null(fa)) fa[["__rows"]] else NA
   rb <- if (!is.null(fb)) fb[["__rows"]] else NA
   small <- same_cols && !is.na(ra) && !is.na(rb) && max(ra, rb) <= FULL_ROWS
@@ -199,12 +204,19 @@ for (t in common_tables) {
     method <- "row-exact"
     onlyA <- Q1(sprintf("SELECT COUNT(*) FROM (SELECT * FROM a.%s EXCEPT SELECT * FROM b.%s)", qi(t), qi(t)))
     onlyB <- Q1(sprintf("SELECT COUNT(*) FROM (SELECT * FROM b.%s EXCEPT SELECT * FROM a.%s)", qi(t), qi(t)))
-    if (isTRUE(onlyA == 0) && isTRUE(onlyB == 0)) verdict <- "identical"
-    else { verdict <- "**changed**"; data_changed <- TRUE
-           note <- sprintf("%s rows only in A, %s only in B", onlyA, onlyB) }
+    ## EXCEPT is a SET difference: a duplicated row on one side is invisible to it, so the row counts decide too
+    if (!(isTRUE(onlyA == 0) && isTRUE(onlyB == 0) && isTRUE(ra == rb))) {
+           verdict <- "**changed**"; data_changed <- TRUE
+           note <- sprintf("%s rows only in A, %s only in B%s", onlyA, onlyB,
+                           if (!isTRUE(ra == rb)) sprintf("; row counts differ (%s vs %s)", ra, rb) else "") }
   } else {
-    fields <- if (!same_cols) "columns differ" else if (is.null(fa) || is.null(fb)) fp_diffs(fa, fb) else fp_diffs(fa, fb)
+    fields <- if (same_cols && !is.null(fa) && !is.null(fb)) fp_diffs(fa, fb) else character(0)
     if (!same_cols) { verdict <- "**changed**"; data_changed <- TRUE; note <- "column set differs" }
+    else if (is.null(fa) || is.null(fb)) {
+      ## a fingerprint that could not be computed proves nothing: never "identical"
+      verdict <- "**error**"; data_changed <- TRUE
+      note <- paste("fingerprint failed, the tables were not compared:", paste(fp_err, collapse = " | "))
+    }
     else if (length(fields)) { verdict <- "**changed**"; data_changed <- TRUE
                                note <- sprintf("%d fingerprint fields differ", length(fields)) }
   }
@@ -216,7 +228,7 @@ for (t in common_tables) {
               verdict, method))
 
   ## per-table detail when changed
-  if (grepl("changed", verdict)) {
+  if (grepl("changed|error", verdict)) {
     details <- c(details, sprintf("### `%s`", t), "")
     if (nzchar(note)) details <- c(details, paste0("- ", note), "")
     ## per-type breakdown if a `type` column exists
@@ -238,9 +250,8 @@ for (t in common_tables) {
     }
     ## fingerprint field diffs (large tables)
     if (!small && same_cols && !is.null(fa) && !is.null(fb)) {
-      fd <- fp_diffs(fa, fb)
-      if (length(fd)) details <- c(details, "changed aggregates (col|stat): A -> B", "",
-                                   paste0("- `", fd, "`"), "")
+      if (length(fields)) details <- c(details, "changed aggregates (col|stat): A -> B", "",
+                                       paste0("- `", fields, "`"), "")
     }
     ## example differing rows (small tables)
     if (small && same_cols) {
@@ -268,5 +279,5 @@ verdict <- if (!schema_changed && !data_changed) {
 R <- append(R, c("", verdict), after = 1)   # verdict right under the title
 
 writeLines(R, OUT)
-cat(sprintf("\n%s\nreport -> %s (%d lines)\n", sub("\\*\\*", "", gsub("\\*\\*", "", verdict)), OUT, length(R)))
+cat(sprintf("\n%s\nreport -> %s (%d lines)\n", gsub("\\*\\*", "", verdict), OUT, length(R)))
 dbDisconnect(con)

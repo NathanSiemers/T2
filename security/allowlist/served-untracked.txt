@@ -1,0 +1,3 @@
+# symlink to the data (tcga.db -> ../T2/tcga.db) and the ignored datasets link; they resolve inside the containers to the data mount (ops/deploy.sh fix-links: "never remove them")
+^\?\? tcga\.db$
+^!! datasets$

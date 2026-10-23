@@ -55,9 +55,6 @@ T2_LIMITS = list(
 ## column or filter. There is NO default map: gitr() over a database file reads
 ## the roles verbatim from that file's dataset_meta (dataset_roles() in
 ## dataset_registry.R); over the service they come from /meta (t2_api_resolve).
-## The object below stays only so that older scripts that mention it fail soft
-## (NULL = "look the roles up in the file").
-gitr_default_roles = NULL
 
 ## Synthesise the virtual columns (subtype / cohort / lcohort) on a clinpheno
 ## frame from the dataset's role map, guarded by column presence so datasets
@@ -135,6 +132,59 @@ gitr_clinpheno = function(conn, dbfile) {
   .gitr_clin$put(key, collect(tbl(conn, 'clinpheno')))
 }
 
+## The not-detected fill of the numeric probes in `num_result` (sample, probe, value rows of the dense
+## view tcgas: one row per sample TESTED for the probe's type, value NA where there is no stored row or a
+## stored NULL). The same semantics as the service (dataset.go fetchProbe): for a probe whose type offers
+## `fill` in types.fill_options and is stored in full (sparse = 0), a tested sample with NO stored row (a
+## stored NULL counts as stored) becomes 0 (zero) or the smallest stored value of the probe among the
+## tested samples of the same cohort (floor), the probe's dataset-wide minimum for a cohort with none;
+## a probe with no stored value at all stays NA. Untested samples have no row and stay NA.
+## `cohort`: named vector sample -> virtual cohort. Returns list(rows, options, fill, filled, tested_n):
+## options the union of the fills the probes' types offer (na, zero, floor), filled / tested_n named
+## integer vectors of the probes with cells changed (only when a fill was applied).
+gitr_fill_numeric = function(conn, num_result, db_probes, fill, cohort) {
+  out = list(rows = num_result, options = "na", fill = NULL, filled = integer(0), tested_n = integer(0), ids = list())
+  if (!nrow(num_result) || !("fill_options" %in% dbListFields(conn, "types"))) return(out)
+  ty = dbGetQuery(conn, sprintf("SELECT pr.probe, pt.type FROM probes pr JOIN probe_types pt ON pt.probekey = pr.key
+                                 WHERE pr.probe IN (%s) ORDER BY pt.rowid", paste(rep('?', length(db_probes)), collapse = ", ")),
+                  params = as.list(db_probes))
+  ty = ty[!duplicated(ty$probe), , drop = FALSE]
+  ty = ty[ty$probe %in% unique(num_result$probe), , drop = FALSE]
+  fo = dbGetQuery(conn, "SELECT type, fill_options FROM types")
+  offered = lapply(setNames(fo$fill_options, fo$type), function(v)
+    if (is.na(v)) "na" else unique(c("na", intersect(c("zero", "floor"), strsplit(v, "|", fixed = TRUE)[[1]]))))
+  all_opts = unique(unlist(offered[ty$type]))
+  out$options = c("na", "zero", "floor")[c("na", "zero", "floor") %in% c("na", all_opts)]   # the answer reports what is on offer, whatever the fill
+  if (identical(fill, "na")) return(out)       # nothing to fill: no sparse / stored-sample queries
+  sp = if ("sparse" %in% dbListTables(conn)) dbGetQuery(conn, "SELECT type, sparse FROM sparse") else data.frame(type = character(0), sparse = integer(0))
+  rows = num_result
+  for (i in seq_len(nrow(ty))) {
+    p = ty$probe[i]; t = ty$type[i]
+    sparse = !identical(as.integer(sp$sparse[match(t, sp$type)]), 0L)       # a type with no row is sparse
+    if (sparse || !(fill %in% offered[[t]])) next
+    ix = which(rows$probe == p)
+    stored = dbGetQuery(conn, "SELECT sa.sample FROM tcgai dat JOIN probes pr ON pr.key = dat.probekey
+                               JOIN samples sa ON sa.key = dat.samplekey WHERE pr.probe = ? AND dat.type = ?",
+                        params = list(p, t))$sample
+    out$fill = fill
+    todo = ix[is.na(rows$value[ix]) & !(rows$sample[ix] %in% stored)]          # tested, no stored row
+    if (fill == "zero") new = rep(0, length(todo))
+    else {
+      have = ix[!is.na(rows$value[ix]) & is.finite(rows$value[ix])]
+      gmin = if (length(have)) min(rows$value[have]) else NA_real_
+      cm = tapply(rows$value[have], as.character(cohort[rows$sample[have]]), min)
+      co = as.character(cohort[rows$sample[todo]])
+      new = ifelse(!is.na(co) & co %in% names(cm), cm[co], gmin)
+      new = unname(as.numeric(new))
+    }
+    keep = !is.na(new)
+    rows$value[todo[keep]] = new[keep]
+    if (any(keep)) { out$filled[p] = sum(keep); out$tested_n[p] = length(ix); out$ids[[p]] = rows$sample[todo[keep]] }
+  }
+  out$rows = rows
+  out
+}
+
 gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 cohort = 'all', conn = con,
                 makefactors = TRUE,
@@ -143,12 +193,13 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
                 db = 'tcga',
                 dbcat = 'tcgacat',
                 keep_samples = NULL,
-                rules = list()) {
+                rules = list(),
+                fill = "na") {      # not-detected values: "na" (missing), "zero" or "floor" (gitr_fill_numeric)
 
   if (t2_api_on())   # the service is the data layer (t2_api_client.R); dbfile = dataset name
     return(gitr_api(probes, phenos = phenos, nonormal = nonormal, noheme = noheme, cohort = cohort,
                     makefactors = makefactors, dbfile = dbfile, roles = roles,
-                    keep_samples = keep_samples, rules = rules))
+                    keep_samples = keep_samples, rules = rules, fill = fill))
   if (is.null(roles)) {          # the file's own dataset_meta, verbatim (dataset_registry.R: the file library)
     if (!exists("dataset_roles")) source('dataset_registry.R')
     roles = dataset_roles(dbfile)
@@ -160,9 +211,11 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## drop empty / NA markers (e.g. an unset size/color selector arriving as "")
   probes = unique(probes)
   probes = probes[!is.na(probes) & nzchar(probes)]
+  fl = list(options = "na", fill = NULL)          # replaced when there are database probes
 
   clinpheno = gitr_clinpheno(gitrconn, dbfile)
   clinpheno_cols = colnames(clinpheno)
+  clin_virtual = t2_add_virtual_cols(clinpheno, roles)   # clinpheno + subtype / cohort / lcohort, used below twice
   ## synthetic columns created by the phenos=TRUE mutate below
   virtual_cols = c('subtype', 'cohort', 'lcohort')
 
@@ -179,10 +232,8 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
   ## start with clinpheno sample list
   rout = clinpheno[, 'sample', drop = FALSE]
 
-  ## fetch clinpheno columns directly
-  if (length(clin_probes) > 0) {
-    rout = clinpheno[, c('sample', clin_probes), drop = FALSE]
-  }
+  ## fetch clinpheno columns directly (no clinical probes: the 'sample' column alone)
+  rout = clinpheno[, c('sample', clin_probes), drop = FALSE]
 
   ## fetch db probes in a single query using the dense views
   if (length(db_probes) > 0) {
@@ -193,6 +244,11 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     num_sql = sprintf("SELECT sample, probe, value FROM tcgas WHERE probe IN (%s)", in_list(length(db_probes)))
     num_result = dbGetQuery(gitrconn, num_sql, params = as.list(db_probes))
     cat(nrow(num_result), "rows returned\n")
+    ## not-detected values: the fill, and what the answer would say about it (attributes at the end)
+    fill = if (fill %in% c("zero", "floor")) fill else "na"
+    fl = gitr_fill_numeric(gitrconn, num_result, db_probes, fill,
+                           setNames(clin_virtual$cohort %||% rep(NA, nrow(clinpheno)), clinpheno$sample))
+    num_result = fl$rows
 
     ## try categorical view for any probes not found in numeric
     found_probes = unique(num_result$probe)
@@ -230,29 +286,34 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     }
   }
 
-  ## join with full clinpheno if phenos requested.
-  ## Synthesise the virtual columns (subtype / cohort / lcohort) from the
-  ## dataset's role map, guarded by column presence so non-TCGA datasets that
-  ## lack these columns simply don't get the corresponding virtual column.
-  if (phenos) {
-    probe_cols = setdiff(colnames(rout), clinpheno_cols)
-    out = t2_add_virtual_cols(clinpheno, roles) %>%
-      left_join(rout[, c('sample', probe_cols), drop = FALSE], by = 'sample')
-  } else {
-    out = rout
-  }
+  ## The filter frame: clinpheno + the virtual columns (subtype / cohort / lcohort, from the dataset's
+  ## role map, guarded by column presence so datasets that lack a role simply don't get the column) +
+  ## the probe columns, ALWAYS, so the cohort / nonormal / noheme / rules filters work with phenos = FALSE
+  ## too. phenos = TRUE returns this frame; phenos = FALSE returns only the requested columns (rout)
+  ## of the rows the filters keep. Both are in clinpheno row order, so `keep` indexes either.
+  probe_cols = setdiff(colnames(rout), clinpheno_cols)
+  full = clin_virtual %>%
+    left_join(rout[, c('sample', probe_cols), drop = FALSE], by = 'sample')
+  out = if (phenos) full else rout
+  if (nrow(out) != nrow(full)) stop("gitr: internal error, the filter frame and the result differ in length")
 
-  ## filters — each is a no-op when its role column is absent for this dataset
+  ## filters: each is a no-op when its role column is absent for this dataset
   stc = t2_role(roles, 'sampletype_col')
-  keep = t2_sample_keep(out, roles, cohort = cohort, nonormal = nonormal,
+  keep = t2_sample_keep(full, roles, cohort = cohort, nonormal = nonormal,
                         noheme = noheme, rules = rules)
-  if (!is.null(keep_samples)) keep = keep & (out$sample %in% keep_samples)
+  if (!is.null(keep_samples)) keep = keep & (full$sample %in% keep_samples)
   if (!all(keep)) out = out[keep, , drop = FALSE]
 
   ## factor levels for the sample-type role column (if present + declared)
   if (phenos && !is.null(stc) && stc %in% colnames(out) &&
       !is.null(roles$sampletype_levels)) {
-    out[[stc]] = factor(out[[stc]], levels = roles$sampletype_levels)
+    ## a value outside the declared levels keeps its own level (after the declared ones) and is
+    ## warned about once: factor(x, levels = declared) would turn it into NA without a word
+    xs = as.character(out[[stc]]); extra = setdiff(sort(unique(xs[!is.na(xs)])), roles$sampletype_levels)
+    if (length(extra))
+      warning("gitr: sample-type value(s) not in the declared sampletype_levels, kept as extra levels: ",
+              paste(extra, collapse = ", "), call. = FALSE)
+    out[[stc]] = factor(xs, levels = union(roles$sampletype_levels, sort(unique(xs[!is.na(xs)]))))
   }
 
   ## apply R datatypes from the datatypes table
@@ -319,7 +380,15 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
     out = out %>% mutate(across(where(is.character), as.factor))
   }
 
-  out %>% droplevels %>% data.frame(check.names = FALSE)
+  out = out %>% droplevels %>% data.frame(check.names = FALSE)
+  ## what the service's values answer says: the fills on offer and what the applied one changed
+  attr(out, "fill_options") = fl$options
+  if (!is.null(fl$fill)) {
+    attr(out, "fill") = fl$fill; attr(out, "filled") = fl$filled; attr(out, "tested_n") = fl$tested_n
+    ## which rows of THIS frame (after the filters) had a not-detected cell set: list(probe = logical per row)
+    attr(out, "filled_rows") = lapply(fl$ids, function(i) as.character(out$sample) %in% as.character(i))
+  }
+  out
 }
 
 
@@ -334,22 +403,9 @@ gitr = function(probes, phenos = TRUE, nonormal = FALSE, noheme = FALSE,
 gitr_memo = function(probes, ..., ctx) {
   ver = ctx$version %||% if (t2_api_on()) t2_api_version(ctx$path) else {
     fi = file.info(ctx$path); paste(fi$size, as.numeric(fi$mtime)) }
-  key = rlang::hash(list(probes, list(...), ctx$path, ver, ctx$roles, ctx$keep, ctx$rules))
+  key = rlang::hash(list(probes, list(...), ctx$path, ver, ctx$roles, ctx$keep, ctx$rules, ctx$fill))
   hit = .gitr_memo$get(key)
   if (!is.null(hit)) return(hit)
   .gitr_memo$put(key, gitr(probes, ..., dbfile = ctx$path, roles = ctx$roles,
-                           keep_samples = ctx$keep, rules = ctx$rules))
-}
-
-test_gitr = function(n, phenos = TRUE){
-  testconn = RSQLite::dbConnect(RSQLite::SQLite(), dbname = gitrdb, flags = RSQLite::SQLITE_RO )
-  allprobes = tbl(testconn, 'allprobes')
-  sampled = allprobes %>% pull(probe) %>% sample(n)
-  time1 = Sys.time()
-  out = gitr(sampled, phenos = phenos)
-  time2 = Sys.time()
-  print(head(out,1))
-  print(time1)
-  print(time2)
-  dbDisconnect(testconn)
+                           keep_samples = ctx$keep, rules = ctx$rules, fill = ctx$fill %||% "na"))
 }

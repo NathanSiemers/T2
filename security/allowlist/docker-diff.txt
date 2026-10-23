@@ -1,0 +1,21 @@
+# tmpfs / runtime directories that are expected to differ from the image: /tmp, /run, Shiny Server state, logs
+^\S+ [ACD] /(tmp|run|var/lib/shiny-server|var/log)(/|$)
+^\S+ [ACD] /var/run(/|$)
+# nginx: proxy temp dirs and the response cache are created at runtime (/var/cache/nginx/*), the certificate directory is a bind mount
+^nginx-nginx-1 [ACD] /(var|var/cache|var/cache/nginx)$
+^nginx-nginx-1 [ACD] /var/cache/nginx/[A-Za-z0-9_]+(/|$)
+^nginx-nginx-1 A /etc/nginx/certs$
+# nginx entrypoint scripts rewrite conf.d/default.conf in place (listen [::]); the content is compared to the file by scan.sh
+^nginx-nginx-1 C /etc(/nginx(/conf\.d(/default\.conf)?)?)?$
+# bind-mount points (the mount destination appears as an added path and its parents as changed): data, contact store, apps, Thanos, configs, entrypoint
+^t2api(-web|-dev)? [AC] /(data|data/datasets|data/tcga\.db|contact)$
+^shiny[A-Za-z0-9_-]* [AC] /srv(/shiny-server)?$
+^shiny[A-Za-z0-9_-]* A /srv/shiny-server/(T2T|T2Tc|Thanos|AllNets|PC3|SCMel|SCBlood|GENIO|db|db/GENIO|db/TCGAGTEX\.db)$
+^shinypublic-shiny-t2tc-[0-9]+ [AC] /usr(/local(/bin(/pool-entrypoint)?)?)?$
+^haproxy-t2tc [AC] /usr(/local(/etc(/haproxy(/haproxy\.cfg)?)?)?)?$
+# the Renviron.site bind mount (api-mode variables) in the pool/canary containers
+^\S+ [AC] /usr/local/lib/R(/etc(/Renviron\.site)?)?$
+# the legacy rocker `shiny` container: its s6 init rewrites Renviron.site and /var/lib at start-up
+^shiny C /(var|var/lib)$
+# the Renviron.site mount and the legacy container image tree: parents of the changed R etc directory
+^\S+ C /usr(/local(/lib)?)?$

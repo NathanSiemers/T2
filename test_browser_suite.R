@@ -153,6 +153,32 @@ setv("x", "cohort"); setv("y", "CD8A"); setv("color", "sample_type"); settle(150
 set_input(tabs = "publish"); settle(7000)
 ok(img_ok("pub_preview") && grepl("in", output_text("pub_readout")), "Publish preview rendered with its readout")
 shot("11-publish")
+## a switch per text element; the citation reminder shows when the source line goes
+ok(all(vapply(c("pub_show_title", "pub_show_subtitle", "pub_show_caption", "pub_source", "pub_show_axis_titles"),
+              function(id) isTRUE(js(sprintf("!!document.getElementById('%s') && document.getElementById('%s').checked", id, id))), NA)),
+   "Publish: a checkbox per text element, all on by default")
+set_input(pub_show_title = FALSE, pub_show_axis_titles = FALSE, pub_source = FALSE); settle(5000)
+ok(img_ok("pub_preview") && isTRUE(js("$('.t2-cite').text().indexOf('You have removed the source line') >= 0")),
+   "Publish: title, axis titles and source line off: the figure still renders and the citation reminder shows")
+shot("11b-publish-text-off")
+set_input(pub_show_title = TRUE, pub_show_axis_titles = TRUE, pub_source = TRUE); settle(1000)
+
+## ---- 07b not-detected values: only where the values answer offers them (CPTAC proteome) ----
+ok(!isTRUE(js("!!document.getElementById('not_detected')")), "TCGA: no not-detected control on the Plot tab")
+set_input(tabs = "select"); settle(500)
+setv("dataset", "cptac"); settle(5000)
+setv("x", "CLDN6"); setv("y", "CLDN6.prot"); setv("color", ""); settle(1500)
+plot_now(wait = 8000)
+ok(img_ok("main_plot") && isTRUE(js("!!document.getElementById('not_detected')")), "cptac CLDN6 vs CLDN6.prot: the Not-detected values control appears")
+ok(setequal(choices("not_detected"), c("na", "zero", "floor")), "it offers exactly what the answer listed: Missing, Zero, Detection floor")
+n0 <- as.integer(sub(".*Samples with data for both X and Y: (\\d+).*", "\\1", output_text("plot_summary")))
+set_input(not_detected = "zero"); settle(8000)
+s <- output_text("plot_summary")
+ok(grepl("not-detected values set to 0", s) && as.integer(sub(".*Samples with data for both X and Y: (\\d+).*", "\\1", s)) > n0,
+   "Zero: the plot is drawn again with more samples and the Data Summary says so")
+shot("13-plot-cptac-zero")
+setv("dataset", "TCGA"); settle(4000); set_input(tabs = "plot"); settle(500)
+ok(!isTRUE(js("!!document.getElementById('not_detected')")), "switching to TCGA hides the control")
 
 ## ---- 08 About: data types, clinical variables, contact form ----
 set_input(tabs = "about"); settle(1500)
@@ -160,6 +186,9 @@ ok(js("document.querySelectorAll('#datatypes tr').length") > 10, "the data-type 
 ok(js("document.querySelectorAll('#clinical_help tr').length") > 20, "the clinical variables are explained on About")
 has_contact <- isTRUE(js("!!document.getElementById('contact_send')"))
 ok(has_contact == nzchar(Sys.getenv("T2_CONTACT_URL", Sys.getenv("T2_API_URL", ""))), "the contact form is shown exactly when an endpoint is configured")
+ok(grepl("Survival curves: choose OS, PFI, DSS or DFI as X (Kaplan-Meier by groups of Y)", text_of("about_survival_hint"), fixed = TRUE),
+   "About: the survival hint names TCGA's time-to-event variables")
+ok(grepl("TCGA (The Cancer Genome Atlas) and other genomic databases", js("document.body.innerText"), fixed = TRUE), "About: the T2 paragraph names TCGA and other genomic databases")
 shot("12-about")
 
 cat(sprintf("\n== browser suite done: %s ==\n", if (FAILS == 0) "ALL PASS" else paste(FAILS, "FAILED")))

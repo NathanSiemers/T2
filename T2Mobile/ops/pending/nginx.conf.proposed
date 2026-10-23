@@ -1,0 +1,205 @@
+# Only the two approved website names are served over HTTPS.
+map $host $allowed_site {
+ default 0;
+ fiveprime.org 1;
+ www.fiveprime.org 1;
+}
+server {
+ listen 443 ssl default_server;
+ listen [::]:443 ssl default_server;
+ ssl_reject_handshake on;
+ return 444;
+}
+## per-client-IP request and connection limits (used in the fiveprime.org server)
+limit_req_zone $binary_remote_addr zone=fiveprime_req:10m rate=20r/s;
+limit_conn_zone $binary_remote_addr zone=fiveprime_conn:10m;
+## the T2 query API has its own, higher request allowance: an app fetches several
+## columns at once, and there is no page of assets behind each request
+limit_req_zone $binary_remote_addr zone=t2api_req:10m rate=50r/s;
+limit_req_zone $binary_remote_addr zone=t2contact_req:10m rate=1r/m;   # the app's contact form
+## a TOTAL ceiling on the api, all clients together: a distributed flood is capped at what one
+## service instance answers comfortably (measured 2026-10: ~3,000 cached / ~1,500 uncached requests/s)
+limit_req_zone $server_name zone=t2api_total:1m rate=1500r/s;
+## Answers the service marks immutable (?v=<dataset version>: values, clinical, the variable
+## list) and the 1-day search answers are kept here, so a repeat request for a popular variable
+## never reaches the service; no-cache / no-store answers (/datasets, /meta, errors, 503 busy)
+## are never stored. The key carries gzip-or-not (the service compresses on Accept-Encoding).
+proxy_cache_path /var/cache/nginx/t2api levels=1:2 keys_zone=t2api_cache:32m max_size=4g inactive=30d use_temp_path=off;
+map $http_accept_encoding $t2api_enc { default ""; ~gzip gzip; }
+## connections to the service are kept open between requests; the name is resolved at run time
+## so Nginx starts and keeps serving while the container is replaced
+upstream t2api_up {
+    zone t2api_up 64k;
+    resolver 127.0.0.11 valid=30s ipv6=off;
+    server t2api:8080 resolve;
+    keepalive 64;
+}
+## API requests are logged only when they fail (4xx/5xx, incl. rate-limit rejections): that
+## is what shows an attack; successful requests leave no record (the app's privacy policy).
+map $status $t2api_failed { ~^[23] 0; default 1; }
+limit_req_status 429;
+limit_conn_status 429;
+
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  '' close;
+}
+
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name fiveprime.org www.fiveprime.org;
+    location / {
+        return 301 https://$host$request_uri;
+    }    
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name fiveprime.org www.fiveprime.org;
+    if ($allowed_site = 0) { return 444; }
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-CHACHA20-POLY1305:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-CCM:DHE-RSA-AES256-CCM8:DHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-CCM:DHE-RSA-AES128-CCM8:DHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers on;
+    server_tokens off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ## Old Notes
+    ## might have needed to add "TRUSTED" to file below
+    ## at top and bottom
+    ##ssl_certificate /etc/nginx/certs/wildcard_fiveprime_ccfa791408a46617.crt;
+    ## May 2023 - the below worked 
+    ## I catted ccfa...crt and gd bundle cert to generate .bundled.cert
+    ## godaddy says there are extra certs but things all check out green
+    ##ssl_certificate /etc/nginx/certs/1bff564570e944b.bundled.crt;
+    ## Sept 2026 - GoDaddy R1 hierarchy: leaf + R1v1 intermediate + R1 cross-signed by G2 + G2 root (full gd bundle, per GoDaddy guidance)
+    ssl_certificate /etc/nginx/certs/202609.bundled.crt;
+    ## this fucker below had to be converted to txt with tail -c +4 file > file2
+    ##ssl_certificate_key /etc/nginx/certs/wildcard_fiveprime2.key;
+    ssl_certificate_key /etc/nginx/certs/wildcard_fiveprime2.key;
+    ##ssl_certificate_key /etc/nginx/certs/1bff564570e944b1bff564570e944b.key;
+    ## to the container's stderr (docker logs, rotated by the json-file driver), not a file that grows
+    ## inside the container; limit_req_log_level: rejected requests are logged as warn
+    error_log /dev/stderr warn;
+    limit_req_log_level warn;
+
+    ## basic abuse limits (a Shiny page load pulls ~30 assets, hence the burst)
+    client_max_body_size 1m;
+    limit_req zone=fiveprime_req burst=100 nodelay;
+    limit_conn fiveprime_conn 30;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    ## proxy settings inherited by every app location below
+    proxy_set_header    Host $host;
+    proxy_set_header    X-Real-IP $remote_addr;
+    proxy_set_header    X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header    X-Forwarded-Proto $scheme;
+    proxy_set_header    Upgrade $http_upgrade;
+    proxy_set_header    Connection $connection_upgrade;
+    proxy_http_version  1.1;
+    proxy_buffering     off;
+    proxy_read_timeout  1h;
+
+    ## Each public app runs in its own container (/scratch/Docker/ShinyPublic)
+    ## on the `shinypublic` docker network. Names are resolved per request so
+    ## nginx still starts if an app container is down.
+    resolver 127.0.0.11 valid=30s ipv6=off;
+
+    ## static homepage (copied from /scratch/shinyusb/index.html + fphome/)
+    root /usr/share/nginx/html/fiveprime;
+    location = / { try_files /index.html =404; }
+    location = /favicon.ico { }
+    location /fphome/ { }
+    location /t2app/  { }     # the iPhone app's privacy policy and support pages (App Store)
+
+    location = /T2      { return 301 /T2/; }
+    location = /T2T     { return 301 /T2/; }     # since 2026-10-11 /T2/ is the one address of the app
+    location = /T2Tc    { return 301 /T2/; }
+    location = /AllNets { return 301 /AllNets/; }
+    location = /PC3     { return 301 /PC3/; }
+    location = /SCMel   { return 301 /SCMel/; }
+    location = /SCBlood { return 301 /SCBlood/; }
+    location = /GENIO   { return 301 /GENIO/; }
+
+    ## /T2/ is the new app (T2T code) served by the pool since 2026-10-10; the old app is archived
+    location /T2/ {
+        set $app haproxy-t2tc;
+        ## the pool's Shiny Server serves the app under /T2Tc (conf/T2Tc.conf): forward /T2/... as
+        ## /T2Tc/...; the browser stays on /T2/ (the app uses relative URLs, the websocket too)
+        rewrite ^/T2/(.*)$ /T2Tc/$1 break;
+        proxy_pass http://$app:8080;
+        proxy_cookie_path / /T2/;
+        proxy_cookie_flags T2TC secure samesite=lax;
+    }
+    ## /T2T/ and /T2Tc/ were the names of the redesign and of its pool while the old app
+    ## was /T2/; since 2026-10-11 the pool IS /T2/, and the old names redirect there so that
+    ## links in circulation keep working (one address, one session cookie)
+    location /T2T/  { rewrite ^/T2T/(.*)$  /T2/$1 permanent; }
+    location /T2Tc/ { rewrite ^/T2Tc/(.*)$ /T2/$1 permanent; }
+    location /AllNets/ { set $app shiny-allnets; proxy_pass http://$app:3838; }
+    location /PC3/     { set $app shiny-pc3;     proxy_pass http://$app:3838; }
+    location /SCMel/   { set $app shiny-scmel;   proxy_pass http://$app:3838; }
+    location /SCBlood/ { set $app shiny-scblood; proxy_pass http://$app:3838; }
+    location /GENIO/   { set $app shiny-genio;   proxy_pass http://$app:3838; }
+
+    ## t2api: the T2 query service (read-only JSON; used by the iPhone app). Container
+    ## `t2api` in /scratch/Docker/ShinyPublic; source and contract in the T2 repository
+    ## (T2Mobile/). Only /v1/... and /healthz are public: /api/t2/v1/X -> /v1/X.
+    ## The API's access log keeps failed requests only (see $t2api_failed above); the
+    ## error log is unchanged (rate limiting and upstream failures are reported there too).
+    location = /api/t2/healthz { rewrite ^ /healthz break; proxy_pass http://t2api_up; proxy_set_header Connection ""; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header Host $host; access_log /var/log/nginx/access.log main if=$t2api_failed; }
+    location = /api/t2/v1/contact {
+        rewrite ^/api/t2/(.*)$ /$1 break;
+        proxy_pass http://t2api_up;
+        proxy_set_header Connection "";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        client_max_body_size 32k;
+        limit_req zone=t2contact_req burst=3 nodelay;
+        limit_conn fiveprime_conn 5;
+        access_log /var/log/nginx/access.log main if=$t2api_failed;
+    }
+
+    location /api/t2/v1/ {
+        rewrite ^/api/t2/(.*)$ /$1 break;
+        proxy_pass http://t2api_up;
+        proxy_set_header Connection "";          # keep-alive to the service (no websocket here)
+        ## a location that sets any proxy_set_header inherits none from the server level: the client
+        ## address must be repeated here, or the service sees only the Nginx container
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $host;
+        proxy_buffering on;                      # a cached answer needs buffering (off site-wide for Shiny)
+        proxy_read_timeout 90s;
+        proxy_cache t2api_cache;
+        ## the key is the path plus the arguments the service reads (probes, probe, v, fill, q, limit,
+        ## all), so a made-up parameter cannot make a new cache entry; a repeated probes= or probe=
+        ## (the key sees only the first) is refused rather than answered from the wrong entry
+        if ($args ~ "(^|&)probes=[^&]*&(.*&)?probes=") { return 400; }
+        if ($args ~ "(^|&)probe=[^&]*&(.*&)?probe=") { return 400; }
+        proxy_cache_key "$uri|$arg_probes|$arg_probe|$arg_v|$arg_fill|$arg_q|$arg_limit|$arg_all|$t2api_enc";
+        proxy_cache_methods GET HEAD;
+        proxy_cache_lock on;                     # one fetch per key, the others wait for it
+        proxy_cache_lock_timeout 5s;
+        proxy_cache_use_stale error timeout updating http_503;   # a busy service (503) is covered by what is cached
+        proxy_ignore_headers Vary;               # gzip-or-not is already in the key
+        limit_req zone=t2api_req burst=200 nodelay;
+        limit_req zone=t2api_total burst=500 nodelay;
+        limit_conn fiveprime_conn 60;
+        access_log /var/log/nginx/access.log main if=$t2api_failed;
+    }
+
+    ## everything else (other apps, db files, directory listings) is not public
+    location / { return 404; }
+
+}
+
+

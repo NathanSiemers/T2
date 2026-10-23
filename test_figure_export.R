@@ -189,6 +189,98 @@ kf <- draw(list(x = "OS", y = "MKI67", cohort = c("LUAD", "LUSC"), facet = "coho
 f <- tmp("png"); t2_render_figure(kf, f, 7, 4.75, 300, "png")
 ok(png_info(f)$width == 2100 && png_info(f)$height == 1425, "faceted Kaplan-Meier figure: 7 x 4.75 in")
 
+cat("\n== text-element switches and the filter caption ==\n")
+sw <- sanitize_t2_figure(list())
+ok(all(unlist(sw[c("show_title", "show_subtitle", "show_caption", "source_line", "show_axis_titles")])), "every text element is on by default")
+sw <- sanitize_t2_figure(list(pub_show_title = FALSE, pub_show_subtitle = "FALSE", pub_show_caption = FALSE,
+                              pub_source = FALSE, pub_show_axis_titles = FALSE))
+ok(!any(unlist(sw[c("show_title", "show_subtitle", "show_caption", "source_line", "show_axis_titles")])), "each switch turns its element off")
+ok(sanitize_t2_figure(list(pub_show_title = "junk", pub_show_axis_titles = NA))$show_title, "a junk switch value means on")
+pf <- draw(list(x = "CD8A", y = "FOXP3", color = "sample_type"))
+ok(!is.null(pf$labels$title) && !is.null(pf$labels$subtitle) && !is.null(pf$labels$caption) && identical(pf$labels$caption, T2_CITATION),
+   "all on: title, subtitle and the source line are on the figure")
+pt <- t2_apply_text_switches(pf, title = FALSE, subtitle = TRUE, axis_titles = TRUE)
+ok(is.null(pt$labels$title) && !is.null(pt$labels$subtitle), "title off: no title, subtitle stays")
+ps <- t2_apply_text_switches(pf, title = TRUE, subtitle = FALSE, axis_titles = FALSE)
+ok(!is.null(ps$labels$title) && is.null(ps$labels$subtitle) && inherits(ps$theme$axis.title, "element_blank"),
+   "subtitle off, axis titles off (blank axis.title)")
+pl <- t2_apply_text_switches(list(plot = pf, summary = "s"), title = FALSE, subtitle = FALSE, axis_titles = FALSE)
+ok(is.list(pl) && identical(pl$summary, "s") && is.null(pl$plot$labels$title) && is.null(pl$plot$labels$subtitle) &&
+   inherits(pl$plot$theme$axis.title, "element_blank"), "switches on a plotter-style list strip res$plot")
+fa <- tmp("png"); t2_render_figure(ps, fa, 3.5, 3.2, 100, "png"); ok(file.exists(fa) && file.size(fa) > 1000, "a figure with switched-off elements renders")
+pn <- draw(list(x = "CD8A", y = "FOXP3"), source = FALSE)
+ok(is.null(pn$labels$caption), "source line off, nothing to put in the caption: no caption")
+fcap <- "Filtered: Primary tumors only; cohorts BRCA, LUAD"
+rr <- t2_figure_object(quiet(fun_plot1(utils::modifyList(list(cohort = "all", nonormal = FALSE, allComplete = TRUE, smooth = "TRUE", show_legend = TRUE),
+                                         c(T2_FIG_PRESETS$half_third$style, list(x = "CD8A", y = "FOXP3"))),
+                      reactive = FALSE, ctx = t2_plot_ctx(b), caption = "", filter_caption = fcap, fig_width = 3.5)))
+ok(grepl("Filtered: Primary tumors only", gsub("\n", " ", rr$labels$caption), fixed = TRUE) && !grepl(T2_CITATION, rr$labels$caption, fixed = TRUE),
+   "the Filtered line is the caption, without the source line when that is off")
+rr2 <- t2_figure_object(quiet(fun_plot1(list(x = "CD8A", y = "FOXP3", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(b),
+                       caption = T2_CITATION, filter_caption = fcap)))
+ok(grepl("Filtered: Primary", rr2$labels$caption, fixed = TRUE) && grepl(T2_CITATION, rr2$labels$caption, fixed = TRUE),
+   "Filtered line and source line together, one under the other")
+kmc <- quiet(fun_plot1(list(x = "OS", y = "MKI67", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(b),
+                       filter_caption = fcap, caption = ""))
+ok(grepl("Filtered: Primary", kmc$plot$labels$caption, fixed = TRUE), "the Kaplan-Meier plot carries the Filtered line too")
+kmt <- t2_apply_text_switches(kmc, title = FALSE, subtitle = FALSE, axis_titles = FALSE)
+ok(inherits(kmt, "ggsurvplot") && is.null(kmt$plot$labels$title) && is.null(kmt$plot$labels$subtitle) &&
+   inherits(kmt$plot$theme$axis.title, "element_blank") && inherits(kmt$table$theme$axis.title, "element_blank"),
+   "switches also strip the Kaplan-Meier curve and its risk table")
+fk <- tmp("png"); t2_render_figure(kmt, fk, 7, 4.75, 100, "png"); ok(file.size(fk) > 1000, "the stripped Kaplan-Meier figure renders")
+
+cat("\n== the not-detected caption ==\n")
+cx <- list(menu = data.frame(name = c("A.prot", "B.prot", "C.prot", "X.phospho"), type = c("prot", "prot", "prot", "phospho")),
+           type_labels = c(prot = "protein", phospho = "phosphosite"))
+ok(identical(t2_fill_caption(list(fill = "zero", filled = c(A.prot = 1357L), tested_n = c(A.prot = 1549L)), cx),
+             "Not-detected protein values set to 0 (1,357 of 1,549 tested samples)"), "one probe: the sentence, the word from type_labels")
+ok(identical(t2_fill_caption(list(fill = "floor", filled = c(A.prot = 10L), tested_n = c(A.prot = 20L)), cx),
+             "Not-detected protein values set to the detection floor, per cohort (10 of 20 tested samples)"), "floor wording")
+ok(identical(t2_fill_caption(list(fill = "zero", filled = c(A.prot = 1L, X.phospho = 2L), tested_n = c(A.prot = 5L, X.phospho = 6L)), cx),
+             "Not-detected protein/phosphosite values set to 0: A.prot (1 of 5), X.phospho (2 of 6)"), "two probes: a clause each")
+ok(identical(t2_fill_caption(list(fill = "zero", filled = c(A.prot = 1000L, B.prot = 2000L, C.prot = 3L), tested_n = c(A.prot = 5L, B.prot = 6L, C.prot = 7L)), cx),
+             "3,003 not-detected values set to 0 (3 variables)"), "more than two: the total")
+ok(identical(t2_fill_caption(list(fill = "zero", filled = integer(0), tested_n = integer(0)), cx), "") && identical(t2_fill_caption(NULL, cx), ""), "nothing filled: no caption")
+pnd <- quiet(fun_plot1(list(x = "CD8A", y = "FOXP3", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(b), caption = T2_CITATION))
+ok(!is.null(pnd$fill) && identical(pnd$fill$options, "na"), "TCGA: the plot result carries the answer's fill options (na only)")
+bc <- load_dataset_bundle("cptac")
+pz <- t2_figure_object(quiet(fun_plot1(list(x = "CLDN6", y = "CLDN6.prot", cohort = "all", allComplete = TRUE), reactive = FALSE,
+                                       ctx = t2_plot_ctx(bc, fill = "zero"), caption = T2_CITATION, filter_caption = "Filtered: x", fig_width = 7)))
+ok(grepl("Filtered: x", pz$labels$caption, fixed = TRUE) && grepl("Not-detected protein values set to 0", gsub("\n", " ", pz$labels$caption)) && grepl(T2_CITATION, pz$labels$caption, fixed = TRUE),
+   "figure: Filtered line, not-detected line and source line")
+pz2 <- t2_figure_object(quiet(fun_plot1(list(x = "CLDN6", y = "CLDN6.prot", cohort = "all", allComplete = TRUE), reactive = FALSE,
+                                        ctx = t2_plot_ctx(bc, fill = "zero"), caption = "", fill_caption = FALSE)))
+ok(is.null(pz2$labels$caption), "Publish with the Caption switch off: no not-detected line either")
+
+ok(identical(t2_fill_caption(list(fill = "zero", filled = c(A.prot = 387L), tested_n = c(A.prot = 404L), basis = "shown"), cx),
+             "Not-detected protein values set to 0 (387 of 404 samples shown)"), "plot counts: 'N of M samples shown'")
+ok(identical(t2_fill_summary(list(fill = "zero", filled = c(A.prot = 387L), tested_n = c(A.prot = 404L), basis = "shown")),
+             "A.prot: 387 not-detected values set to 0 among 404 samples shown"), "Data Summary line with plot counts")
+fdf <- data.frame(sample = letters[1:5], A.prot = c(0, 0, 3, NA, 0))
+attr(fdf, "fill_options") <- c("na", "zero"); attr(fdf, "fill") <- "zero"; attr(fdf, "filled") <- c(A.prot = 99L); attr(fdf, "tested_n") <- c(A.prot = 999L)
+attr(fdf, "filled_rows") <- list(A.prot = c(TRUE, TRUE, FALSE, FALSE, FALSE))
+fi <- t2_fill_of(fdf)
+ok(identical(unname(fi$filled), 2L) && identical(unname(fi$tested_n), 4L) && fi$basis == "shown", "t2_fill_of: counts from the frame's own rows (2 set, 4 with a value), not the dataset's")
+fi2 <- t2_fill_of(fdf, rows = c(TRUE, FALSE, TRUE, TRUE, FALSE))
+ok(identical(unname(fi2$filled), 1L) && identical(unname(fi2$tested_n), 2L), "t2_fill_of rows: counts only the plotted rows (1 set, 2 with a value)")
+attr(fdf, "filled_rows") <- NULL
+ok(t2_fill_of(fdf)$basis == "dataset" && unname(t2_fill_of(fdf)$filled) == 99L, "no frame attribute: the answer's dataset-wide counts are the fallback")
+
+cat("\n== t2_filter_caption ==\n")
+bb <- list(mycohorts = c(a = "BRCA", b = "LUAD", c = "COAD", d = "OV", e = "GBM"))
+ok(identical(t2_filter_caption(list(group = NULL, exclusions = character(0)), bb, "all"), ""), "unfiltered: no caption")
+ok(identical(t2_filter_caption(list(group = "Primary tumors only", exclusions = "Tumor samples only"), bb, "all"),
+             "Filtered: Primary tumors only; Tumor samples only"), "presets by label")
+ok(identical(t2_filter_caption(list(), bb, c("BRCA", "LUAD")), "Filtered: cohorts BRCA, LUAD"), "up to 3 cohorts: the names")
+ok(identical(t2_filter_caption(list(), bb, c("BRCA", "LUAD", "COAD", "OV")), "Filtered: 4 of 5 cohorts"), "more cohorts: N of M")
+ok(identical(t2_filter_caption(list(), bb, unname(bb$mycohorts)), ""), "every cohort chosen is no filter")
+ok(identical(t2_filter_caption(list(), bb, "all", rules = c("CD8A >= 2", "tumtype: BRCA"), n_kept = 100, n_base = 1000),
+             "Filtered: CD8A >= 2 and tumtype: BRCA"), "a few Filter-tab rules in words")
+ok(identical(t2_filter_caption(list(), bb, "all", rules = paste("v", 1:5, ">= 1"), n_kept = 1234, n_base = 5000),
+             "Filtered: 1,234 of 5,000 samples kept"), "many rules: N of M samples kept")
+ok(identical(t2_filter_caption(list(), bb, "all", nonormal = TRUE, noheme = TRUE), "Filtered: no normals; no heme"), "nonormal / noheme")
+ok(identical(t2_filter_caption(list(), list(part_label = "GTEx (Toil)"), "all"), "Filtered: GTEx (Toil)"), "a part of a collection is named")
+
 cat("\n== presets ==\n")
 ok(all(vapply(T2_FIG_PRESETS, function(pr) {
      w <- .t2_to_in(pr$width, pr$units); h <- .t2_to_in(pr$height, pr$units)
@@ -201,4 +293,21 @@ ok(all(vapply(T2_FIG_PRESETS, function(pr) {
 ok(T2_FIG_PRESETS$nature1$width == 89 && T2_FIG_PRESETS$nature2$width == 183 &&
    T2_FIG_PRESETS$nature2$height <= 170, "Nature presets: 89 and 183 mm wide, no taller than 170 mm")
 ok(!file.exists("Rplots.pdf"), "no stray Rplots.pdf")
+cat("\n== B2 loess limit, B4 categorical X with a hyphen in its name ==\n")
+smooth_layers <- function(p) Filter(function(l) inherits(l$geom, "GeomSmooth"), p$layers)
+lo <- quiet(fun_plot1(list(x = "CD8A", y = "FOXP3", cohort = "all", allComplete = TRUE, smooth = "TRUE"), reactive = FALSE,
+                      ctx = t2_plot_ctx(b), gg = list(smooth.method = "loess")))
+sl <- smooth_layers(lo$plot)
+npts <- as.integer(sub(".*Data points in plot: (\\d+).*", "\\1", lo$summary))
+ok(npts > T2_LIMITS$loess_points, sprintf("the frame has more than %d points (%d)", T2_LIMITS$loess_points, npts))
+ok(length(sl) == 1 && identical(sl[[1]]$stat_params$method, "lm"), "loess over the limit: the smooth layer is drawn with method lm")
+ok(grepl("loess needs <= 5000 points; a linear fit is drawn", lo$summary, fixed = TRUE) && !is.null(lo$warning), "the summary and the warning say a linear fit is drawn")
+lo2 <- quiet(fun_plot1(list(x = "CD8A", y = "FOXP3", cohort = "BRCA", allComplete = TRUE, smooth = "TRUE"), reactive = FALSE,
+                       ctx = t2_plot_ctx(b), gg = list(smooth.method = "loess")))
+sl2 <- smooth_layers(lo2$plot)
+ok(length(sl2) == 1 && identical(sl2[[1]]$stat_params$method, "loess") && is.null(lo2$warning), "loess within the limit is kept (BRCA)")
+hy <- quiet(fun_plot1(list(x = "NKX2-1.mut", y = "CD8A", cohort = "all", allComplete = TRUE), reactive = FALSE, ctx = t2_plot_ctx(b)))
+ok(is.list(hy) && any(vapply(hy$plot$layers, function(l) inherits(l$geom, "GeomBoxplot"), NA)),
+   "a categorical X whose name has a hyphen draws the boxplot")
+
 finish("test_figure_export")

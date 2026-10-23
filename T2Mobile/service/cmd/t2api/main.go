@@ -10,15 +10,20 @@
 package main
 
 import (
+	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
 	"slices"
@@ -27,6 +32,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -46,25 +52,39 @@ type server struct {
 	nReq         atomic.Int64
 	nErr         atomic.Int64
 	stopOnce     sync.Once
+	cache        *columnCache // one budget for every dataset's columns (keys carry the dataset name)
 	contact      contactConfig
 	contactLimit contactLimiter
 	inflight     chan struct{} // one token per request being answered (-max-inflight)
 	nBusy        atomic.Int64  // requests refused because every token was taken
+	usage        *usageStats   // counts for /statz and the hourly line (usage.go); nil = off
+	listOnce     sync.Once     // /v1/datasets answer, built once (prepareList)
+	listJSON     []byte
+	listETag     string
 }
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	tcga := flag.String("tcga", "/data/tcga.db", "transitional: a TCGA database outside -datasets (served as \"TCGA\" unless datasets/TCGA.db exists); optional, ignored if absent")
 	dir := flag.String("datasets", "/data/datasets", "directory of additional <name>.db datasets; empty to skip")
-	cacheMB := flag.Int("cache-mb", 512, "memory for cached probe columns, per dataset, in MB")
+	cacheMB := flag.Int("cache-mb", 512, "memory for cached probe columns, in MB: ONE budget shared by all datasets (not per dataset)")
+	trusted := flag.String("trusted-proxies", "", "comma-separated CIDRs of reverse proxies whose X-Real-IP / X-Forwarded-For are believed (the Nginx container's network); empty = never: the TCP peer is the client")
 	conns := flag.Int("db-conns", 48, "database connections per dataset (concurrent uncached lookups)")
 	memMB := flag.Int("mem-limit-mb", 3072, "soft memory limit for the Go runtime, in MB (keep below the container limit)")
 	inflight := flag.Int("max-inflight", 256, "requests answered at once; beyond it a request is refused at once with 503 (a flood then costs no memory and no disk time). 256 x a 100-probe answer is under 2 GB; a small standby takes 32")
+	usageDir := flag.String("usage-dir", "", "when set, one JSON line of counts per hour is appended to <dir>/usage-YYYY-MM.jsonl (counts only; default off: the production container is read-only)")
 	flag.Parse()
 	dbConns = *conns
 	debug.SetMemoryLimit(int64(*memMB) << 20)
 
 	s := &server{datasets: map[string]*Dataset{}, started: time.Now(), inflight: make(chan struct{}, max(1, *inflight))}
+	nets, err := parseTrustedProxies(*trusted)
+	if err != nil {
+		log.Fatalf("-trusted-proxies: %v", err)
+	}
+	trustedProxies = nets
+	log.Printf("trusted proxies: %d network(s); cache budget: %d MB in total, shared by all datasets", len(nets), *cacheMB)
+	s.cache = newColumnCache(int64(*cacheMB) << 20)
 	s.contact = contactConfigFromEnv()
 	if s.contact.dir != "" {
 		log.Printf("contact form: messages are kept in %s", s.contact.dir)
@@ -72,7 +92,7 @@ func main() {
 	// same discovery rule as discover_datasets() in dataset_registry.R
 	add := func(name, path string) {
 		t0 := time.Now()
-		d, err := openDataset(name, path, int64(*cacheMB)<<20)
+		d, err := openDataset(name, path, s.cache)
 		if err != nil {
 			log.Printf("dataset %s (%s): NOT loaded: %v", name, path, err)
 			return
@@ -103,19 +123,15 @@ func main() {
 		log.Fatal("no datasets could be loaded")
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) })
-	mux.HandleFunc("GET /statz", s.handleStats)
-	mux.HandleFunc("GET /v1/datasets", s.handleDatasets)
-	mux.HandleFunc("GET /v1/{ds}/meta", s.withDataset(s.handleMeta))
-	mux.HandleFunc("GET /v1/{ds}/clinical", s.withDataset(s.handleClinical))
-	mux.HandleFunc("GET /v1/{ds}/probes", s.withDataset(s.handleProbes))
-	mux.HandleFunc("GET /v1/{ds}/values", s.withDataset(s.handleValues))
-	mux.HandleFunc("POST /v1/contact", s.handleContact)
+	s.prepareList()
+	s.usage = newUsage(s.order, time.Now)
+	go s.usage.runHourly(*usageDir)
+
+	mux := s.routes()
 
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           s.count(s.limited(s.recovered(gzipped(mux)))),
+		Handler:           s.metered(s.count(s.limited(gzipped(s.recovered(mux))))),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -123,7 +139,22 @@ func main() {
 		MaxHeaderBytes:    16 << 10,
 	}
 	log.Printf("t2api listening on %s, datasets: %s", *addr, strings.Join(s.order, ", "))
-	log.Fatal(srv.ListenAndServe())
+	// graceful stop: SIGTERM (container stop) or SIGINT lets in-flight responses finish
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	errc := make(chan error, 1)
+	go func() { errc <- srv.ListenAndServe() }()
+	select {
+	case err := <-errc:
+		log.Fatal(err)
+	case <-ctx.Done():
+	}
+	log.Printf("shutting down")
+	sctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(sctx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
 }
 
 // ---------------------------------------------------------------------------------------
@@ -136,36 +167,149 @@ func (s *server) count(next http.Handler) http.Handler {
 	})
 }
 
+// gzipWriter compresses a 2xx body lazily: Content-Encoding is set and the gzip writer is
+// created on the first Write of such a body. A 304, an error status or an empty body is
+// passed through plain.
 type gzipWriter struct {
 	http.ResponseWriter
-	gz *gzip.Writer
+	gz      *gzip.Writer
+	code    int  // status waiting for the first Write (2xx only)
+	pending bool // a 2xx status was given but not yet sent
+	sent    bool // the status has gone to the client
 }
 
-func (g *gzipWriter) Write(b []byte) (int, error) { return g.gz.Write(b) }
+var gzPool = sync.Pool{New: func() any {
+	gz, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+	return gz
+}}
+
+func (g *gzipWriter) WriteHeader(code int) {
+	if g.sent || g.pending {
+		return
+	}
+	if code >= 200 && code < 300 && code != http.StatusNoContent {
+		g.code, g.pending = code, true
+		return
+	}
+	g.sent = true
+	g.ResponseWriter.WriteHeader(code)
+}
+
+func (g *gzipWriter) Write(b []byte) (int, error) {
+	if !g.sent && !g.pending {
+		g.pending, g.code = true, http.StatusOK
+	}
+	if g.pending {
+		h := g.Header()
+		h.Set("Content-Encoding", "gzip")
+		h.Del("Content-Length")
+		g.pending, g.sent = false, true
+		g.ResponseWriter.WriteHeader(g.code)
+		g.gz = gzPool.Get().(*gzip.Writer)
+		g.gz.Reset(g.ResponseWriter)
+	}
+	if g.gz == nil { // plain pass-through (error status)
+		return g.ResponseWriter.Write(b)
+	}
+	return g.gz.Write(b)
+}
+
+func (g *gzipWriter) close() {
+	if g.pending { // 2xx without a body
+		g.pending, g.sent = false, true
+		g.ResponseWriter.WriteHeader(g.code)
+	}
+	if g.gz != nil {
+		g.gz.Close()
+		g.gz.Reset(io.Discard)
+		gzPool.Put(g.gz)
+		g.gz = nil
+	}
+}
 
 // gzipped compresses responses for clients that accept it. Columns of numbers compress about
-// 3x; BestSpeed keeps the cost near a millisecond per response.
+// 3x; BestSpeed keeps the cost near a millisecond per response. It sits OUTSIDE recovered, so
+// a 500 from a panic is written through it and never after a half-committed gzip stream.
 func gzipped(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Add("Vary", "Accept-Encoding")
-		gz, _ := gzip.NewWriterLevel(w, gzip.BestSpeed)
-		defer gz.Close()
-		next.ServeHTTP(&gzipWriter{ResponseWriter: w, gz: gz}, r)
+		g := &gzipWriter{ResponseWriter: w}
+		defer g.close()
+		next.ServeHTTP(g, r)
 	})
 }
 
 func (s *server) fail(w http.ResponseWriter, code int, msg string) {
 	s.nErr.Add(1)
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Del("ETag")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// routes builds the mux. Every GET route refuses a query parameter it does not read (see
+// strictQuery); the contact form takes JSON only.
+func (s *server) routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", s.strictQuery(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok\n")) }))
+	mux.HandleFunc("GET /statz", s.strictQuery(s.handleStats))
+	mux.HandleFunc("GET /v1/datasets", s.strictQuery(s.handleDatasets))
+	mux.HandleFunc("GET /v1/{ds}/meta", s.strictQuery(s.withDataset(s.handleMeta), "v"))
+	mux.HandleFunc("GET /v1/{ds}/clinical", s.strictQuery(s.withDataset(s.handleClinical), "v"))
+	mux.HandleFunc("GET /v1/{ds}/probes", s.strictQuery(s.withDataset(s.handleProbes), "v", "q", "limit", "all"))
+	mux.HandleFunc("GET /v1/{ds}/values", s.strictQuery(s.withDataset(s.handleValues), "v", "probes", "probe", "fill"))
+	mux.HandleFunc("POST /v1/contact", s.handleContact)
+	return mux
+}
+
+// strictQuery answers 400 (no-store, via fail) when the query holds a key the handler does
+// not read. The Nginx cache key is the full request URI, and an ignored parameter would let
+// a client store one cached copy of the same answer per junk value (?v=<ver>&junk=N is even
+// immutable). `v` is honoured only where the handler calls cacheable(). The check runs
+// before the dataset lookup, so it costs nothing and touches no database.
+func (s *server) strictQuery(h http.HandlerFunc, allowed ...string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff") // every GET answer, JSON or text
+		if r.URL.RawQuery != "" {
+			// a malformed query (bad escape, ';', empty pieces such as "?&&") is dropped by the
+			// parser but still varies the cache key, so it is refused too
+			qv, err := url.ParseQuery(r.URL.RawQuery)
+			if err != nil || slices.Contains(strings.Split(r.URL.RawQuery, "&"), "") {
+				s.fail(w, http.StatusBadRequest, "malformed query string")
+				return
+			}
+			for k, vs := range qv {
+				if len(vs) > 1 && slices.Contains(allowed, k) {
+					s.fail(w, http.StatusBadRequest, "repeated query parameter: "+clip(k))
+					return
+				}
+			}
+			var bad []string
+			for k := range qv {
+				if !slices.Contains(allowed, k) {
+					bad = append(bad, k)
+				}
+			}
+			if len(bad) > 0 {
+				s.fail(w, http.StatusBadRequest, "unknown query parameter: "+clip(slices.Min(bad)))
+				return
+			}
+		}
+		h(w, r)
+	}
+}
+
+func clip(k string) string {
+	if len(k) > 40 {
+		return k[:40] + "..."
+	}
+	return k
 }
 
 // withDataset resolves {ds} against the loaded datasets: the name is only ever used as a
@@ -195,16 +339,25 @@ func (s *server) withDataset(h func(http.ResponseWriter, *http.Request, *Dataset
 // A client that passes the dataset version it knows (?v=<version from /v1/datasets>) gets a
 // response that may be kept for good: the URL then names one database build. If that version
 // is no longer the one served, the answer is 409 and the client reloads /v1/datasets.
+// canonical: the request is already in the one form that names its answer (see handleProbes /
+// handleValues); only such a request gets the year-long immutable header.
 // Without ?v= the response must be revalidated (ETag, answered 304) before it is reused:
 // that is how a client learns the current version, so it must never come from a cache
 // unchecked (a cached /meta naming a version that is gone would make every ?v= request fail).
-func (s *server) cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, etagKey string) (done bool) {
+func (s *server) cacheable(w http.ResponseWriter, r *http.Request, d *Dataset, etagKey string, canonical bool) (done bool) {
 	if v := r.URL.Query().Get("v"); v != "" {
 		if v != d.version {
 			s.fail(w, http.StatusConflict, "dataset version changed: reload /v1/datasets (current version "+d.version+")")
 			return true
 		}
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		if canonical {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			// a spelling that is not the canonical one (duplicate or odd-case names, a limit over the
+			// cap): the same answer as the canonical URL, but kept briefly, so spelling variants
+			// cannot each pin a cache entry for a year
+			w.Header().Set("Cache-Control", "public, max-age=300")
+		}
 	} else {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
@@ -234,6 +387,9 @@ func (s *server) limited(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		default:
 			s.nBusy.Add(1)
+			if uw, ok := w.(*usageWriter); ok {
+				uw.busy = true
+			}
 			s.nErr.Add(1)
 			w.Header().Set("Retry-After", "3")
 			w.Header().Set("Cache-Control", "no-store")
@@ -247,7 +403,7 @@ func (s *server) recovered(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if p := recover(); p != nil {
-				log.Printf("panic serving %s: %v", r.URL.Path, p)
+				log.Printf("panic serving %q: %v", r.URL.Path, p)
 				s.fail(w, http.StatusInternalServerError, "internal error")
 			}
 		}()
@@ -257,6 +413,7 @@ func (s *server) recovered(next http.Handler) http.Handler {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	json.NewEncoder(w).Encode(v)
 }
 
@@ -271,66 +428,137 @@ func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"busy_refusals": s.nBusy.Load(),
 		"max_inflight":  cap(s.inflight),
 	}
-	ds := map[string]any{}
-	for name, d := range s.datasets {
-		ds[name] = d.cache.stats()
+	if s.cache != nil {
+		out["cache"] = s.cache.stats() // shared by all datasets
 	}
-	out["datasets"] = ds
+	if s.usage != nil {
+		out["usage"] = s.usage.snapshot()
+	}
 	writeJSON(w, out)
 }
 
+// prepareList builds the /v1/datasets answer once (datasets never change while served: a
+// changed file stops the process). The ETag is a hash of the bytes, which carry every version.
+func (s *server) prepareList() {
+	s.listOnce.Do(func() {
+		out := []DatasetSummary{}
+		for _, name := range s.order {
+			out = append(out, s.datasets[name].summary())
+		}
+		var buf bytes.Buffer
+		json.NewEncoder(&buf).Encode(map[string]any{"datasets": out})
+		s.listJSON = buf.Bytes()
+		sum := sha256.Sum256(s.listJSON)
+		s.listETag = `"` + hex.EncodeToString(sum[:12]) + `"`
+	})
+}
+
 func (s *server) handleDatasets(w http.ResponseWriter, r *http.Request) {
-	out := []DatasetSummary{}
-	for _, name := range s.order {
-		out = append(out, s.datasets[name].summary())
-	}
+	s.prepareList()
 	w.Header().Set("Cache-Control", "no-cache") // the list of current versions: never reused unchecked
-	writeJSON(w, map[string]any{"datasets": out})
+	w.Header().Set("ETag", s.listETag)
+	if r.Header.Get("If-None-Match") == s.listETag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(s.listJSON)
+}
+
+// serveStatic answers with a prebuilt JSON body, after the caching headers and conditional
+// requests (see cacheable).
+func (s *server) serveStatic(w http.ResponseWriter, r *http.Request, d *Dataset, key string, body []byte) {
+	if s.cacheable(w, r, d, key, true) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(body)
 }
 
 func (s *server) handleMeta(w http.ResponseWriter, r *http.Request, d *Dataset) {
-	if s.cacheable(w, r, d, "meta") {
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(d.metaJSON)
+	s.serveStatic(w, r, d, "meta", d.metaJSON)
 }
 
 func (s *server) handleClinical(w http.ResponseWriter, r *http.Request, d *Dataset) {
-	if s.cacheable(w, r, d, "clinical") {
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(d.clinicalJSON)
+	s.serveStatic(w, r, d, "clinical", d.clinicalJSON)
 }
 
 // handleProbes searches the selectable variable names (allprobes): case-insensitive, names
 // that START with the query first, then names that contain it.
 func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset) {
 	// ?all=1: the whole list (about 1.5 MB for TCGA, 300 KB gzipped), cacheable by version
-	if r.URL.Query().Get("all") == "1" {
-		if s.cacheable(w, r, d, "probes-all") {
+	// value rules (one canonical, cacheable spelling per answer): all is "1" or absent; limit, when
+	// present, is a positive integer; anything else is a 400, not a silent fallback
+	qv := r.URL.Query()
+	if av, ok := qv["all"]; ok {
+		if av[0] != "1" {
+			s.fail(w, http.StatusBadRequest, "all must be 1")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(d.probesJSON)
+		s.serveStatic(w, r, d, "probes-all", d.probesJSON)
 		return
 	}
-	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	q := strings.ToLower(strings.TrimSpace(qv.Get("q")))
 	if len(q) > maxProbeNameLen {
 		s.fail(w, http.StatusBadRequest, "query too long")
 		return
 	}
-	limit := 50
-	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
-		limit = min(v, maxSearchLimit)
+	limit, canonical := 50, true
+	if lv, ok := qv["limit"]; ok {
+		v, err := strconv.Atoi(lv[0])
+		if err != nil || v <= 0 {
+			s.fail(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		if v > maxSearchLimit {
+			v, canonical = maxSearchLimit, false
+		}
+		limit = v
 	}
-	// ranking: the exact name first, then names that start with the query, then names that
-	// contain it; within a group the shorter name first, then alphabetical. So "T", "MET" or
-	// "CD8B" are found however many names contain those letters (table order used to decide
-	// which 60 of 500 matches were shown, and the exact match could be left out).
+	if rq := qv.Get("q"); q != strings.TrimSpace(rq) || strings.ToLower(rq) != rq {
+		canonical = false
+	}
+	// same caching rules as the other endpoints: long with a matching ?v=, else revalidate
+	if s.cacheable(w, r, d, "probes-q="+strconv.Itoa(limit)+"|"+q, canonical) {
+		return
+	}
+	res, total := d.search(q, limit)
+	names := make([]string, len(res))
+	for i, ix := range res {
+		names[i] = d.probeNames[ix]
+	}
+	out := map[string]any{"dataset": d.Name, "query": q, "total_matches": total, "probes": names,
+		"hits_typed": d.typedHits(res)}
+	writeJSON(w, out)
+}
+
+// search ranks the names matching q: the exact name first, then names that start with the
+// query, then names that contain it; within a group the shorter name first, then alphabetical.
+// So "T", "MET" or "CD8B" are found however many names contain those letters (table order
+// used to decide which 60 of 500 matches were shown, and the exact match could be left out).
+// Only the best `limit` of each group are kept while scanning: O(n + limit log limit) time and
+// O(limit) memory however many names match. total counts every match.
+func (d *Dataset) search(q string, limit int) (res []int, total int) {
+	less := func(a, b int) bool {
+		x, y := d.probeNames[a], d.probeNames[b]
+		if len(x) != len(y) {
+			return len(x) < len(y)
+		}
+		return x < y
+	}
+	keep := func(buf []int, i int) []int { // insert i into the sorted buf, at most limit long
+		if len(buf) == limit && !less(i, buf[limit-1]) {
+			return buf
+		}
+		pos := sort.Search(len(buf), func(k int) bool { return less(i, buf[k]) })
+		if len(buf) < limit {
+			buf = append(buf, 0)
+		}
+		copy(buf[pos+1:], buf[pos:])
+		buf[pos] = i
+		return buf
+	}
 	var exact, starts, contains []int
-	total := 0
 	for i, low := range d.probeLower {
 		idx := strings.Index(low, q)
 		if idx < 0 {
@@ -339,34 +567,20 @@ func (s *server) handleProbes(w http.ResponseWriter, r *http.Request, d *Dataset
 		total++
 		switch {
 		case low == q:
-			exact = append(exact, i)
+			if len(exact) < limit {
+				exact = append(exact, i)
+			}
 		case idx == 0:
-			starts = append(starts, i)
+			starts = keep(starts, i)
 		default:
-			contains = append(contains, i)
+			contains = keep(contains, i)
 		}
 	}
-	byLength := func(a, b int) int {
-		x, y := d.probeNames[a], d.probeNames[b]
-		if len(x) != len(y) {
-			return len(x) - len(y)
-		}
-		return strings.Compare(x, y)
-	}
-	slices.SortFunc(starts, byLength)
-	slices.SortFunc(contains, byLength)
-	res := append(append(exact, starts...), contains...)
+	res = append(append(exact, starts...), contains...)
 	if len(res) > limit {
 		res = res[:limit]
 	}
-	names := make([]string, len(res))
-	for i, ix := range res {
-		names[i] = d.probeNames[ix]
-	}
-	out := map[string]any{"dataset": d.Name, "query": q, "total_matches": total, "probes": names,
-		"hits_typed": d.typedHits(res)}
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	writeJSON(w, out)
+	return res, total
 }
 
 // handleValues is the gitr() of the API: the requested columns, aligned to the dataset's
@@ -376,10 +590,16 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 	var names []string
 	seen := map[string]bool{}
 	q := r.URL.Query()
+	canonical := true
 	for _, part := range append(q["probes"], q["probe"]...) {
 		for _, n := range strings.Split(part, ",") {
-			n = strings.TrimSpace(n)
-			if n == "" || seen[n] {
+			// an empty part or a padded name is a different URL for the same answer: refused
+			if n == "" || n != strings.TrimSpace(n) {
+				s.fail(w, http.StatusBadRequest, "bad probe list: empty or space-padded name")
+				return
+			}
+			if seen[n] {
+				canonical = false // a repeated name: served, but not immutable
 				continue
 			}
 			if len(n) > maxProbeNameLen || strings.ContainsAny(n, "\x00\r\n") {
@@ -402,25 +622,35 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 	}
 	// names are checked against the dataset's variable list first, in memory
 	if len(names) >= unknownPrefix {
-		anyKnown := false
-		for _, n := range names[:unknownPrefix] {
-			if d.isKnown(n) {
-				anyKnown = true
-				break
-			}
-		}
-		if !anyKnown {
+		if !slices.ContainsFunc(names[:unknownPrefix], d.isKnown) {
 			s.fail(w, http.StatusBadRequest, fmt.Sprintf("none of the first %d names is a variable of this dataset", unknownPrefix))
 			return
 		}
 	}
-	if s.cacheable(w, r, d, "v-"+strings.Join(names, ",")) {
+	// fill: how a sample tested for a probe's type but without a stored value is served (see
+	// fetchProbe). The key of the na answer is unchanged, so existing clients see no difference.
+	fill := "na"
+	if fv, ok := q["fill"]; ok {
+		fill = fv[0] // exact: na, zero or floor (no case folding, no padding)
+	}
+	if fill != "na" && fill != "zero" && fill != "floor" {
+		s.fail(w, http.StatusBadRequest, "fill must be na, zero or floor")
+		return
+	}
+	etagKey := "v-" + strings.Join(names, ",")
+	if fill != "na" {
+		etagKey += "|fill=" + fill
+	}
+	if s.cacheable(w, r, d, etagKey, canonical) {
 		return
 	}
 	cols := make([][]byte, 0, len(names))
 	missing := []string{}
+	offered := map[string]bool{"na": true}
+	applied := false
+	filled, testedN := map[string]int{}, map[string]int{}
 	for _, n := range names {
-		c, err := d.column(n)
+		c, aux, err := d.columnFill(n, fill)
 		if err != nil {
 			log.Printf("%s: column %q: %v", d.Name, n, err)
 			s.fail(w, http.StatusInternalServerError, "query failed")
@@ -431,6 +661,27 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 			continue
 		}
 		cols = append(cols, c)
+		if aux.typ != "" {
+			for _, f := range d.fillOptionsOf(aux.typ) {
+				offered[f] = true
+			}
+			if fill != "na" && d.fillOffers(aux.typ, fill) {
+				applied = true
+				if aux.filled > 0 {
+					filled[n], testedN[n] = aux.filled, aux.testedN
+				}
+			}
+		}
+	}
+	if fill != "na" && !applied {
+		s.fail(w, http.StatusBadRequest, "fill not available for these variables")
+		return
+	}
+	opts := []string{}
+	for _, f := range fillOrder {
+		if offered[f] {
+			opts = append(opts, f)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintf(w, `{"dataset":%s,"version":%s,"n":%d,"columns":[`, jsonString(d.Name), jsonString(d.version), len(d.samples))
@@ -441,7 +692,14 @@ func (s *server) handleValues(w http.ResponseWriter, r *http.Request, d *Dataset
 		w.Write(c)
 	}
 	mj, _ := json.Marshal(missing)
-	fmt.Fprintf(w, `],"missing":%s}`, mj)
+	oj, _ := json.Marshal(opts)
+	fmt.Fprintf(w, `],"missing":%s,"fill_options":%s`, mj, oj)
+	if fill != "na" {
+		fj, _ := json.Marshal(filled) // maps marshal with sorted keys
+		tj, _ := json.Marshal(testedN)
+		fmt.Fprintf(w, `,"fill":%s,"filled":%s,"tested_n":%s`, jsonString(fill), fj, tj)
+	}
+	w.Write([]byte{'}'})
 }
 
 func jsonString(s string) string {

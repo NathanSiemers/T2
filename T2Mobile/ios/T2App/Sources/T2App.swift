@@ -79,7 +79,6 @@ struct VariablePicker: View {
     var choose: (String) -> Void = { _ in }
     var chooseMany: ([String]) -> Void = { _ in }
 
-    @Environment(AppModel.self) private var model
     @State private var open = false
 
     var body: some View {
@@ -145,7 +144,7 @@ struct VariableSearch: View {
                         if searching { ProgressView().controlSize(.small) }
                     }
                     if multiple, !chosen.isEmpty {
-                        ForEach(chosen, id: \.self) { name in
+                        ForEach(chosen.uniqued(), id: \.self) { name in
                             HStack {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
                                 Text(name)
@@ -164,7 +163,7 @@ struct VariableSearch: View {
                 }
                 Section(header: Text(header)) {
                     if q.isEmpty {
-                        ForEach(model.meta?.clinicalColumns ?? [], id: \.self) { name in row(name) }
+                        ForEach((model.meta?.clinicalColumns ?? []).uniqued(), id: \.self) { name in row(name) }
                     } else if searchFailed {
                         Label("The search did not reach the server. Check the connection.", systemImage: "wifi.exclamationmark")
                             .foregroundStyle(.secondary)
@@ -172,7 +171,7 @@ struct VariableSearch: View {
                         Text("No variable of this dataset contains \u{201C}\(q)\u{201D}.").foregroundStyle(.secondary)
                             .accessibilityIdentifier("search-empty")
                     } else {
-                        ForEach(results, id: \.self) { name in row(name) }
+                        ForEach(results.uniqued(), id: \.self) { name in row(name) }
                     }
                 }
             }
@@ -241,8 +240,7 @@ struct VariableSearch: View {
                     if let kind = kindLine(name) { Text(kind).font(.caption2).foregroundStyle(.secondary) }
                 }
                 Spacer()
-                if multiple, chosen.contains(name) { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
-                else if name == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                if (multiple && chosen.contains(name)) || name == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
             }
         }
         .accessibilityIdentifier(name)
@@ -256,7 +254,7 @@ struct ExtraRows: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        ForEach(names, id: \.self) { name in
+        ForEach(names.uniqued(), id: \.self) { name in
             HStack {
                 Text(name)
                 Spacer()
@@ -326,12 +324,17 @@ struct SelectView: View {
     }
     @State private var about = false
 
-    private var variablesHelp: String {
-        var s = "Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. Two numbers give a scatter plot; a category on X gives box plots."
-        if let tte = model.meta?.tte, !tte.isEmpty {
-            s += " A time-to-event variable on X (\(tte.map(\.name).joined(separator: ", "))) gives Kaplan-Meier curves by groups of Y."
+    // (the survival hint has its own line under the X picker)
+    private let variablesHelp = "Genes, mutations (TP53.mut), copy number, signatures or clinical annotation. Two numbers give a scatter plot; a category on X gives box plots."
+
+    /// the words of the "Not detected" control (the service's option names)
+    private static func fillName(_ option: String) -> String {
+        switch option {
+        case "na": return "Missing"
+        case "zero": return "Zero"
+        case "floor": return "Floor"
+        default: return option
         }
-        return s
     }
 
     @ViewBuilder private var form: some View {
@@ -345,6 +348,7 @@ struct SelectView: View {
                     ForEach(model.sources) { Text($0.label).tag($0.id) }
                 }
                 .accessibilityIdentifier("dataset-picker")
+                .disabled(model.busy)      // (one opening at a time)
                 if let m = model.meta {
                     let n = model.fixedPreset == nil ? m.nSamples : model.selectedCount()
                     Text("\(m.title)\n\(n.formatted()) samples, \(m.nProbes.formatted()) variables")
@@ -354,10 +358,26 @@ struct SelectView: View {
             }
             Section {
                 VariablePicker(title: "X", current: model.x, allowNone: false) { v in Task { await model.setVariable(.x, to: v) } }
+                // survival is the app's strongest analysis: say where it is, when the dataset has time-to-event variables
+                if let hint = model.meta?.survivalHintShort, !hint.isEmpty {
+                    Text(hint).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("survival-hint-select")
+                }
                 VariablePicker(title: "Y", current: model.y, allowNone: false) { v in Task { await model.setVariable(.y, to: v) } }
                 VariablePicker(title: "Color", current: model.colorLabel) { v in Task { await model.setVariable(.color, to: v) } }
                 VariablePicker(title: "Size", current: model.size) { v in Task { await model.setVariable(.size, to: v) } }
                 VariablePicker(title: "Graph for each", current: model.facet) { v in Task { await model.setVariable(.facet, to: v) } }
+                // "Not detected": only where the values answer for the plotted variables offers more than missing
+                if model.fillOptions.count > 1 {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("Not detected", selection: Binding(get: { model.fill }, set: { f in Task { await model.setFill(f) } })) {
+                            ForEach(model.fillOptions, id: \.self) { Text(Self.fillName($0)).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("fill-picker")
+                        Text("Tested samples without a measured value; samples never analyzed stay missing.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 if !model.availableCohorts.isEmpty {
                     let levels = model.availableCohorts
                     NavigationLink {

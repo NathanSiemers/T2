@@ -54,13 +54,13 @@ struct SceneDrawing {
         var top = pad
         var bottom = size.height - pad
 
-        if s.titleSize > 0, !scene.title.isEmpty {
+        if s.showTitle, s.titleSize > 0, !scene.title.isEmpty {
             let t = label(scene.title, s.titleSize, ink, bold: true)
             let h = measure(ctx, t, width: fullWidth).height
             ctx.draw(t, in: CGRect(x: pad, y: top, width: fullWidth, height: h))
             top += h + 1
         }
-        if s.subtitleSize > 0, !scene.subtitle.isEmpty {
+        if s.showSubtitle, s.subtitleSize > 0, !scene.subtitle.isEmpty {
             let t = label(scene.subtitle, s.subtitleSize, faint)
             let h = measure(ctx, t, width: fullWidth).height
             ctx.draw(t, in: CGRect(x: pad, y: top, width: fullWidth, height: h))
@@ -68,6 +68,13 @@ struct SceneDrawing {
         }
         if s.showSourceLine {
             let t = label(t2Citation, max(4, s.axisTextSize * 0.8), faint)
+            let h = measure(ctx, t, width: fullWidth).height
+            ctx.draw(t, in: CGRect(x: pad, y: bottom - h, width: fullWidth, height: h))
+            bottom -= h + 2
+        }
+        // "Filtered: ...": which samples the figure is drawn from, above the source line
+        if s.showCaption, !scene.caption.isEmpty, scene.kind != .empty {
+            let t = label(scene.caption, max(4, s.axisTextSize * 0.8), faint)
             let h = measure(ctx, t, width: fullWidth).height
             ctx.draw(t, in: CGRect(x: pad, y: bottom - h, width: fullWidth, height: h))
             bottom -= h + 2
@@ -241,7 +248,7 @@ struct SceneDrawing {
     }
 
     private func drawPanel(_ ctx: inout GraphicsContext, _ panel: PlotPanel, _ rect: CGRect) {
-        let ts = s.axisTextSize, tt = s.axisTitleSize
+        let ts = s.axisTextSize, tt = s.showAxisTitles ? s.axisTitleSize : 0
         let xa = panel.xAxis, ya = panel.yAxis
         var top = rect.minY + 3
         if !panel.title.isEmpty, ts > 0 {

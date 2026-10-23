@@ -1,0 +1,2 @@
+# TCGA annotation tables (probe maps) the builders read: public reference data committed in 2026-07 (reorg), not code
+[0-9]+ TCGA/(hugo_gencode_good_hg19_V24lift37_probemap|illuminaMethyl450_hg19_GPL16304_TCGAlegacy|unc_v2_exon_hg19_probe_TCGA)$

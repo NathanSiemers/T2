@@ -32,14 +32,15 @@ public struct Column: Sendable, Equatable {
     public var codes: [Int]? { if case .categorical(_, let c) = data { return c } else { return nil } }
     /// is sample `i` missing a value?
     public func isMissing(_ i: Int) -> Bool {
+        // (an index outside the column is missing, never a trap)
         switch data {
-        case .numeric(let v): return v[i].isNaN
-        case .categorical(_, let c): return c[i] < 0
+        case .numeric(let v): return !v.indices.contains(i) || v[i].isNaN
+        case .categorical(_, let c): return !c.indices.contains(i) || c[i] < 0
         }
     }
     /// the level of sample `i`, or nil (numeric column or missing)
     public func level(_ i: Int) -> String? {
-        if case .categorical(let l, let c) = data, c[i] >= 0 { return l[c[i]] }
+        if case .categorical(let l, let c) = data, c.indices.contains(i), c[i] >= 0, l.indices.contains(c[i]) { return l[c[i]] }
         return nil
     }
     public var missingCount: Int { (0..<count).reduce(0) { $0 + (isMissing($1) ? 1 : 0) } }
@@ -92,8 +93,14 @@ extension Column: Decodable {
             let v = try c.decode([Double?].self, forKey: .values)
             data = .numeric(v.map { $0 ?? .nan })
         case "cat":
-            data = .categorical(levels: try c.decode([String].self, forKey: .levels),
-                                codes: try c.decode([Int].self, forKey: .codes))
+            let levels = try c.decode([String].self, forKey: .levels)
+            let codes = try c.decode([Int].self, forKey: .codes)
+            // code sites index levels[code]: a code outside the levels would trap (-1 = missing)
+            if let bad = codes.first(where: { $0 < -1 || $0 >= levels.count }) {
+                throw DecodingError.dataCorruptedError(forKey: .codes, in: c,
+                    debugDescription: "code \(bad) of \(name) is outside its \(levels.count) levels")
+            }
+            data = .categorical(levels: levels, codes: codes)
         case let other:
             throw DecodingError.dataCorruptedError(forKey: .kind, in: c, debugDescription: "unknown column kind \(other)")
         }
@@ -176,11 +183,18 @@ public struct DatasetSummary: Decodable, Sendable, Equatable, Identifiable {
     public let sources: [DataSource]?
     /// the dataset contract's handles (absent from services before it)
     public let handles: [Handle]?
+    /// the dataset's own metadata says it is not to be offered in the apps (the service's
+    /// `"hidden": true`, e.g. the synthetic test dataset); absent = not hidden, and absent
+    /// from services before 2026-10-20
+    public let hidden: Bool?
     public var id: String { name }
     /// the parts offered as data sources of their own
     public var parts: [DataSource] { (sources ?? []).filter { !$0.isWhole } }
     /// the synthetic test dataset (not real data): built for tests, not offered to users
     public var isDemo: Bool { name == "DEMO" || title.localizedCaseInsensitiveContains("not real data") }
+    /// is the dataset left out of the menus? The service's `hidden` flag, or (for a service
+    /// that does not send it yet) the older rule above.
+    public var isHidden: Bool { hidden == true || isDemo }
 }
 
 /// One data type of a dataset ("rna", "mut", "sig", ...) as the database describes it.
@@ -372,6 +386,19 @@ public struct DatasetMeta: Decodable, Sendable {
     public var handleColumns: [String] { (handles ?? []).map(\.name) }
     /// the time-to-event variables, [] when the service declares none
     public var tte: [TTEVariable] { tteVariables ?? [] }
+    /// "OS, PFI, DSS or DFI": the dataset's time-to-event names, from the data, never a fixed list
+    public var tteNames: String {
+        let n = tte.map(\.name)
+        return n.count <= 1 ? (n.first ?? "") : n.dropLast().joined(separator: ", ") + " or " + n[n.count - 1]
+    }
+    /// the one-line survival hint of the About screen; empty when the dataset has no time-to-event variables
+    public var survivalHint: String {
+        tte.isEmpty ? "" : "Survival curves: choose \(tteNames) as X to draw Kaplan-Meier curves by groups of Y."
+    }
+    /// the short form, under the X picker of the Select screen
+    public var survivalHintShort: String {
+        tte.isEmpty ? "" : "Survival: choose \(tteNames) as X for Kaplan-Meier curves."
+    }
     /// the word a plot title uses for a data type ("mutation" for `mut`); nil = no word (a bare RNA name).
     /// Read from the `types` rows (`type` is a value there): the `type_labels` dictionary is not
     /// decoded, because the snake-case key strategy would mangle type names such as `immune_score`.
@@ -433,6 +460,19 @@ public struct Clinical: Decodable, Sendable {
     /// sample ids, in THE order of every column
     public let samples: [String]
     public let columns: [Column]
+    private enum CodingKeys: String, CodingKey { case dataset, n, samples, columns }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dataset = try c.decode(String.self, forKey: .dataset)
+        n = try c.decode(Int.self, forKey: .n)
+        samples = try c.decode([String].self, forKey: .samples)
+        columns = try c.decode([Column].self, forKey: .columns)
+        // every column must hold one cell per sample, or the sites that index by sample would trap
+        if let bad = columns.first(where: { $0.count != samples.count }) {
+            throw DecodingError.dataCorruptedError(forKey: .columns, in: c,
+                debugDescription: "column \(bad.name) has \(bad.count) cells for \(samples.count) samples")
+        }
+    }
 }
 
 public struct Values: Decodable, Sendable {
@@ -443,6 +483,56 @@ public struct Values: Decodable, Sendable {
     public let columns: [Column]
     /// requested names the dataset does not have
     public let missing: [String]
+    /// the fills the answer's variables allow (`["na"]` = none; the control is shown only when more),
+    /// and, when a fill was applied, which one, the cells changed per probe and the samples tested
+    /// (all absent from services before the not-detected option). NOTE the decoder's snake-case
+    /// strategy also rewrites the dictionary keys ("A_B" -> "AB"): the keys are not relied on.
+    public let fillOptions: [String]?
+    public let fill: String?
+    public let filled: [String: Int]?
+    public let testedN: [String: Int]?
+    private enum CodingKeys: String, CodingKey { case dataset, version, n, columns, missing, fillOptions, fill, filled, testedN }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dataset = try c.decode(String.self, forKey: .dataset)
+        version = try c.decodeIfPresent(String.self, forKey: .version)
+        n = try c.decode(Int.self, forKey: .n)
+        columns = try c.decode([Column].self, forKey: .columns)
+        missing = try c.decode([String].self, forKey: .missing)
+        fillOptions = try c.decodeIfPresent([String].self, forKey: .fillOptions)
+        fill = try c.decodeIfPresent(String.self, forKey: .fill)
+        filled = try c.decodeIfPresent([String: Int].self, forKey: .filled)
+        testedN = try c.decodeIfPresent([String: Int].self, forKey: .testedN)
+        if let bad = columns.first(where: { $0.count != n }) {
+            throw DecodingError.dataCorruptedError(forKey: .columns, in: c,
+                debugDescription: "column \(bad.name) has \(bad.count) cells for \(n) samples")
+        }
+    }
+}
+
+/// What the answers to one values request (possibly several chunks) say about not-detected fills.
+public struct ValuesInfo: Sendable, Equatable {
+    /// the union of the chunks' options, in the order na, zero, floor; ["na"] when the service says nothing
+    public var fillOptions: [String] = ["na"]
+    /// the fill the service applied ("na" = none)
+    public var fill: String = "na"
+    /// did the service change any cell?
+    public var anyFilled = false
+    public init(fillOptions: [String] = ["na"], fill: String = "na", anyFilled: Bool = false) {
+        self.fillOptions = fillOptions; self.fill = fill; self.anyFilled = anyFilled
+    }
+    /// merge the answers of the chunks of one request
+    public static func merge(_ answers: [Values]) -> ValuesInfo {
+        var offered = Set<String>(["na"]), applied = "na", any = false
+        for a in answers {
+            offered.formUnion(a.fillOptions ?? [])
+            if let f = a.fill, f != "na" { applied = f }
+            if let c = a.filled, c.values.contains(where: { $0 > 0 }) { any = true }
+        }
+        return ValuesInfo(fillOptions: ["na", "zero", "floor"].filter { offered.contains($0) }
+                              + offered.subtracting(["na", "zero", "floor"]).sorted(),
+                          fill: applied, anyFilled: any)
+    }
 }
 
 /// One search hit with what the service knows about it (`hits_typed`): where the menu puts

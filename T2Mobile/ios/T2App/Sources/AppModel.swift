@@ -60,6 +60,7 @@ final class AppModel {
         var kmGroups: Int, kmMaxDays: Double
         var zscoreY: Bool, flip: Bool, waterfall: Bool, yIndividually: Bool, fitLine: Bool
         var filterRevision: Int, datasetRevision: Int
+        var fill: String
     }
     private struct ChoicesKey: Equatable { var datasetRevision: Int, fixed: String?, version: String? }
     private let sceneCache = KeyedCache<SceneKey, PlotScene>()
@@ -106,15 +107,35 @@ final class AppModel {
     var flip = false
     var waterfall = false
 
+    // MARK: not-detected values
+
+    /// How the cells of a tested sample with no stored value are served ("na" = missing, as always;
+    /// "zero" or "floor" where the service offers it). Per plot: back to "na" on a data source switch.
+    var fill = "na"
+    /// The fills the values answer for the plotted variables lists. The control is shown only when
+    /// there is more than "na"; the app does not look at types to decide.
+    var fillOptions: [String] = ["na"]
+    /// per probe, the samples the service filled in (missing in the plain column, a value in the filled one)
+    private var fillMasks: [String: [Bool]] = [:]
+    private var fillOptionsMemo: [String: [String]] = [:]
+    /// the filled cells of the plotted probes, for the caption and the statistics
+    var fillNote: FillNote {
+        guard fill != "na" else { return FillNote() }
+        let words = meta?.typeWords ?? [:]
+        return FillNote(fill: fill, probes: fillMasks.keys.sorted().map { name in
+            FillNote.Probe(name: name, word: words[filter.columns[name]?.type ?? ""] ?? "", filledMask: fillMasks[name] ?? [])
+        })
+    }
+
     /// what is going on, for the user: "Loading CD8A...", or the last problem
     var status = ""
     /// the error of the last failed operation (for the explanation when nothing could be loaded)
     var lastError: Error?
     /// what to tell the user when the service could not be reached: their phone, or our server
     var outageText: String {
-        if lastError is ServiceTooOld { return (lastError as? ServiceTooOld)?.errorDescription ?? "" }
-        if let e = lastError as? URLError,
-           [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff].contains(e.code) {
+        if let e = lastError as? ServiceTooOld { return e.errorDescription ?? "" }
+        // (APIClient keeps the URLError's code in `.transport`: it is the offline codes that say "your phone")
+        if (lastError as? APIClient.APIError)?.isOffline == true || (lastError as? URLError).map({ APIClient.APIError.offlineCodes.contains($0.code) }) == true {
             return "Your phone seems to be offline. T2 needs an internet connection to fetch its data."
         }
         return "The T2 data service is not answering at the moment \u{2014} it may be down for maintenance or a power cut at its home. Please try again in a little while; nothing is wrong with your phone or the app."
@@ -146,21 +167,20 @@ final class AppModel {
     /// TCGA dataset). Until 2026-10-10 the app defined these itself; now nothing about a
     /// dataset is written here.
     var sources: [DataSource] {
-        datasets.filter { !$0.isDemo }.flatMap { d -> [DataSource] in
+        datasets.filter { !$0.isHidden }.flatMap { d -> [DataSource] in
             [DataSource(dataset: d.name, preset: nil, label: d.label)] +
             d.parts.map { DataSource(dataset: d.name, preset: $0.label, label: "\(d.label): \($0.label)") }
         }
     }
     /// the open dataset's presets: the service's parts of it (each a preset that is always
     /// on while it is the data source) and its own (default_filters)
-    var allPresets: [Preset] {
-        guard let m = meta else { return [] }
+    var allPresets: [Preset] { meta.map(Self.presets(of:)) ?? [] }
+    private static func presets(of m: DatasetMeta) -> [Preset] {
         let parts = (m.sources ?? []).filter { !$0.isWhole }.map(\.asPreset)
         let partLabels = Set(parts.map(\.label))
         return parts + m.presets.filter { !partLabels.contains($0.label) }
     }
     var sourceID: String { meta.map { m in fixedPreset.map { "\(m.dataset)|\($0)" } ?? m.dataset } ?? "" }
-    var sourceLabel: String { sources.first { $0.id == sourceID }?.label ?? (meta?.label ?? "") }
 
     func select(source id: String) async {
         guard id != sourceID, let src = sources.first(where: { $0.id == id }) else { return }
@@ -202,7 +222,7 @@ final class AppModel {
         await run("Loading datasets") {
             self.datasets = try await self.api.datasets()
             let wanted = UserDefaults.standard.string(forKey: "t2Dataset")
-            let offered = self.datasets.filter { !$0.isDemo }
+            let offered = self.datasets.filter { !$0.isHidden }
             let first = offered.first { $0.name == wanted } ?? offered.first
             if let first, self.meta == nil { try await self.open(first.name, launch: true) }
         }
@@ -225,7 +245,14 @@ final class AppModel {
         var names: [String] { [x, y, color, size, facet] + xMore + yMore + condition + filters.map(\.column) }
     }
 
-    func open(_ name: String, launch: Bool = false, preset: String? = nil) async throws {
+    /// an operation that a newer one replaced: it stops without touching the state
+    private struct Superseded: Error {}
+    /// counts every run/open/setVariable/applyFill; an answer that arrives after a newer
+    /// operation began is dropped (two taps, or a variable chosen twice, keep the last)
+    private var generation = 0
+
+    func open(_ name: String, launch: Bool = false, preset: String? = nil, retried: Bool = false) async throws {
+        let g = generation
         // selections and filters are sticky across a switch: everything whose name the new
         // dataset has is kept (filter levels are kept where they exist too); the rest falls
         // back to the new dataset's defaults
@@ -234,7 +261,10 @@ final class AppModel {
             carried = Carried(x: x, y: y, color: color, size: size, facet: facet, xMore: xMore, yMore: yMore, condition: condition,
                               conditionOn: conditionOn, zscoreY: zscoreY, flip: flip, waterfall: waterfall, yIndividually: yIndividually, filters: filter.filters)
         }
+        // Everything is fetched first; the state changes only when every answer is here, so a
+        // failure (or a newer operation) leaves the previous dataset exactly as it was.
         var m = try await api.meta(name)
+        guard g == generation else { throw Superseded() }
         // a service without the dataset contract: say so, derive nothing (the previous dataset stays open)
         if m.isOldService { throw ServiceTooOld() }
         var clin: Clinical
@@ -242,30 +272,65 @@ final class AppModel {
             clin = try await api.clinical(name, version: m.version)
         } catch APIClient.APIError.versionChanged {
             // the database was replaced between the two requests: ask once more
+            guard g == generation else { throw Superseded() }
             m = try await api.meta(name)
             if m.isOldService { throw ServiceTooOld() }
             clin = try await api.clinical(name, version: m.version)
         }
+        guard g == generation else { throw Superseded() }
         var cf = CrossFilter(sampleCount: clin.n)
         cf.load(clin.columns)
+        func first(_ key: String, _ argument: String) -> String {
+            (launch ? UserDefaults.standard.string(forKey: argument) : nil) ?? m.defaults[key] ?? ""
+        }
+        let x0 = first("x", "t2X"), y0 = first("y", "t2Y"), color0 = first("color", "t2Color"), size0 = first("size", "t2Size")
+        let facet0 = (launch ? UserDefaults.standard.string(forKey: "t2Facet") : nil) ?? ""
+        func needed(_ names: [String]) -> [String] {
+            Set(names.filter { n in !n.isEmpty && cf.columns[n] == nil && !m.tte.contains { t in t.name == n } }).sorted()
+        }
+        var pendingMissing: String? = nil
+        do {
+            // one request for every carried name; the ones the dataset does not have come back
+            // missing (a failure here only means nothing is carried over)
+            if let c = carried {
+                let want = needed(c.names)
+                if !want.isEmpty, let r = try? await api.values(name, probes: want, version: m.version) { cf.load(r.columns) }
+                guard g == generation else { throw Superseded() }
+            }
+            let want = needed([x0, y0, color0, size0, facet0])
+            if !want.isEmpty {
+                let r = try await api.values(name, probes: want, version: m.version)
+                guard g == generation else { throw Superseded() }
+                cf.load(r.columns)
+                if !r.missing.isEmpty { pendingMissing = "Not in this dataset: \(r.missing.joined(separator: ", "))" }
+            }
+        } catch APIClient.APIError.versionChanged {
+            // the database was replaced on the server meanwhile: start this dataset afresh (once)
+            if retried { throw APIClient.APIError.versionChanged }
+            try await open(name, launch: launch, preset: preset, retried: true)
+            status = "The database on the server was updated. The dataset was reloaded: choose the variables again."
+            return
+        }
+        guard g == generation else { throw Superseded() }
+
+        // from here on nothing is awaited: the new dataset is put in place in one step
         meta = m
         datasetRevision += 1
         samples = clin.samples
         filter = cf
+        fill = "na"; fillOptions = ["na"]; fillMasks = [:]      // a new data source starts with missing values as missing
         let presets = allPresets
         presetMasks = Dictionary(presets.map { ($0.label, $0.mask(columns: cf.columns, sampleCount: cf.sampleCount)) }, uniquingKeysWith: { a, _ in a })
         fixedPreset = preset.flatMap { label in presets.contains { $0.label == label } ? label : nil }
         datasetRevision += 1
-        if preset != nil && fixedPreset == nil { status = "This dataset has no part called \u{201C}\(preset ?? "")\u{201D}; showing all of it." }
+        if let preset, fixedPreset == nil { status = "This dataset has no part called \u{201C}\(preset)\u{201D}; showing all of it." }
+        if let note = pendingMissing { status = note; pendingMissing = nil }
         activePresets = Set(presets.filter(\.isDefault).map(\.label)).union(fixedPreset.map { [$0] } ?? [])
-        func first(_ key: String, _ argument: String) -> String {
-            (launch ? UserDefaults.standard.string(forKey: argument) : nil) ?? m.defaults[key] ?? ""
-        }
-        x = first("x", "t2X")
-        y = first("y", "t2Y")
-        color = first("color", "t2Color")
-        size = first("size", "t2Size")
-        facet = (launch ? UserDefaults.standard.string(forKey: "t2Facet") : nil) ?? ""
+        x = x0
+        y = y0
+        color = color0
+        size = size0
+        facet = facet0
         xMore = []
         yMore = []
         condition = []
@@ -276,9 +341,6 @@ final class AppModel {
         yIndividually = false
         applyPresets()
         if let c = carried {
-            // one request for every carried name; the ones the dataset does not have come back
-            // missing (a failure here only means nothing is carried over)
-            try? await ensureLoaded(c.names)
             let has = { (n: String) in !n.isEmpty && self.isKnown(n) }
             if has(c.x) { x = c.x }
             if has(c.y) { y = c.y }
@@ -289,7 +351,6 @@ final class AppModel {
             conditionOn = c.conditionOn; zscoreY = c.zscoreY; flip = c.flip; waterfall = c.waterfall
             yIndividually = c.yIndividually && yMore.count >= 1
         }
-        try await ensureLoaded([x, y, color, size, facet])
         // a variable the dataset does not have is not kept as a selection
         if !isKnown(x) { x = "" }
         if column(y) == nil { y = "" }
@@ -318,27 +379,108 @@ final class AppModel {
         }
     }
 
-    func select(dataset name: String) async {
-        await select(source: name)
-    }
-
     /// fetch any of these variables that are not on the device yet
     func ensureLoaded(_ names: [String]) async throws {
         guard let ds = datasetName else { return }
-        let need = Array(Set(names.filter { !$0.isEmpty && filter.columns[$0] == nil && !isTTE($0) })).sorted()
+        let need = Set(names.filter { !$0.isEmpty && filter.columns[$0] == nil && !isTTE($0) }).sorted()
         guard !need.isEmpty else { return }
-        let r: (columns: [Column], missing: [String])
+        let part = fixedPreset
         do {
-            r = try await api.values(ds, probes: need, version: meta?.version)
+            let r = try await loadValues(ds, need, fill: fill)
+            if !r.missing.isEmpty { status = "Not in this dataset: \(r.missing.joined(separator: ", "))" }
         } catch APIClient.APIError.versionChanged {
             // the database was replaced on the server: what is on the device (the sample
             // order above all) belongs to the old one, so start this dataset afresh
-            try await open(ds)
+            // (in the same data source)
+            try await open(ds, preset: part)
             status = "The database on the server was updated. The dataset was reloaded: choose the variables again."
-            return
         }
+    }
+
+    /// Fetch `names` with `fill` and put them on the device. A fill that applies to none of the
+    /// names is refused by the service (400): they are fetched plain instead. When the service did
+    /// fill cells, the plain columns are fetched too (the device's URL cache usually has them) and the
+    /// filled samples are worked out by comparing the two. Both answers are fetched BEFORE anything
+    /// is applied, so a failure of the second leaves the device as it was. Returns the names the
+    /// dataset lacks and the fill that was really applied.
+    private func loadValues(_ ds: String, _ names: [String], fill wanted: String) async throws -> (missing: [String], applied: String) {
+        let g = generation
+        let version = meta?.version
+        var r: (columns: [Column], missing: [String], info: ValuesInfo)
+        var applied = wanted
+        if wanted != "na" {
+            do { r = try await api.values(ds, probes: names, version: version, fill: wanted) }
+            catch APIClient.APIError.http(let code, _) where code == 400 {
+                applied = "na"
+                r = try await api.values(ds, probes: names, version: version)
+            }
+        } else {
+            r = try await api.values(ds, probes: names, version: version)
+        }
+        var plain: [Column]? = nil
+        if applied != "na", r.info.anyFilled {
+            plain = try await api.values(ds, probes: r.columns.filter(\.isNumeric).map(\.name), version: version).columns
+        }
+        guard g == generation else { throw Superseded() }
+        // both answers are in: apply them in one step
         filter.load(r.columns)
-        if !r.missing.isEmpty { status = "Not in this dataset: \(r.missing.joined(separator: ", "))" }
+        for c in r.columns { fillMasks[c.name] = nil }
+        if let plain {
+            let before = Dictionary(plain.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+            for c in r.columns {
+                guard let after = c.numbers, let was = before[c.name]?.numbers, was.count == after.count else { continue }
+                let mask = zip(was, after).map { $0.isNaN && !$1.isNaN }
+                if mask.contains(true) { fillMasks[c.name] = mask }
+            }
+        }
+        return (r.missing, applied)
+    }
+
+    /// the probes on the device (not the clinical columns): what a change of fill must fetch again
+    private var loadedProbes: [String] {
+        let clinical = Set(meta?.clinicalColumns ?? [])
+        return filter.columns.keys.filter { !clinical.contains($0) && filter.columns[$0]?.type != "virtual" && filter.columns[$0]?.type != "clinical" }.sorted()
+    }
+
+    /// The Select screen's "Not detected" control: fetch the probes again with the fill and plot them.
+    func setFill(_ f: String) async {
+        guard f != fill, fillOptions.contains(f) else { return }
+        await run("Loading") { try await self.applyFill(f) }
+    }
+    private func applyFill(_ f: String) async throws {
+        guard let ds = datasetName else { return }
+        let names = loadedProbes
+        if names.isEmpty { fill = f; return }
+        let part = fixedPreset
+        do {
+            let r = try await loadValues(ds, names, fill: f)
+            fill = r.applied
+            if f == "na" { fillMasks = [:] }
+        } catch APIClient.APIError.versionChanged {
+            try await open(ds, preset: part)      // (the chosen source part is kept)
+        }
+    }
+
+    /// What the service says the plotted variables allow (the values answer's `fill_options`), kept
+    /// per set of variables so that a repeated question costs nothing. If the fill in use is no longer
+    /// offered (the variable that had it was replaced), the plot goes back to missing values.
+    private func refreshFillOptions() async {
+        guard let ds = datasetName, let version = meta?.version else { fillOptions = ["na"]; return }
+        let clinical = Set(meta?.clinicalColumns ?? [])
+        let plotted = ([x, y, color, size, facet] + xMore + yMore + condition).filter {
+            !$0.isEmpty && !isTTE($0) && !clinical.contains($0) && filter.columns[$0] != nil
+                && filter.columns[$0]?.type != "virtual" && filter.columns[$0]?.type != "clinical"
+        }.uniqued().sorted()
+        if plotted.isEmpty { fillOptions = ["na"] }
+        else {
+            let key = version + "|" + plotted.joined(separator: ",")
+            if let known = fillOptionsMemo[key] { fillOptions = known }
+            else if let r = try? await api.values(ds, probes: plotted, version: version) {
+                fillOptionsMemo[key] = r.info.fillOptions
+                fillOptions = r.info.fillOptions
+            }
+        }
+        if fill != "na", !fillOptions.contains(fill) { try? await applyFill("na") }
     }
 
     enum Slot { case x, y, color, size, facet }
@@ -398,7 +540,6 @@ final class AppModel {
     /// what the Color row shows: the probe, while individual Y probes are told apart by colour
     var colorLabel: String { color.isEmpty && yIndividually && !yMore.isEmpty ? "Y probe" : color }
 
-    func addFilterColumn(_ name: String) async { await addFilterColumns([name]) }
     /// several at once: one request for all of them, then a panel each
     func addFilterColumns(_ names: [String]) async {
         let wanted = names.filter { !$0.isEmpty }
@@ -427,9 +568,6 @@ final class AppModel {
     // The dataset's presets are of two kinds, groups and exclusions (T2Kit's PresetChoices has
     // the rules and says what each is). They are worked out once per dataset and chosen
     // group, not on every redraw.
-
-    /// a preset that only removes samples
-    static func isExclusion(_ p: Preset) -> Bool { PresetChoices.isExclusion(p) }
 
     /// the samples of the data source: the fixed preset's, or all of them
     private var sourceMask: Mask {
@@ -491,16 +629,18 @@ final class AppModel {
     /// The current plot, worked out by T2Kit (PlotBuilder) from the selections and the samples in use.
     func scene(fitLine: Bool) -> PlotScene {
         guard let m = meta else { return .empty(busy ? "Loading\u{2026}" : (status.isEmpty ? "No dataset is open." : status)) }
+        // the follow-up limit is in days: a variable timed in other units is never capped by a stale choice
+        let kmCap = tteEntry?.timeUnit == "days" ? kmMaxDays : 0
         let key = SceneKey(x: x, y: y, color: color, size: size, facet: facet, xMore: xMore, yMore: yMore, condition: condition,
-                           conditionOn: conditionOn, kmGroups: kmGroups, kmMaxDays: kmMaxDays, zscoreY: zscoreY, flip: flip,
+                           conditionOn: conditionOn, kmGroups: kmGroups, kmMaxDays: kmCap, zscoreY: zscoreY, flip: flip,
                            waterfall: waterfall, yIndividually: yIndividually, fitLine: fitLine,
-                           filterRevision: filter.revision, datasetRevision: datasetRevision)
+                           filterRevision: filter.revision, datasetRevision: datasetRevision, fill: fill)
         return sceneCache.get(key) {
             var request = PlotRequest(x: [x] + xMore, y: [y] + yMore, color: color, size: size, facet: facet)
             request.condition = condition
             request.conditionOn = condition.isEmpty ? .none : conditionOn
             request.kmGroups = kmGroups
-            request.kmMaxDays = kmMaxDays
+            request.kmMaxDays = kmCap
             request.zscoreY = zscoreY
             request.yIndividually = yIndividually && !yMore.isEmpty
             request.flip = flip
@@ -508,9 +648,23 @@ final class AppModel {
             request.fitLine = fitLine
             // (the website also asks for the cohort and the sample type of a sample when it keeps only complete ones)
             let required = [m.cohortColumn, m.sampleTypeColumn].compactMap { $0 }
-            let context = PlotBuilder.Context(datasetLabel: m.label, tte: m.tte, typeLabels: m.typeWords, handleColumns: required)
+            let context = PlotBuilder.Context(datasetLabel: PlotBuilder.sourceWord(dataset: m.label, part: fixedPreset),
+                                              tte: m.tte, typeLabels: m.typeWords, handleColumns: required, filters: filterNote, fills: fillNote)
             return PlotBuilder.build(request, columns: filter.columns, keep: currentMask(), context: context)
         }
+    }
+
+    /// what is filtered, for the figure's "Filtered: ..." caption: the group and exclusions in
+    /// use, the cohorts, and the Filter screen's other rules (the data source is named in the title)
+    var filterNote: FilterNote {
+        let exclusions = Set(allPresets.filter(PresetChoices.isExclusion).map(\.label))
+        let used = activePresets.filter { $0 != fixedPreset }
+        let cohortCol = meta?.cohortColumn
+        return FilterNote(groups: used.filter { !exclusions.contains($0) }.sorted(),
+                          exclusions: used.filter { exclusions.contains($0) }.sorted(),
+                          cohorts: chosenCohorts.map { Array($0) },
+                          cohortTotal: availableCohorts.count,
+                          rules: filter.filters.filter { $0.column != cohortCol && $0.isActive })
     }
 
     /// is X a time-to-event variable of this dataset (so the plot is a Kaplan-Meier plot)?
@@ -535,9 +689,7 @@ final class AppModel {
         wanted.append(contentsOf: filter.filters.map(\.column))
         wanted.append(contentsOf: filter.columns.keys.filter { !clinical.contains($0) }.sorted())
         wanted.append(contentsOf: m.clinicalColumns)
-        var names: [String] = []
-        for v in wanted where !v.isEmpty && filter.columns[v] != nil && !names.contains(v) { names.append(v) }
-        return names
+        return wanted.filter { !$0.isEmpty && filter.columns[$0] != nil }.uniqued()
     }
 
     /// how many of the table's columns are probes (not clinical columns)
@@ -549,17 +701,21 @@ final class AppModel {
     /// The export table (the website's "Download Table"): one row per sample in use, exactly
     /// as the presets and the filters leave them, with `tableColumns`, written to a new CSV
     /// file. Returns nil if there is nothing to write.
-    func writeTable() -> URL? {
+    func writeTable() async -> URL? {
         guard let m = meta else { return nil }
         let names = tableColumns
-        let csv = TableExport.csv(samples: samples, columns: names.compactMap { filter.columns[$0] }, keep: currentMask())
+        // snapshots (value types) go to a background task: a big table is not built on the main actor
+        let samples = self.samples, columns = names.compactMap { filter.columns[$0] }, mask = currentMask()
         let stamp = DateFormatter()
         stamp.dateFormat = "yyyyMMdd-HHmmss"
         let file = "T2_table_\(m.dataset)_\(selectedCount())samples_\(names.count)columns_\(stamp.string(from: Date())).csv"
             .replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(file)
-        do { try csv.write(to: url, atomically: true, encoding: .utf8) } catch { return nil }
-        return url
+        return await Task.detached(priority: .userInitiated) { () -> URL? in
+            let csv = TableExport.csv(samples: samples, columns: columns, keep: mask)
+            do { try csv.write(to: url, atomically: true, encoding: .utf8) } catch { return nil }
+            return url
+        }.value
     }
 
     // MARK: cohorts (the website's Cohort box: a filter on the dataset's cohort column)
@@ -588,14 +744,25 @@ final class AppModel {
     }
 
     private func run(_ what: String, _ work: @escaping () async throws -> Void) async {
+        generation += 1
+        let g = generation
         busy = true
         status = what + "\u{2026}"
         do {
             try await work()
+            guard g == generation else { return }
+            if meta != nil { await refreshFillOptions() }
+            guard g == generation else { return }
             if status == what + "\u{2026}" { status = "" }
         } catch {
-            lastError = error
-            status = "\(what) failed: \(error.localizedDescription)"
+            // a newer operation replaced this one: it reports, and owns the busy flag
+            guard g == generation else { return }
+            if error is CancellationError {
+                if status == what + "\u{2026}" { status = "" }
+            } else {
+                lastError = error
+                status = "\(what) failed: \(error.localizedDescription)"
+            }
         }
         busy = false
     }

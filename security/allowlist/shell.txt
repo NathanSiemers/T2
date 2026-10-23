@@ -1,0 +1,26 @@
+# local sendmail delivery of contact messages to the local user (the reviewed hardened script, identical to ~/bin copy)
+(~/bin/t2-contact-mail|T2Mobile/ops/contact/(t2-contact-mail|contact_fuzz))\.py:[0-9]+:.*sendmail
+# image hardening removes sudo from the Shiny images
+PUB/(t2t/)?Dockerfile:[0-9]+:RUN .*purge -y sudo
+# host-setup.sh is run by Nathan by hand with sudo (log rotation); it only writes the logrotate files
+PUB/host-setup\.sh:[0-9]+:.*sudo
+# deploy tooling comments
+PUB/scripts/deploy\.sh:[0-9]+:##.*git push
+PUB/scripts/deploy\.sh:[0-9]+:.*git push first
+PUB/scripts/clone-all\.sh:[0-9]+:##.*ssh -T git@github\.com
+# iOS release tooling: comments about sudo/ssh keychain
+T2Mobile/ios/mac_setup\.sh:[0-9]+:.*sudo
+T2Mobile/ios/testflight\.sh:[0-9]+:#.*ssh
+# ops/test.sh `ios`: rsync/scp/ssh from this host to the Mac (nathan@$T2_MAC, default 10.13.13.4) and a reverse tunnel for the dev service port 3861; documented in the file header
+T2Mobile/ops/test\.sh:[0-9]+:\s+(rsync|scp|pgrep|ssh) .*T2_MAC
+T2Mobile/ops/test\.sh:[0-9]+:.*ssh nathan@\$\{T2_MAC
+# the service's test scripts use python3 -c only to print JSON/long strings
+# legacy Domino/BMS publishing script (pre-2026-09, TCGA/); not run by anything we operate: REPORTED as a finding
+TCGA/createT2(_plus)?\.sh:[0-9]+:
+# log pruning/truncation inside the containers' entrypoints (find ... -exec truncate) and logrotate's copytruncate: documented in the file headers
+PUB/(entrypoint|t2t/pool-entrypoint)\.sh:[0-9]+:.*-exec truncate -s 0
+PUB/host-setup\.sh:[0-9]+:\s+copytruncate
+# ops/test.sh `ios` rsync of the checkout to the Mac (long line, same construct as above)
+T2Mobile/ops/test\.sh:[0-9]+:\s+rsync -a --delete
+# the fuzzer's wordlist of paths to probe (contains the word eval/exec/shell as ENDPOINT NAMES to request)
+T2Mobile/service/fuzz\.sh:34:

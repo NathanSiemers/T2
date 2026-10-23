@@ -1,0 +1,19 @@
+*/15 * * * * $HOME/bin/t2-contact-mail.sh >> $HOME/.t2-contact.log 2>&1
+-- /etc/cron.d
+e2scrub_all
+sysstat
+-- cron.hourly
+shiny-public-logrotate
+-- cron.daily
+apport
+apt-compat
+bsdmainutils.dpkg-remove
+cracklib-runtime
+dpkg
+logrotate
+man-db
+plocate
+samba
+sysstat
+-- cron.weekly
+man-db

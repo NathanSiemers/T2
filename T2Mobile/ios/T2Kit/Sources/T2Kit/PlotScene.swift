@@ -57,9 +57,7 @@ public struct PlotRequest: Sendable, Equatable {
 
     /// every variable this request needs loaded
     public var variables: [String] {
-        var seen = Set<String>(), out: [String] = []
-        for v in x + y + [color, size, facet] + condition where !v.isEmpty && seen.insert(v).inserted { out.append(v) }
-        return out
+        (x + y + [color, size, facet] + condition).filter { !$0.isEmpty }.uniqued()
     }
 }
 
@@ -238,6 +236,8 @@ public struct PlotScene: Sendable, Equatable {
     public var n: Int
     /// Y probes plotted individually (each sample drawn once per probe); 0 otherwise
     public var probesStacked: Int = 0
+    /// the line under the figure that says which samples are in it ("Filtered: ..."); empty when nothing is filtered
+    public var caption: String = ""
     /// what `n` counts, for the screen: "4,312 samples" or "8,624 points (4,312 samples x 2 probes)"
     public var countText: String {
         guard probesStacked > 1 else { return "\(n.formatted()) samples" }
@@ -301,5 +301,13 @@ public enum PlotFormat {
     public static func padded(_ lo: Double, _ hi: Double) -> (lo: Double, hi: Double) {
         let span = hi > lo ? hi - lo : (lo == 0 ? 1 : abs(lo) * 0.1)
         return (lo - span * 0.04, hi + span * 0.04)
+    }
+}
+
+public extension Sequence where Element: Hashable {
+    /// the elements in order, the first occurrence of each only (a List with `id: \.self` traps on a repeated id)
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }

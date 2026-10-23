@@ -1,0 +1,4 @@
+# the pool (haproxy-t2tc) / the five legacy apps: the target container name comes from a `set $app` line that scan.sh checks separately
+^proxy_pass +http://\$app:(8080|3838)$
+# the t2api upstream (single `server t2api:8080 resolve;` line, checked separately)
+^proxy_pass +http://t2api_up$

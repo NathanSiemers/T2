@@ -1,0 +1,19 @@
+tcga.db   # legacy name; the file is datasets/TCGA.db now
+restart.txt
+*.db.backup
+datasets/*.db
+*.db.building
+*.db.building-wal
+*.db.building-shm
+TCGATARGETGTEX/Data/
+TCGA/Data/
+CPTAC/Data/
+CPTAC/build.log
+TCGA/microbe.csv
+*.db-wal
+*.db-shm
+*.db-journal
+*.token
+github.token
+rebuild*.log
+.#*

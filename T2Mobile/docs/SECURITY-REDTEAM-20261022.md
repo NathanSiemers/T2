@@ -95,8 +95,8 @@ else hardened.
   cache concerns (value multiplication R1, cross-dataset memory R5) and the X-Real-IP trust gap (R4), plus low items
   (nosniff R2, contact parsing R3) and the Thanos observer guarding (S1). No critical/high.
 - Fix agents running: Go round 3 (H1-H5 = R1-R5, verified on a fresh devstack instance t2api-g3, compose wiring
-  staged in ops/pending); Thanos PR (guard module observers, no contract change, verified against T2 test_app_thanos
-  40/0); iOS follow-up (unrelated: test05 scroll-robustness + survival-label consistency, Mac rebuild).
+  staged in ops/pending); Thanos PR #2 DONE (https://github.com/NathanSiemers/Thanos/pull/2): guards the module observers, no
+  contract change; all 10 Thanos suites + T2 test_app_thanos 40/0 + test_t2_backend 64/0 green; iOS follow-up (unrelated: test05 scroll-robustness + survival-label consistency, Mac rebuild).
 - Reviews B and C committed (5e3f684, c28d0df). iOS hardening round still uncommitted (1 UI test fix in flight).
 ### 2026-10-22 ~00:40 (23rd) PDT: three agents reported; Shiny-specific red-team launching; DoS agent still out
 - Both agents converge on the same two real, medium issues (cache-value multiplication; X-Real-IP trust) and

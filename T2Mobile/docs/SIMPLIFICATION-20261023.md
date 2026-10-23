@@ -142,3 +142,11 @@ freeze, not a cleanup).
 - Swift: finding E, MethodReferences.swift still cites Kruskal-Wallis (removed from the plots 2026-10-07). The
   Sources screen names a method the app no longer computes; docs/IOS.md:117 and docs/APPSTORE.md:164 also list it.
   A listing-accuracy fix for after the freeze (changes a pinned test count), NOT a simplification.
+
+## Result (2026-10-23): APPLIED and GREEN
+Three commits: Go c181641, Swift d68478e, R d7d5e8e, plus ASCII hygiene 970677a. Final gate on the combined tree
+(dev service rebuilt from the current code, `ops/test.sh all`): go ok; equiv 76; app 30/40/19/24/64/81/75/31/21/59
+all 0 FAIL; app-service gitr 117; browser-service ALL PASS; fuzz-api 6; abuse 29; fuzz-shiny 15; contact ALL PASS;
+swift 99; exit 0. DEMO and CPTAC rebuilds were byte-identical to the served files (sqlite_diff). The deferred
+build-path (tablemaker, 250-create_views dedup, mysql branches) and MEDIUM items remain in this catalog for a future
+rebuild round.

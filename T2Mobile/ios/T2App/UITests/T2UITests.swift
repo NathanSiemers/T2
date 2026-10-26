@@ -700,4 +700,30 @@ final class T2UITests: XCTestCase {
         waitFor("no-connection", "the cannot-reach message")
         shot("36-no-connection")
     }
+
+    /// the Analysis tab: the opening cohorts are a filter, so "Split: <cohort column>" is offered;
+    /// a number against that split gives a statistics row with a method and a p, the clinical
+    /// screen lists variables ranked by p, and the plot is drawn
+    func test10_AnalysisCompare() {
+        launch(tab: "analysis")
+        let split = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'analysis-split-'")).firstMatch
+        XCTAssertTrue(split.waitForExistence(timeout: dataTimeout), "no Split row for the cohort filter")
+        shot("40-analysis-start")
+        split.tap()
+        pick("Test variable", search: "OS.time", choose: "OS.time")
+        scrollTo("analysis-run").tap()
+        let method = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Kruskal-Wallis' OR label CONTAINS 'Wilcoxon rank-sum'")).firstMatch
+        var swipes = 0
+        while !method.waitForExistence(timeout: 5) && swipes < 12 { app.swipeUp(velocity: .slow); swipes += 1 }
+        if !method.exists { shot("FAILED-analysis-no-statistics") }
+        XCTAssertTrue(method.exists, "no test method in the Statistics rows")
+        XCTAssertTrue(element("analysis-methods-sources").exists || scrollTo("analysis-methods-sources").exists, "no methods link")
+        shot("41-analysis-statistics")
+        scrollTo("analysis-screen").tap()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'screen-'")).firstMatch
+        swipes = 0
+        while !row.waitForExistence(timeout: 5) && swipes < 20 { app.swipeUp(velocity: .slow); swipes += 1 }
+        XCTAssertTrue(row.exists, "the clinical screen listed no variable")
+        shot("42-analysis-screen")
+    }
 }

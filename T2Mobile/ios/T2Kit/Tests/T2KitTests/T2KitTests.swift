@@ -361,7 +361,7 @@ final class StatsTests: XCTestCase {
     }
 
     func testMethodReferencesAreFullRecordsWithLinks() {
-        XCTAssertEqual(MethodReferences.all.count, 6)
+        XCTAssertEqual(MethodReferences.all.count, 11)
         for r in MethodReferences.all {
             XCTAssertEqual(r.group, "Methods")
             XCTAssertFalse(r.title.isEmpty); XCTAssertFalse(r.authors.isEmpty); XCTAssertFalse(r.journal.isEmpty)

@@ -27,7 +27,8 @@ T2_CONTROLS = list(
     scales        = list(id = 'scales',        choices = c("fixed", "free", "free_x", "free_y"),  default = "fixed"),
     smooth        = list(id = 'smooth',        choices = c("TRUE", "FALSE"),                      default = "TRUE"),
     km_groups     = list(id = 'km_groups',     choices = 2:6,                                     default = 3),
-    surv_max_days = list(id = 'surv_max_days', choices = seq(30, 365 * 30, by = 30),             default = 365 * 5)
+    surv_max_days = list(id = 'surv_max_days', choices = seq(30, 365 * 30, by = 30),             default = 365 * 5),
+    quant_k       = list(id = 'analysis_quant_k', choices = 2:4,                                  default = 3)
 )
 
 ## character values that are in `allowed`, de-duplicated, at most max_n;
@@ -66,6 +67,16 @@ T2_CONTROLS = list(
     choices[which.min(abs(choices - v))]
 }
 
+## A quantized-variable token ("t2q::<k>::<name>", group_compare.R) is a plotter input
+## for `color` and `facet`: valid when it parses strictly and <name> is a served
+## variable of menu kind "num". The plotter resolves it into a derived column; the
+## token itself never changes T2_INPUT_ARGS (the argument names stay as they were).
+.t2_quant_ok = function(v, b) {
+    v = as.character(unlist(v))[1]
+    q = t2_quant_parse(v)
+    !is.null(q) && q$name %in% b$mygenesplus && identical(.t2_menu_kind(b, q$name), "num")
+}
+
 ## input: shiny input (reactivevalues) or a plain list; b: dataset bundle
 sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable list, cohorts and tte names)
     ## read only the named inputs below: converting all of `input` to a list
@@ -74,10 +85,11 @@ sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable 
     c(list(
         x         = .t2_pick(input$x, c(vars, tte_names(b)), T2_LIMITS$x_vars),
         y         = .t2_pick(input$y, vars, T2_LIMITS$y_vars),
-        color     = .t2_one(input$color, c('probe', vars), ""),
+        color     = if (.t2_quant_ok(input$color, b)) as.character(input$color)[1] else .t2_one(input$color, c('probe', vars), ""),
         size      = .t2_one(input$size, vars, ""),
         cohort    = .t2_cohort_pick(input$cohort, unname(b$mycohorts), T2_LIMITS$cohorts),
-        facet     = .t2_pick(input$facet, vars, T2_LIMITS$facet_vars),
+        facet     = .t2_pick(input$facet, c(vars, Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$facet)))),
+                             T2_LIMITS$facet_vars),
         condition = .t2_pick(input$condition, vars, T2_LIMITS$condition_vars),
         pcortype  = .t2_one(input$pcortype, T2_CONTROLS$pcortype$choices, T2_CONTROLS$pcortype$default),
         multi_y        = .t2_flag(input$multi_y),
@@ -135,4 +147,53 @@ sanitize_t2_tweaks = function(input, prefix = "") {
     vals = lapply(stats::setNames(picked, picked),
                   function(id) input[[t2_tweak_input_id(id, prefix)]])
     t2_validate_tweaks(vals[!vapply(vals, is.null, NA)])
+}
+
+## ----------------------------------------------------------------------------
+## The Analysis tab (group_compare.R; contract: T2Mobile/docs/ANALYSIS-SPEC.md).
+## These inputs never reach plotter(), so nothing here enters T2_INPUT_ARGS.
+
+## the menu kind ("num" | "cat") of a served variable, NA when unknown
+.t2_menu_kind = function(b, name) {
+    i = match(name, b$menu$name)
+    if (is.na(i)) NA_character_ else b$menu$kind[i]
+}
+
+## The Analysis tab's choices, checked against what is CURRENTLY offered:
+##   analysis_group  a grouping: "t2split::<col>" (col an active filter column),
+##                   "t2split::*" (only when >= 2 filters are active), a t2q::
+##                   token, or a served variable name (cat as-is; num quantized
+##                   with analysis_quant_k)
+##   analysis_var    the test variable: a served name or a tte endpoint
+##   analysis_means  the means-based toggle (Welch t / ANOVA)
+## active_cols: the columns with an active Thanos filter (from h$th$filters()).
+## Returns list(grouping = list(kind, name|col, k, token), var, var_kind, means,
+## method = "auto") -- or NULL when the grouping or variable is not acceptable;
+## `method` is the model-mode seam (ANALYSIS-SPEC.md section 6).
+sanitize_t2_analysis = function(input, b, active_cols = character(0)) {
+    g = as.character(unlist(input$analysis_group))[1]
+    if (is.na(g) || !nzchar(g)) return(NULL)
+    k = .t2_num(input$analysis_quant_k, T2_CONTROLS$quant_k$choices, T2_CONTROLS$quant_k$default)
+    grouping = NULL
+    if (identical(g, t2_split_token())) {                        # "t2split::*"
+        if (length(active_cols) >= 2) grouping = list(kind = "split_whole", token = g)
+    } else if (startsWith(g, "t2split::")) {
+        col = sub("^t2split::", "", g)
+        if (col %in% active_cols) grouping = list(kind = "split_loo", col = col, token = g)
+    } else if (!is.null(q <- t2_quant_parse(g))) {               # "t2q::<k>::<name>"
+        if (identical(.t2_menu_kind(b, q$name), "num"))
+            grouping = list(kind = "quant", name = q$name, k = q$k, token = g)
+    } else if (g %in% b$mygenesplus) {
+        kind = .t2_menu_kind(b, g)
+        if (identical(kind, "cat")) grouping = list(kind = "cat", name = g, token = g)
+        if (identical(kind, "num")) grouping = list(kind = "quant", name = g, k = k,
+                                                    token = t2_quant_token(g, k))
+    }
+    if (is.null(grouping)) return(NULL)
+    v = .t2_one(input$analysis_var, c(b$mygenesplus, tte_names(b)), "")
+    if (!nzchar(v)) return(NULL)
+    var_kind = if (v %in% tte_names(b)) "tte" else .t2_menu_kind(b, v)
+    if (is.na(var_kind)) return(NULL)
+    list(grouping = grouping, var = v, var_kind = var_kind,
+         means = .t2_flag(input$analysis_means), method = "auto")
 }

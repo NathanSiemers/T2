@@ -180,6 +180,18 @@ shot("13-plot-cptac-zero")
 setv("dataset", "TCGA"); settle(4000); set_input(tabs = "plot"); settle(500)
 ok(!isTRUE(js("!!document.getElementById('not_detected')")), "switching to TCGA hides the control")
 
+## ---- 07c a quantized numeric as color: the chip under the pickers, then a plot ----
+set_input(tabs = "select"); settle(500)
+setv("x", "cohort"); setv("y", "CD8A"); setv("color", "MKI67"); settle(2000)
+ok(isTRUE(js("!!document.getElementById('quant_chip_color')")), "a numeric color pick shows the quantize chip")
+setv("quant_chip_color", "3"); settle(2500)       # the chip's 3-groups radio: rewrites color to the t2q:: token
+ok(identical(input_value("color"), "t2q::3::MKI67") || LIVE, "choosing 3 groups rewrites color to the tertile token")
+if (LIVE) setv("color", "t2q::3::MKI67")           # (a live site: set the token as the chip would)
+shot("14-select-quant-chip")
+plot_now(wait = 8000)
+ok(img_ok("main_plot") && grepl("MKI67 (tertiles)", output_text("plot_summary"), fixed = TRUE), "Plot: CD8A by cohort coloured by MKI67 tertiles")
+shot("15-plot-quantized-color")
+
 ## ---- 08 About: data types, clinical variables, contact form ----
 set_input(tabs = "about"); settle(1500)
 ok(js("document.querySelectorAll('#datatypes tr').length") > 10, "the data-type table is there")

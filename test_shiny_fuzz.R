@@ -163,6 +163,34 @@ settle(1500)
 ok(alive(), "wrong-shaped and oversized contact fields do not end the session")
 
 ## ---------------------------------------------------------------------------
+## 6c. The Analysis tab: a grouping, variable, k and flag are all client-chosen. Malformed
+##     t2q:: / t2split:: tokens, huge vectors and junk must give a plain message, never
+##     an R error or a dead session (sanitize_t2_analysis whitelists every one).
+## ---------------------------------------------------------------------------
+cat("-- 6c. Analysis tab inputs\n")
+app$set_inputs(tabs = "analysis"); settle(800)
+for (v in list("t2q::99::X", "t2q::3::cohort", "t2q::2::", "t2q::-1::CD8A", "t2q::3::" , "t2split::nope", "t2split::*",
+               "t2split::'; DROP TABLE x;--", "t2split::", strrep("t2q::3::A", 800), "../../etc/passwd",
+               as.list(sprintf("t2q::3::G%d", 1:500)), list("cohort", "CD8A"), 42, list(), NULL)) {
+  setv("analysis_group", v); setv("analysis_var", "CD8A"); setv("analysis_run", sample(1e6, 1)); settle(400)
+  if (!alive()) { ok(FALSE, "session died on a hostile analysis_group value"); break }
+}
+ok(alive(), "session survived every hostile analysis_group value")
+for (v in list("'; DROP TABLE tcgai;--", strrep("V", 5000), as.list(sprintf("G%d", 1:500)), list("OS", "PFI"), 7, list(), "OS.time\nx")) {
+  setv("analysis_group", "cohort"); setv("analysis_var", v); setv("analysis_run", sample(1e6, 1)); settle(400)
+  if (!alive()) { ok(FALSE, "session died on a hostile analysis_var value"); break }
+}
+ok(alive(), "session survived every hostile analysis_var value")
+setv("analysis_quant_k", 1e9); setv("analysis_quant_k", "junk"); setv("analysis_quant_k", list(2, 3, 4)); setv("analysis_quant_k", -5)
+setv("analysis_means", "TRUE; system('id')"); setv("analysis_means", list(TRUE, FALSE)); setv("analysis_means", 3)
+setv("analysis_group", "OS.time"); setv("analysis_var", "CD8A")
+for (i in 1:3) { setv("analysis_run", sample(1e6, 1)); setv("analysis_screen", sample(1e6, 1)); settle(800) }
+setv("analysis_screen_pick", "no_such_variable'; --"); setv("analysis_screen_pick", list("a", "b")); setv("analysis_screen_pick", 9)
+settle(1000)
+ok(alive(), "junk k / flag / screen-pick values and repeated Compare + Screen clicks do not end the session")
+app$set_inputs(tabs = "select"); settle(500)
+
+## ---------------------------------------------------------------------------
 ## 7. The whole storm left no uncaught R error and the app still plots normally.
 ## ---------------------------------------------------------------------------
 cat("-- 7. recovery\n")

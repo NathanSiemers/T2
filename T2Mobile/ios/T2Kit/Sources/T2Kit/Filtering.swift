@@ -210,6 +210,20 @@ public struct CrossFilter: Sendable {
         }
         return keep
     }
+    /// the two sides of a comparison, both inside the universe. `name` nil: the whole filter
+    /// (selected = every filter passed, excluded = the rest of the universe). A column with an
+    /// active filter: leave-one-out (the other filters are kept; selected = also passes this
+    /// column's own rule, with include-missing as the filter itself has it). Nil when that
+    /// column has no active filter.
+    public func splitMasks(on name: String?) -> (selected: Mask, excluded: Mask)? {
+        guard let name else {
+            let selected = mask(), universe = base()
+            return (selected, (0..<sampleCount).map { universe[$0] && !selected[$0] })
+        }
+        guard let f = filters.first(where: { $0.column == name && $0.isActive }), let col = columns[name] else { return nil }
+        let loo = mask(excluding: name), own = ownMask(f, col)
+        return ((0..<sampleCount).map { loo[$0] && own[$0] }, (0..<sampleCount).map { loo[$0] && !own[$0] })
+    }
     public func selectedCount() -> Int { mask().reduce(0) { $0 + ($1 ? 1 : 0) } }
     public func universeCount() -> Int { base().reduce(0) { $0 + ($1 ? 1 : 0) } }
 

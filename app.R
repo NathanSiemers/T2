@@ -279,6 +279,12 @@ ui = fluidPage(
         .t2-survival-hint { margin: 0 0 12px 0; max-width: 1100px; }
         .t2-survival-hint.t2-hint-x { font-size: 88%; color: #555; margin: 0 0 8px 0; }
         .t2-fill { margin: 2px 0 6px 0; font-size: 90%; }
+        /* the quantize marker (a down-triangle) on numeric options of the variable menus */
+        .t2-quant { font-size: 70%; opacity: 0.45; }
+        .t2-quant-chip { font-size: 90%; margin: 0 0 6px 0; color: #555; }
+        .t2-quant-chip .form-group { display: inline-block; margin: 0 0 0 6px; }
+        .t2-quant-chip .radio-inline { margin-left: 6px; padding-left: 18px; }
+        .t2-analysis-note { font-size: 90%; color: #555; margin: 6px 0; }
         .t2-fill .form-group { margin-bottom: 0; }
         .t2-fill label.control-label { font-weight: 600; margin-right: 8px; }
         .t2-ref { margin: 0 0 8px 0; max-width: 1100px; }
@@ -296,10 +302,12 @@ ui = fluidPage(
             inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
             inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
             uiOutput('x_survival_hint'),
-            inline( selectizeInput('color', 'color', choices = NULL) ),
+            inline( selectizeInput('color', 'color', choices = NULL, options = list(render = T2_QUANT_RENDER)) ),
             inline( selectizeInput('size', 'size', choices = NULL )),
             inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
-            inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
+            inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) )),
+            ## "as: values | 2 | 3 | 4 groups" for a numeric color / first facet pick
+            uiOutput('quant_chip_ui'),
             inline(HTML(nbsp(5))),
             inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
             inline(checkboxInput("waterfall", "Waterfall", value = FALSE)),
@@ -331,6 +339,30 @@ ui = fluidPage(
         ),
         ## ---- (c) Thanos: fine-tune which samples are plotted ----
         tabPanel("Filter", value = "filter", filter_tab_ui()),
+        ## ---- (c2) Analysis: compare groups (filter split / quantiles / a category) on one variable ----
+        tabPanel("Analysis", value = "analysis",
+            tags$br(),
+            helpText("Compare two or more groups of samples on one variable. A group comes from a filter ",
+                     "(Selected vs Excluded), from a continuous variable cut into 2-4 equal-count groups, or from a category. ",
+                     "All other filters stay in force."),
+            inline( selectizeInput('analysis_group', 'Compare groups defined by', choices = NULL, options = list(render = T2_QUANT_RENDER)) ),
+            inline( uiOutput('analysis_quant_ui') ),
+            inline( selectizeInput('analysis_var', 'Variable to test', choices = NULL) ),
+            tags$br(),
+            checkboxInput('analysis_means', 'Means-based tests (Welch t / ANOVA)', FALSE),
+            actionButton('analysis_run', 'Compare'),
+            actionButton('analysis_screen', 'Screen all clinical variables'),
+            ## model-mode seam (ANALYSIS-SPEC section 6): covariates / contrasts will render here
+            uiOutput('analysis_adjust_ui'),
+            uiOutput('analysis_note'),
+            plotOutput('analysis_plot', height = '420px'),
+            tableOutput('analysis_groups'),
+            tableOutput('analysis_stats'),
+            downloadButton('analysis_download', 'Download table (.csv)'),
+            h4("Clinical screen"),
+            tableOutput('analysis_screen_table'),
+            selectInput('analysis_screen_pick', 'Open in the comparison above: pick, then press Compare', choices = NULL)
+        ),
         ## ---- (d) plot appearance ----
         tabPanel("Appearance", value = "appearance",
             h4('Fiddly Options'),
@@ -393,6 +425,9 @@ ui = fluidPage(
                         "and a download of the plotted table."),
                 tags$li(tags$b("Filter"), ": interactive histograms and sliders/checkboxes for every selected ",
                         "variable (and any others you add) to fine-tune which samples are plotted."),
+                tags$li(tags$b("Analysis"), ": compare groups (a filter's Selected vs Excluded, a variable cut into ",
+                        "equal-count groups, or a category) on one variable with a statistical test, or screen all ",
+                        "clinical variables with Benjamini-Hochberg correction; the table downloads as CSV."),
                 tags$li(tags$b("Appearance"), ": point size, transparency, label sizes, multi-graph layout, ",
                         "fit line and survival-plot options, and a search over every other ggplot setting."),
                 tags$li(tags$b("Publish"), ": the current plot as a figure of a chosen physical size and ",
@@ -404,7 +439,7 @@ ui = fluidPage(
             h5( Sys.Date() ),
             h4("Types of Data Available"),
             htmlOutput('datatypes'),
-            h4("Survival analysis methods"),
+            h4("Statistical methods"),
             tags$p("The survival analysis in T2 (Kaplan-Meier curves, log-rank test, Cox model) uses these methods:"),
             HTML(paste(vapply(T2_METHOD_REFERENCES, t2_reference_html, ""), collapse = "")),
             h4("Clinical variables"),
@@ -497,11 +532,17 @@ server = function(input, output, session) {
     ## (sticky selections, as in the iPhone app); otherwise the dataset's
     ## defaults; either falls back gracefully. A column with a single value in
     ## the part is never picked (nothing to colour or split by).
+    ## the variable menu with its num column (menu kind "num": the quantize marker of
+    ## color / facet / Analysis group; the other selectors ignore the column)
+    variable_menu = function(b, vars, lower) {
+        kind = b$menu$kind[match(vars, b$menu$name)]
+        t2_menu(vars, lower = lower, num = kind == "num")
+    }
     apply_bundle_choices = function(b, keep = list()) {
         single = b$source$single_level_columns
         keepv = !(b$mygenesplus %in% single)
         mgp = b$mygenesplus[keepv]
-        menu = t2_menu(mgp, lower = b$names_lower[keepv])   # ONE data object for the six variable selectors
+        menu = variable_menu(b, mgp, b$names_lower[keepv])   # ONE data object for the variable selectors
         d   = b$defaults
         pick = function(id, choices, fallback = "", n = 1, default = d[[id]]) {
             for (sel in list(keep[[id]], default)) {
@@ -554,6 +595,56 @@ server = function(input, output, session) {
         fill_choice("na"); fill_state(NULL)
     }), ignoreInit = TRUE)
 
+    ## ---- quantize chip (Select tab): "as: values | 2 | 3 | 4 groups" ----
+    ## Shown under the pickers when the color pick (or the FIRST facet pick; later
+    ## facet picks stay as they are, to keep the chip to one line) is a bare numeric
+    ## variable or a t2q:: token. Choosing k rewrites that selector to the token (an
+    ## extra menu row so selectize accepts it); 'values' rewrites it back. The
+    ## rewrite happens ONLY in the chip's own event, and only when it changes the
+    ## value, so a re-rendered chip reporting its initial state cannot loop.
+    quant_chip_state = function(v, b) {      # list(name, k) for a numeric / token pick, else NULL
+        v = as.character(unlist(v))[1]
+        if (is.na(v) || !nzchar(v)) return(NULL)
+        q = t2_quant_parse(v)
+        if (!is.null(q)) return(if (identical(.t2_menu_kind(b, q$name), "num")) q else NULL)
+        if (v %in% b$mygenesplus && identical(.t2_menu_kind(b, v), "num")) list(name = v, k = 0L) else NULL
+    }
+    output$quant_chip_ui = renderUI({
+        req(identical(input$tabs, "select"))
+        b = bundle()
+        one = function(id, what, st) tags$div(class = "t2-quant-chip",
+            tags$span(paste0(what, ": ", st$name)),
+            radioButtons(id, NULL, choices = c("values" = 0, "2" = 2, "3" = 3, "4" = 4), selected = st$k,
+                         inline = TRUE),
+            tags$span("groups"))
+        cs = quant_chip_state(input$color, b)
+        fs = quant_chip_state(utils::head(as.character(unlist(input$facet)), 1), b)
+        tagList(if (!is.null(cs)) one('quant_chip_color', "color", cs),
+                if (!is.null(fs)) one('quant_chip_facet', "graph for each", fs))
+    })
+    quant_rewrite = function(id, chip) {
+        b = bundle()
+        cur = as.character(unlist(isolate(input[[id]])))
+        st = quant_chip_state(utils::head(cur, 1), b)
+        if (is.null(st)) return(invisible(NULL))
+        k = .t2_num(chip, c(0, 2:4), 0)
+        target = if (k == 0) st$name else t2_quant_token(st$name, k)
+        if (identical(target, cur[1])) return(invisible(NULL))       # nothing to change: no loop
+        new = c(target, cur[-1])
+        mgp = b$mygenesplus[!(b$mygenesplus %in% b$source$single_level_columns)]
+        menu = variable_menu(b, mgp, b$names_lower[!(b$mygenesplus %in% b$source$single_level_columns)])
+        if (k > 0) {                                                  # the token must be an offered option
+            row = data.frame(label = t2_quant_label(st$name, k), value = target, num = 0L, stringsAsFactors = FALSE)
+            low = c(attr(menu, "names_lower"), tolower(target))
+            menu = rbind(menu, row); attr(menu, "names_lower") = low
+        }
+        update_selectize_ranked(session, id, menu, new)
+    }
+    observeEvent(input$quant_chip_color, t2_guarded("quantize chip (color)",
+        quant_rewrite('color', input$quant_chip_color)), ignoreInit = TRUE)
+    observeEvent(input$quant_chip_facet, t2_guarded("quantize chip (facet)",
+        quant_rewrite('facet', input$quant_chip_facet)), ignoreInit = TRUE)
+
     ## when multi_y is toggled on, add "probe" to color choices and select it
     observeEvent(input$multi_y, t2_guarded("multi-Y switch", {
         b = bundle()
@@ -562,7 +653,7 @@ server = function(input, output, session) {
         if (.t2_flag(input$multi_y)) {
             update_selectize_ranked(session, 'color', c('probe', mgp), 'probe')
         } else {
-            update_selectize_ranked(session, 'color', t2_menu(mgp, lower = b$names_lower), if (length(stc)) stc[1] else "")
+            update_selectize_ranked(session, 'color', variable_menu(b, mgp, b$names_lower), if (length(stc)) stc[1] else "")
         }
     }), ignoreInit = TRUE)
 
@@ -602,8 +693,10 @@ server = function(input, output, session) {
         ## capped per selector BEFORE anything reaches the database: a browser can
         ## send any number of names, whatever the selector shows
         cap = function(v, n) utils::head(as.character(unlist(v)), n)
+        ## a t2q:: token stands for its source variable (the Filter tab knows columns only)
         v = c(cap(input$x, T2_LIMITS$x_vars), cap(input$y, T2_LIMITS$y_vars),
-              cap(input$color, 1), cap(input$size, 1), cap(input$facet, T2_LIMITS$facet_vars),
+              t2_quant_source(cap(input$color, 1)), cap(input$size, 1),
+              t2_quant_source(cap(input$facet, T2_LIMITS$facet_vars)),
               if (!identical(input$pcortype, 'none')) cap(input$condition, T2_LIMITS$condition_vars))
         list(dataset = bundle()$key, vars = unique(v[!is.na(v) & nzchar(v)]))
     })
@@ -631,18 +724,22 @@ server = function(input, output, session) {
     ##   keep  NULL when Thanos adds nothing beyond the Select tab's own filters,
     ##         else the surviving sample ids
     ##   note  one line for the plot summary (NULL when there is no Filter tab)
+    ##   mask/base  the full-length logical vectors over backend$samples (the Analysis
+    ##         tab builds its group splits from them; see docs/ANALYSIS-SPEC.md)
     filter_state = function(b) {
         h = th_for(b)
-        if (is.null(h)) return(list(keep = NULL, note = NULL, active = character(0), n_kept = NA, n_base = NA))
+        if (is.null(h)) return(list(keep = NULL, note = NULL, active = character(0), n_kept = NA, n_base = NA,
+                                    mask = NULL, base = NULL))
         m = h$th$mask()
         base = h$base()
         base = if (is.null(base)) rep(TRUE, length(m)) else (base & !is.na(base))
         active = t2_describe_filters(h$th$filters(), h$backend)
         if (identical(m, base)) {
             return(list(keep = NULL, active = character(0), n_kept = sum(m), n_base = sum(base),
+                        mask = m, base = base,
                         note = sprintf("Filter tab: no additional filtering (%d samples).", sum(m))))
         }
-        list(keep = h$backend$samples[m], active = active, n_kept = sum(m), n_base = sum(base),
+        list(keep = h$backend$samples[m], active = active, n_kept = sum(m), n_base = sum(base), mask = m, base = base,
              note = sprintf("Filter tab: %d of %d samples pass. %s", sum(m), sum(base),
                             if (length(active)) paste0("Active filters: ", paste(active, collapse = "; "), ".")
                             else "Samples with missing values (NA) are excluded for at least one variable."))
@@ -884,6 +981,198 @@ server = function(input, output, session) {
             fig = pub_fig()
             t2_render_figure(obj, file, fig$width, fig$height, fig$dpi, fig$format)
         })
+
+    ## ---- Analysis: compare groups on one variable (group_compare.R; ANALYSIS-SPEC.md) ----
+    ## Everything computes on the Analysis tab only. A grouping is built from the stable sample
+    ## vector (row i = backend$samples[i]); every other filter stays in force (the mask).
+    an_get = function(h, v, kind) {        # one variable over all rows; categories in the served level order
+        h$backend$prefetch(v)
+        x = h$backend$get_column(v)
+        if (identical(kind, "cat")) {
+            lv = h$backend$get_column_info(v)$levels
+            factor(as.character(x), levels = if (length(lv)) lv else NULL)
+        } else x
+    }
+    ## the one-line description of ONE active filter column
+    an_describe = function(h, col) {
+        d = t2_describe_filters(h$th$filters()[col], h$backend)
+        if (length(d)) d[1] else col
+    }
+    ## the grouping the sanitizer accepted -> list(g = t2_group_*, label = display name)
+    an_grouping = function(b, h, grouping, fs) {
+        n = length(h$backend$samples)
+        universe = if (is.null(fs$mask)) rep(TRUE, n) else (fs$mask & fs$base)
+        switch(grouping$kind,
+            split_loo = {
+                col = grouping$col
+                x = an_get(h, col, "num")
+                s = h$th$streams(col, split_range = FALSE, drop_na = FALSE)
+                m_sel = sum(is.na(x[s$selected])); m_exc = sum(is.na(x[s$excluded]))
+                miss = c(if (m_exc > 0) sprintf("Excluded includes %d samples missing %s.", m_exc, col),
+                         if (m_sel > 0) sprintf("Selected includes %d samples missing %s.", m_sel, col))
+                list(g = t2_group_from_streams(s, n, missing_note = miss), label = paste0("Split: ", an_describe(h, col)))
+            },
+            split_whole = list(g = t2_group_from_streams(list(selected = which(fs$mask),
+                                                              excluded = which(fs$base & !fs$mask)), n),
+                               label = "Split: all filters together"),
+            quant = {
+                h$backend$prefetch(grouping$name)
+                list(g = t2_group_quantized(h$backend$get_column(grouping$name), universe = universe, k = grouping$k),
+                     label = t2_quant_label(grouping$name, grouping$k))
+            },
+            cat = {
+                h$backend$prefetch(grouping$name)
+                list(g = t2_group_categorical(h$backend$get_column(grouping$name), universe = universe,
+                                              levels = h$backend$get_column_info(grouping$name)$levels),
+                     label = grouping$name)
+            })
+    }
+    ## the sanitized pick without a test variable (the screen needs the grouping only)
+    an_sanitize_grouping = function(b, h, with_var = TRUE) {
+        inp = list(analysis_group = input$analysis_group, analysis_quant_k = input$analysis_quant_k,
+                   analysis_means = input$analysis_means,
+                   analysis_var = if (with_var) input$analysis_var else b$mygenesplus[1])
+        sanitize_t2_analysis(inp, b, active_cols = names(h$th$filters()))
+    }
+
+    ## the choices: filter splits first, then every served variable (ranked search, t2_search.R)
+    analysis_group_menu = reactive({
+        req(identical(input$tabs, "analysis"))
+        b = bundle(); h = th_for(b)
+        req(h)
+        cols = names(h$th$filters())
+        custom = stats::setNames(vapply(cols, t2_split_token, ""),
+                                 vapply(cols, function(v) paste0("Split: ", an_describe(h, v)), ""))
+        if (length(cols) >= 2) custom = c(custom, stats::setNames(t2_split_token(), "Split: all filters together"))
+        kind = b$menu$kind[match(b$mygenesplus, b$menu$name)]
+        m = t2_menu(c(unname(custom), b$mygenesplus), lower = c(tolower(unname(custom)), b$names_lower),
+                    num = c(rep(0L, length(custom)), kind == "num"))    # split tokens: no marker
+        m$label = c(names(custom), b$mygenesplus)      # t2_menu() drops names: the custom rows carry readable labels
+        m
+    })
+    observe(t2_guarded("analysis choices", {
+        menu = analysis_group_menu()
+        cur = isolate(.t2_one(input$analysis_group, menu$value, ""))
+        update_selectize_ranked(session, 'analysis_group', menu, if (nzchar(cur)) cur else menu$value[1])
+    }))
+    observe(t2_guarded("analysis variable choices", {
+        req(identical(input$tabs, "analysis"))
+        b = bundle()
+        vars = c(b$mygenesplus, tte_names(b))
+        cur = isolate(.t2_one(input$analysis_var, vars, ""))
+        update_selectize_ranked(session, 'analysis_var', t2_menu(vars, lower = c(b$names_lower, tolower(tte_names(b)))),
+                                if (nzchar(cur)) cur else vars[1])
+    }))
+    ## the number of groups, only for a continuous grouping variable
+    output$analysis_quant_ui = renderUI({
+        g = .t2_one(input$analysis_group, bundle()$mygenesplus, "")
+        if (!identical(.t2_menu_kind(bundle(), g), "num")) return(NULL)
+        radioButtons('analysis_quant_k', 'Number of groups', choices = T2_CONTROLS$quant_k$choices, inline = TRUE,
+                     selected = .t2_num(isolate(input$analysis_quant_k), T2_CONTROLS$quant_k$choices, T2_CONTROLS$quant_k$default))
+    })
+    output$analysis_adjust_ui = renderUI(NULL)
+
+    an_filters_line = function(fs)
+        paste0("Maintained filters: ", if (length(fs$active)) paste(fs$active, collapse = "; ") else "none beyond the Select tab", ".")
+    an_p = function(p) vapply(p, fmtp, "")
+    an_num = function(v) ifelse(is.na(v), "", sprintf("%.4g", v))
+    an_snapshot = NULL
+
+    analysis_result = eventReactive(input$analysis_run, t2_guarded("analysis", {
+        req(identical(input$tabs, "analysis"))
+        b = bundle(); h = th_for(b)
+        validate(need(!is.null(h), "The analysis needs the Filter tab, which is not available."))
+        a = an_sanitize_grouping(b, h)
+        validate(need(!is.null(a), "Pick a grouping and a variable."))
+        fs = filter_state(b)
+        gl = an_grouping(b, h, a$grouping, fs)
+        g = gl$g
+        validate(need(is.null(g$refused), g$refused))
+        tte = NULL; x = NULL; ent = NULL
+        max_days = .t2_num(input$surv_max_days, T2_CONTROLS$surv_max_days$choices, T2_CONTROLS$surv_max_days$default)
+        if (identical(a$var_kind, "tte")) {
+            ent = b$tte[[a$var]]
+            tte = list(time = an_get(h, ent$time_col, "num"), event = an_get(h, ent$event_col, "num"))
+        } else x = an_get(h, a$var, a$var_kind)
+        res = t2_group_test(x, g$grp, a$var_kind, means = a$means, tte = tte, max_days = max_days)
+        validate(need(is.null(res$refused), res$refused))
+        snap = list(label = gl$label, g = g, res = res, a = a, x = x, tte = tte, ent = ent, max_days = max_days,
+                    filters = an_filters_line(fs), dataset = b$key)
+        an_snapshot <<- snap
+        snap
+    }))
+    output$analysis_note = renderUI({
+        s = analysis_result()
+        notes = c(s$g$note, s$res$test$note, s$filters)
+        div(class = "t2-analysis-note", lapply(notes[nzchar(notes)], tags$div))
+    })
+    output$analysis_plot = renderPlot({
+        s = analysis_result()
+        switch(s$a$var_kind,
+            num = t2_plot_group_box(s$x, s$g$grp, s$a$var, s$label),
+            cat = t2_plot_group_counts(s$x, s$g$grp, s$a$var, s$label),
+            tte = t2_plot_group_km(s$tte$time, s$tte$event, s$g$grp, s$ent$label %||% s$a$var,
+                                   unit = t2_tte_unit(s$ent$time_unit %||% "days"), max_days = s$max_days))
+    }, height = 420)
+    an_fmt_groups = function(d) {
+        for (v in names(d)) if (is.numeric(d[[v]])) d[[v]] = if (v %in% c("n", "count", "events")) as.character(d[[v]]) else an_num(d[[v]])
+        d
+    }
+    output$analysis_groups = renderTable(an_fmt_groups(analysis_result()$res$groups), na = "")
+    output$analysis_stats = renderTable({
+        t = analysis_result()$res$test
+        data.frame(term = t$term, method = t$method, statistic = an_num(t$statistic), df = an_num(t$df),
+                   p = an_p(t$p), note = t$note, stringsAsFactors = FALSE)
+    })
+    output$analysis_download = downloadHandler(
+        filename = function() sprintf("t2-analysis-%s-%s.csv", gsub("[^A-Za-z0-9.-]+", "-", bundle()$key), format(Sys.Date())),
+        content = function(file) {
+            s = an_snapshot
+            if (is.null(s)) stop("Nothing to download: press Compare first.")
+            tab = t2_group_result_table(s$res, header = c(s$label, sprintf("universe n = %d", s$g$n_universe), s$filters))
+            utils::write.table(tab, file, sep = ",", row.names = FALSE, col.names = FALSE, qmethod = "double")
+        })
+
+    ## ---- the clinical screen: the grouping against every handle + clinical variable ----
+    screen_result = eventReactive(input$analysis_screen, t2_guarded("analysis screen", {
+        req(identical(input$tabs, "analysis"))
+        b = bundle(); h = th_for(b)
+        validate(need(!is.null(h), "The analysis needs the Filter tab, which is not available."))
+        a = an_sanitize_grouping(b, h, with_var = FALSE)
+        validate(need(!is.null(a), "Pick a grouping."))
+        fs = filter_state(b)
+        gl = an_grouping(b, h, a$grouping, fs)
+        validate(need(is.null(gl$g$refused), gl$g$refused))
+        own = a$grouping$col %||% a$grouping$name       # the grouping's own source column is circular
+        mn = b$menu
+        vars = setdiff(intersect(mn$name[mn$section %in% c("handle", "clinical")], h$backend$get_columns()), own)
+        kinds = stats::setNames(mn$kind[match(vars, mn$name)], vars)
+        max_days = .t2_num(input$surv_max_days, T2_CONTROLS$surv_max_days$choices, T2_CONTROLS$surv_max_days$default)
+        h$backend$prefetch(vars)                         # one query for the whole list
+        out = withProgress(message = "Screening", value = 0.5,
+            t2_group_screen(vars, function(v) an_get(h, v, kinds[[v]]), kinds, gl$g$grp, means = a$means, max_days = max_days))
+        flagged = out$variable %in% names(h$th$filters())
+        out$note[flagged] = trimws(paste("[filtered]", out$note[flagged]))
+        list(table = out, label = gl$label, g = gl$g, filters = an_filters_line(fs), means = a$means)
+    }))
+    output$analysis_screen_table = renderTable({
+        s = screen_result(); t = s$table
+        data.frame(variable = t$variable, kind = t$kind, method = ifelse(is.na(t$method), "", t$method),
+                   n = ifelse(is.na(t$n), "", as.character(t$n)), p = an_p(t$p), p_bh = an_p(t$p_bh), note = t$note,
+                   stringsAsFactors = FALSE)
+    })
+    observe(t2_guarded("analysis screen choices", {
+        t = tryCatch(screen_result()$table, error = function(e) NULL)
+        if (!is.null(t)) updateSelectInput(session, 'analysis_screen_pick', choices = t$variable)
+    }))
+    ## picking a row puts its variable into the comparison above; the user presses Compare
+    observeEvent(input$analysis_screen_pick, t2_guarded("analysis screen pick", {
+        t = screen_result()$table
+        v = .t2_one(input$analysis_screen_pick, t$variable, "")
+        req(nzchar(v))
+        update_selectize_ranked(session, 'analysis_var', t2_menu(c(bundle()$mygenesplus, tte_names(bundle())),
+                                lower = c(bundle()$names_lower, tolower(tte_names(bundle())))), v)
+    }), ignoreInit = TRUE)
 
     output$datatypes = renderUI({
         b = bundle()

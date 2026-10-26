@@ -64,8 +64,10 @@ t2_row_medians <- function(m) {
 
 ## ---- references (citations) ----------------------------------------------------------
 ## A reference record is a list(group, title, authors, journal, year, pmid, doi, url, note).
-## The statistics the Shiny app itself computes (survival_prototype.R: survfit, survdiff,
-## coxph) are cited here in full; nothing else is computed, so nothing else is cited.
+## The statistics the Shiny app itself computes are cited here in full: the survival
+## machinery (survival_prototype.R: survfit, survdiff, coxph) and the Analysis tab's
+## group comparisons (group_compare.R: wilcox.test, kruskal.test, chisq.test,
+## fisher.test, t.test, oneway.test, p.adjust BH; contract T2Mobile/docs/ANALYSIS-SPEC.md).
 .t2_ref <- function(title, authors, journal, year, doi = "", pmid = "", note = "") list(
   group = "Statistical methods", title = title, authors = authors, journal = journal, year = year,
   pmid = pmid, doi = doi,
@@ -80,7 +82,26 @@ T2_METHOD_REFERENCES <- list(
           note = "The log-rank test used to compare survival curves between groups."),
   .t2_ref("Regression Models and Life-Tables", "Cox DR",
           "Journal of the Royal Statistical Society, Series B", 1972, doi = "10.1111/j.2517-6161.1972.tb00899.x",
-          note = "The proportional hazards model behind the reported hazard ratio."))
+          note = "The proportional hazards model behind the reported hazard ratio."),
+  .t2_ref("Individual Comparisons by Ranking Methods", "Wilcoxon F",
+          "Biometrics Bulletin", 1945, doi = "10.2307/3001968",
+          note = "The rank-sum test comparing a numeric variable between two groups (Analysis tab)."),
+  .t2_ref("Use of Ranks in One-Criterion Variance Analysis", "Kruskal WH, Wallis WA",
+          "Journal of the American Statistical Association", 1952, doi = "10.1080/01621459.1952.10483441",
+          note = "The rank test comparing a numeric variable across three or more groups (Analysis tab)."),
+  .t2_ref("On the criterion that a given system of deviations from the probable in the case of a correlated system of variables is such that it can be reasonably supposed to have arisen from random sampling",
+          "Pearson K", "Philosophical Magazine, Series 5", 1900, doi = "10.1080/14786440009463897",
+          note = "The chi-squared test of independence for categorical comparisons (Analysis tab)."),
+  .t2_ref("The logic of inductive inference", "Fisher RA",
+          "Journal of the Royal Statistical Society", 1935, doi = "10.2307/2342435",
+          note = "The exact test used for 2x2 tables with small expected counts (Analysis tab)."),
+  .t2_ref("The generalization of 'Student's' problem when several different population variances are involved",
+          "Welch BL", "Biometrika", 1947, doi = "10.1093/biomet/34.1-2.28",
+          note = "The unequal-variance t test behind the means-based toggle (Analysis tab)."),
+  .t2_ref("Controlling the False Discovery Rate: A Practical and Powerful Approach to Multiple Testing",
+          "Benjamini Y, Hochberg Y", "Journal of the Royal Statistical Society, Series B", 1995,
+          doi = "10.1111/j.2517-6161.1995.tb02031.x",
+          note = "The false-discovery-rate correction applied in the Analysis screen."))
 
 ## One reference as HTML: the title (a link when there is a url), then authors, "journal year",
 ## and the note in small text. Every field is escaped; the url only when http(s).

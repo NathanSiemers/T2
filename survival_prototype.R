@@ -73,8 +73,8 @@ fmtp <- function(p) {
 ## Equal-count groups of a marker. Equal values can merge cut points, so fewer groups
 ## than asked may survive; they are named by position among the surviving cuts:
 ## 2 -> Low/High, 3 -> Low/Mid/High, more -> Q1..Qn (the iOS app's Stats.groupLabels
-## takes the first `made` names of the asked-for set instead, so a 3-group ask that
-## made 2 gives Low/Mid there). A grouping that leaves any group under min_n samples
+## keys on the groups actually made too, so a 3-group ask that made 2 gives Low/High
+## on both platforms). A grouping that leaves any group under min_n samples
 ## is refused. Returns NULL (fewer than 2 distinct values), list(refused = text), or
 ## list(grp = factor, n = number of groups).
 t2_quantile_groups <- function(m, n_groups, min_n = 5L) {

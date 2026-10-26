@@ -8,7 +8,7 @@ import T2Kit
 ///
 /// Launch arguments (used by mac_setup.sh and the UI tests; `-name value`):
 ///   -t2Reset YES      ignore the saved service address
-///   -t2Tab plot       the tab shown first (select | plot | filter | publish); read in T2App
+///   -t2Tab plot       the tab shown first (select | plot | filter | analysis | publish); read in T2App
 ///   -t2Dataset DEMO   the dataset opened first
 ///   -t2X, -t2Y, -t2Color, -t2Size   variables instead of the dataset's defaults
 ///   -t2Service URL    another service address for this launch
@@ -106,6 +106,8 @@ final class AppModel {
     var zscoreY = false
     var flip = false
     var waterfall = false
+    /// the Analysis tab's grouping, test variable and results (AnalysisModel.swift)
+    var analysis = AnalysisState()
 
     // MARK: not-detected values
 

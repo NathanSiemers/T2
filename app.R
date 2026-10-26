@@ -279,6 +279,11 @@ ui = fluidPage(
         .t2-survival-hint { margin: 0 0 12px 0; max-width: 1100px; }
         .t2-survival-hint.t2-hint-x { font-size: 88%; color: #555; margin: 0 0 8px 0; }
         .t2-fill { margin: 2px 0 6px 0; font-size: 90%; }
+        /* the quantize marker (a down-triangle) on numeric options of the variable menus */
+        .t2-quant { font-size: 70%; opacity: 0.45; }
+        .t2-quant-chip { font-size: 90%; margin: 0 0 6px 0; color: #555; }
+        .t2-quant-chip .form-group { display: inline-block; margin: 0 0 0 6px; }
+        .t2-quant-chip .radio-inline { margin-left: 6px; padding-left: 18px; }
         .t2-analysis-note { font-size: 90%; color: #555; margin: 6px 0; }
         .t2-fill .form-group { margin-bottom: 0; }
         .t2-fill label.control-label { font-weight: 600; margin-right: 8px; }
@@ -297,10 +302,12 @@ ui = fluidPage(
             inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
             inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
             uiOutput('x_survival_hint'),
-            inline( selectizeInput('color', 'color', choices = NULL) ),
+            inline( selectizeInput('color', 'color', choices = NULL, options = list(render = T2_QUANT_RENDER)) ),
             inline( selectizeInput('size', 'size', choices = NULL )),
             inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
-            inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE  )),
+            inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) )),
+            ## "as: values | 2 | 3 | 4 groups" for a numeric color / first facet pick
+            uiOutput('quant_chip_ui'),
             inline(HTML(nbsp(5))),
             inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
             inline(checkboxInput("waterfall", "Waterfall", value = FALSE)),
@@ -338,7 +345,7 @@ ui = fluidPage(
             helpText("Compare two or more groups of samples on one variable. A group comes from a filter ",
                      "(Selected vs Excluded), from a continuous variable cut into 2-4 equal-count groups, or from a category. ",
                      "All other filters stay in force."),
-            inline( selectizeInput('analysis_group', 'Compare groups defined by', choices = NULL) ),
+            inline( selectizeInput('analysis_group', 'Compare groups defined by', choices = NULL, options = list(render = T2_QUANT_RENDER)) ),
             inline( uiOutput('analysis_quant_ui') ),
             inline( selectizeInput('analysis_var', 'Variable to test', choices = NULL) ),
             tags$br(),
@@ -525,11 +532,17 @@ server = function(input, output, session) {
     ## (sticky selections, as in the iPhone app); otherwise the dataset's
     ## defaults; either falls back gracefully. A column with a single value in
     ## the part is never picked (nothing to colour or split by).
+    ## the variable menu with its num column (menu kind "num": the quantize marker of
+    ## color / facet / Analysis group; the other selectors ignore the column)
+    variable_menu = function(b, vars, lower) {
+        kind = b$menu$kind[match(vars, b$menu$name)]
+        t2_menu(vars, lower = lower, num = kind == "num")
+    }
     apply_bundle_choices = function(b, keep = list()) {
         single = b$source$single_level_columns
         keepv = !(b$mygenesplus %in% single)
         mgp = b$mygenesplus[keepv]
-        menu = t2_menu(mgp, lower = b$names_lower[keepv])   # ONE data object for the six variable selectors
+        menu = variable_menu(b, mgp, b$names_lower[keepv])   # ONE data object for the variable selectors
         d   = b$defaults
         pick = function(id, choices, fallback = "", n = 1, default = d[[id]]) {
             for (sel in list(keep[[id]], default)) {
@@ -582,6 +595,56 @@ server = function(input, output, session) {
         fill_choice("na"); fill_state(NULL)
     }), ignoreInit = TRUE)
 
+    ## ---- quantize chip (Select tab): "as: values | 2 | 3 | 4 groups" ----
+    ## Shown under the pickers when the color pick (or the FIRST facet pick; later
+    ## facet picks stay as they are, to keep the chip to one line) is a bare numeric
+    ## variable or a t2q:: token. Choosing k rewrites that selector to the token (an
+    ## extra menu row so selectize accepts it); 'values' rewrites it back. The
+    ## rewrite happens ONLY in the chip's own event, and only when it changes the
+    ## value, so a re-rendered chip reporting its initial state cannot loop.
+    quant_chip_state = function(v, b) {      # list(name, k) for a numeric / token pick, else NULL
+        v = as.character(unlist(v))[1]
+        if (is.na(v) || !nzchar(v)) return(NULL)
+        q = t2_quant_parse(v)
+        if (!is.null(q)) return(if (identical(.t2_menu_kind(b, q$name), "num")) q else NULL)
+        if (v %in% b$mygenesplus && identical(.t2_menu_kind(b, v), "num")) list(name = v, k = 0L) else NULL
+    }
+    output$quant_chip_ui = renderUI({
+        req(identical(input$tabs, "select"))
+        b = bundle()
+        one = function(id, what, st) tags$div(class = "t2-quant-chip",
+            tags$span(paste0(what, ": ", st$name)),
+            radioButtons(id, NULL, choices = c("values" = 0, "2" = 2, "3" = 3, "4" = 4), selected = st$k,
+                         inline = TRUE),
+            tags$span("groups"))
+        cs = quant_chip_state(input$color, b)
+        fs = quant_chip_state(utils::head(as.character(unlist(input$facet)), 1), b)
+        tagList(if (!is.null(cs)) one('quant_chip_color', "color", cs),
+                if (!is.null(fs)) one('quant_chip_facet', "graph for each", fs))
+    })
+    quant_rewrite = function(id, chip) {
+        b = bundle()
+        cur = as.character(unlist(isolate(input[[id]])))
+        st = quant_chip_state(utils::head(cur, 1), b)
+        if (is.null(st)) return(invisible(NULL))
+        k = .t2_num(chip, c(0, 2:4), 0)
+        target = if (k == 0) st$name else t2_quant_token(st$name, k)
+        if (identical(target, cur[1])) return(invisible(NULL))       # nothing to change: no loop
+        new = c(target, cur[-1])
+        mgp = b$mygenesplus[!(b$mygenesplus %in% b$source$single_level_columns)]
+        menu = variable_menu(b, mgp, b$names_lower[!(b$mygenesplus %in% b$source$single_level_columns)])
+        if (k > 0) {                                                  # the token must be an offered option
+            row = data.frame(label = t2_quant_label(st$name, k), value = target, num = 0L, stringsAsFactors = FALSE)
+            low = c(attr(menu, "names_lower"), tolower(target))
+            menu = rbind(menu, row); attr(menu, "names_lower") = low
+        }
+        update_selectize_ranked(session, id, menu, new)
+    }
+    observeEvent(input$quant_chip_color, t2_guarded("quantize chip (color)",
+        quant_rewrite('color', input$quant_chip_color)), ignoreInit = TRUE)
+    observeEvent(input$quant_chip_facet, t2_guarded("quantize chip (facet)",
+        quant_rewrite('facet', input$quant_chip_facet)), ignoreInit = TRUE)
+
     ## when multi_y is toggled on, add "probe" to color choices and select it
     observeEvent(input$multi_y, t2_guarded("multi-Y switch", {
         b = bundle()
@@ -590,7 +653,7 @@ server = function(input, output, session) {
         if (.t2_flag(input$multi_y)) {
             update_selectize_ranked(session, 'color', c('probe', mgp), 'probe')
         } else {
-            update_selectize_ranked(session, 'color', t2_menu(mgp, lower = b$names_lower), if (length(stc)) stc[1] else "")
+            update_selectize_ranked(session, 'color', variable_menu(b, mgp, b$names_lower), if (length(stc)) stc[1] else "")
         }
     }), ignoreInit = TRUE)
 
@@ -630,8 +693,10 @@ server = function(input, output, session) {
         ## capped per selector BEFORE anything reaches the database: a browser can
         ## send any number of names, whatever the selector shows
         cap = function(v, n) utils::head(as.character(unlist(v)), n)
+        ## a t2q:: token stands for its source variable (the Filter tab knows columns only)
         v = c(cap(input$x, T2_LIMITS$x_vars), cap(input$y, T2_LIMITS$y_vars),
-              cap(input$color, 1), cap(input$size, 1), cap(input$facet, T2_LIMITS$facet_vars),
+              t2_quant_source(cap(input$color, 1)), cap(input$size, 1),
+              t2_quant_source(cap(input$facet, T2_LIMITS$facet_vars)),
               if (!identical(input$pcortype, 'none')) cap(input$condition, T2_LIMITS$condition_vars))
         list(dataset = bundle()$key, vars = unique(v[!is.na(v) & nzchar(v)]))
     })
@@ -979,7 +1044,9 @@ server = function(input, output, session) {
         custom = stats::setNames(vapply(cols, t2_split_token, ""),
                                  vapply(cols, function(v) paste0("Split: ", an_describe(h, v)), ""))
         if (length(cols) >= 2) custom = c(custom, stats::setNames(t2_split_token(), "Split: all filters together"))
-        m = t2_menu(c(unname(custom), b$mygenesplus), lower = c(tolower(unname(custom)), b$names_lower))
+        kind = b$menu$kind[match(b$mygenesplus, b$menu$name)]
+        m = t2_menu(c(unname(custom), b$mygenesplus), lower = c(tolower(unname(custom)), b$names_lower),
+                    num = c(rep(0L, length(custom)), kind == "num"))    # split tokens: no marker
         m$label = c(names(custom), b$mygenesplus)      # t2_menu() drops names: the custom rows carry readable labels
         m
     })

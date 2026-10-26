@@ -276,6 +276,12 @@ mygenesplus = .default_bundle$mygenesplus
 ## What takes the place of a plot that was refused: the reason, drawn where the
 ## plot would be (and sent as the warning as well). Nothing else is drawn, so
 ## this costs milliseconds whatever was asked for.
+## t2q:: tokens -> their source variable names (other values unchanged); NULL stays NULL
+t2_quant_source = function(v) {
+    if (is.null(v)) return(NULL)
+    vapply(as.character(v), function(s) { q = t2_quant_parse(s); if (is.null(q)) s else q$name }, "", USE.NAMES = FALSE)
+}
+
 t2_message_plot = function(msg, summary = "", hint = NULL, fig_width = NULL, title_size = 16) {
     wrap = function(s, size) {
         if (is.null(s)) return(NULL)
@@ -376,7 +382,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## retrieve tcga data  HELP
     ## only include conditioning variables if actually being used
     active_condition = if (!is.null(condition) && pcortype != 'none') condition else NULL
-    list.of.markers = c( x, y, color, shape, size, c(facet), c(extra), c(active_condition)  )
+    ## a quantized variable (t2q::<k>::<name>, ANALYSIS-SPEC.md 2c) arrives as color / facet: the
+    ## FETCH list holds its parsed source name; the derived column is made right after the fetch
+    list.of.markers = c( x, y, t2_quant_source(color), shape, size, t2_quant_source(facet), c(extra), c(active_condition)  )
     ## save original parameter values before transformations
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
     orig_size = size; orig_facet = facet; orig_condition = condition
@@ -394,6 +402,39 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if (!is.null(too_many)) return(t2_message_plot(too_many, fig_width = fig_width, title_size = title_size))
     ## ctx$keep: the Filter tab's surviving sample ids (NULL = no restriction); ctx$rules: the sample choice
     data = gitr_memo(list.of.markers, cohort = cohort, nonormal = nonormal, noheme = noheme, ctx = ctx)
+
+    ## quantized color / facet: global cuts over the plotted rows (complete x and y), computed once
+    ## before any faceting; a refusal drops the token with a note (it joins `warnings` below)
+    quant_warn = c()
+    xy_now = unique(c(x, y)); xy_now = xy_now[xy_now %in% colnames(data)]
+    quant_universe = if (length(xy_now)) complete.cases(data[, xy_now, drop = FALSE]) else rep(TRUE, nrow(data))
+    quant_resolve = function(v) {
+        out = character(0)
+        for (tok in as.character(v)) {
+            q = t2_quant_parse(tok)
+            if (is.null(q)) { out = c(out, tok); next }
+            lab = t2_quant_label(q$name, q$k)
+            if (!(q$name %in% colnames(data)) || !is.numeric(data[[q$name]])) {
+                quant_warn <<- c(quant_warn, sprintf("%s is not a numeric variable, so it cannot be split into groups; ignored.", q$name))
+                next
+            }
+            if (!(lab %in% colnames(data))) {
+                m = data[[q$name]]; m[!quant_universe] = NA
+                qg = t2_quantile_groups(m, q$k, min_n = 5L)
+                if (is.null(qg) || !is.null(qg$refused)) {
+                    quant_warn <<- c(quant_warn, sprintf("%s cannot be split into %d groups: %s; ignored.", q$name, q$k,
+                        if (is.null(qg)) "it has fewer than 2 distinct values among the plotted samples" else qg$refused))
+                    next
+                }
+                data[[lab]] <<- qg$grp
+            }
+            out = c(out, lab)
+        }
+        if (length(out)) out else NULL
+    }
+    if (!is.null(color)) color = quant_resolve(color)
+    if (!is.null(facet)) facet = quant_resolve(facet)
+    orig_color = color; orig_facet = facet
 
     ## build data summary before any transformations
     summary_lines = c()
@@ -438,7 +479,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 
     ################################################################
     ## input validation — collect warnings, don't error
-    warnings = c()
+    warnings = quant_warn
 
     ## helpers
     is_num = function(v) length(v) == 1 && v %in% colnames(data) && is.numeric(data[, v])
@@ -899,7 +940,9 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
 fun_table1 = function ( input, ctx = t2_default_ctx() ) {
     ##    my.input = paste ('~', paste(input$x, input$y, input$color,
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
-    my.input = c( input$x, input$y, input$color, input$size, input$facet )
+    ## a quantized variable (t2q:: token) is fetched as its source column; the table holds the
+    ## source, not the derived groups (the cuts depend on the plotted rows)
+    my.input = c( input$x, input$y, t2_quant_source(input$color), input$size, t2_quant_source(input$facet) )
     my.input = setdiff( my.input, 'probe' )   # multi-Y colour handle, not a column
     ## a Kaplan-Meier plot forces nonormal (fun_plot1); its table must hold the same samples
     km = length(input$x) > 0 && input$x[1] %in% tte_names(ctx)
@@ -973,6 +1016,9 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
     if (length(input$x) && input$x[1] %in% tte_names(ctx)) {
         if (!length(input$y) || !nzchar(input$y[1]))
             return(list(warning = "Survival plot: pick a Y marker to stratify into groups."))
+        ## survival_km never reads `color`, and would treat a token in `facet` as an unknown column
+        if (any(startsWith(as.character(c(input$color, input$facet)), "t2q::")))
+            return(list(warning = "Survival plot: quantized variables are not a survival marker yet."))
         ## Appearance settings laid over the survival plot: fonts, legend, theme
         km_style = input[intersect(names(input), names(formals(t2_font_theme)))]
         return(tryCatch({

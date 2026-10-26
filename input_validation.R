@@ -67,6 +67,16 @@ T2_CONTROLS = list(
     choices[which.min(abs(choices - v))]
 }
 
+## A quantized-variable token ("t2q::<k>::<name>", group_compare.R) is a plotter input
+## for `color` and `facet`: valid when it parses strictly and <name> is a served
+## variable of menu kind "num". The plotter resolves it into a derived column; the
+## token itself never changes T2_INPUT_ARGS (the argument names stay as they were).
+.t2_quant_ok = function(v, b) {
+    v = as.character(unlist(v))[1]
+    q = t2_quant_parse(v)
+    !is.null(q) && q$name %in% b$mygenesplus && identical(.t2_menu_kind(b, q$name), "num")
+}
+
 ## input: shiny input (reactivevalues) or a plain list; b: dataset bundle
 sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable list, cohorts and tte names)
     ## read only the named inputs below: converting all of `input` to a list
@@ -75,10 +85,11 @@ sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable 
     c(list(
         x         = .t2_pick(input$x, c(vars, tte_names(b)), T2_LIMITS$x_vars),
         y         = .t2_pick(input$y, vars, T2_LIMITS$y_vars),
-        color     = .t2_one(input$color, c('probe', vars), ""),
+        color     = if (.t2_quant_ok(input$color, b)) as.character(input$color)[1] else .t2_one(input$color, c('probe', vars), ""),
         size      = .t2_one(input$size, vars, ""),
         cohort    = .t2_cohort_pick(input$cohort, unname(b$mycohorts), T2_LIMITS$cohorts),
-        facet     = .t2_pick(input$facet, vars, T2_LIMITS$facet_vars),
+        facet     = .t2_pick(input$facet, c(vars, Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$facet)))),
+                             T2_LIMITS$facet_vars),
         condition = .t2_pick(input$condition, vars, T2_LIMITS$condition_vars),
         pcortype  = .t2_one(input$pcortype, T2_CONTROLS$pcortype$choices, T2_CONTROLS$pcortype$default),
         multi_y        = .t2_flag(input$multi_y),

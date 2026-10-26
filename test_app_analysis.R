@@ -104,6 +104,51 @@ testServer(shiny::shinyAppDir("."), {
   ok(analysis_result()$a$grouping$k == 4,
      "(f) an out-of-range k snaps to the nearest menu value")
 
+  ## ---- (h) quantized variables in ordinary plots (ANALYSIS step 6) ----
+  ## (b was set up above: DEMO active; the plot reads its Select-tab inputs, sanitized)
+  sent <- list()
+  session$setInputs(tabs = "select", x = "cohort", y = "GENE01", color = "", facet = character(0), size = "",
+                    condition = character(0), pcortype = "none", multi_y = FALSE, zscore_y = FALSE,
+                    plot_btn = 0, plot_btn2 = 0, plot_btn3 = 0)
+  pn <- 0
+  plot_with <- function(...) { pn <<- pn + 1; do.call(session$setInputs, c(list(...), list(plot_btn = pn))); plot_result() }
+  tok <- t2_quant_token("GENE02", 3); lab <- t2_quant_label("GENE02", 3)
+  ok(identical(sanitize_t2_input(list(color = tok, facet = c(tok, "cohort", "t2q::3::cohort", "t2q::9::GENE02")), b)$facet, c(tok, "cohort")) &&
+     identical(sanitize_t2_input(list(color = tok), b)$color, tok) &&
+     identical(sanitize_t2_input(list(color = "t2q::3::cohort"), b)$color, ""),
+     "(h) the sanitizer keeps a valid numeric token, drops bad ones (categorical source, k out of range)")
+  rq <- plot_with(color = tok)
+  ok(inherits(rq$plot, "ggplot") && grepl(lab, rq$summary, fixed = TRUE),
+     sprintf("(h) color = %s plots; the summary names the derived variable '%s'", tok, lab))
+  ok(inherits(rq$plot, "ggplot") && lab %in% names(rq$plot$data) && nlevels(rq$plot$data[[lab]]) == 3,
+     "(h) the derived column has the three tertile groups")
+  rf <- plot_with(color = "", facet = tok)
+  ok(inherits(rf$plot, "ggplot") && lab %in% names(rf$plot$data) && !is.null(rf$plot$facet$params$facets %||% rf$plot$facet$params$rows),
+     "(h) facet = token: one panel per tertile group")
+  ## hostile: a token whose source is categorical never reaches the plotter; the plot equals the bare one
+  rh <- plot_with(color = "t2q::3::cohort", facet = character(0))
+  r0 <- plot_with(color = "", facet = character(0))
+  ok(inherits(rh$plot, "ggplot") && identical(names(rh$plot$data), names(r0$plot$data)),
+     "(h) a token over a categorical variable is dropped: the plot is the one without it")
+  ## the plotter's own guard (the sanitizer bypassed): a categorical source is refused with a note
+  rd <- plotter(x = "cohort", y = "GENE01", color = "t2q::3::cohort", ctx = t2_plot_ctx(b))
+  ok(inherits(rd$plot, "ggplot") && !any(grepl("t2q::", names(rd$plot$data))), "(h) plotter(): an unusable token is ignored, with a note")
+  ok(grepl("not a numeric variable", rd$warning %||% ""), "(h) the note says why")
+  ## the chip: a numeric color pick shows it; choosing 3 rewrites color to the token
+  session$setInputs(color = "GENE02")
+  ok(grepl("quant_chip_color", paste(output$quant_chip_ui$html), fixed = TRUE), "(h) a numeric color pick shows the quantize chip")
+  session$setInputs(quant_chip_color = "3")
+  ok(identical(sent$color$selected, tok) && tok %in% sent$color$choices$value && sent$color$choices$label[match(tok, sent$color$choices$value)] == lab,
+     "(h) the chip's 3 rewrites color to the token (the token is an extra menu row with its label)")
+  session$setInputs(color = tok, quant_chip_color = "0")
+  ok(identical(sent$color$selected, "GENE02"), "(h) 'values' rewrites the token back to the bare name")
+  sent$color <- NULL; session$setInputs(color = tok, quant_chip_color = "3")
+  ok(is.null(sent$color), "(h) a chip value equal to the current state rewrites nothing (no loop)")
+  session$setInputs(color = "cohort")
+  ok(!grepl("quant_chip_color", paste(output$quant_chip_ui$html), fixed = TRUE), "(h) a categorical color pick shows no chip")
+
+  session$setInputs(tabs = "analysis", color = "", facet = character(0))      # back to the Analysis tab for (g)
+
   ## ---- (g) with an active Thanos filter ----
   set1(paste0(t2_thanos_id("DEMO"), "-vars"), "GENE01")
   med <- round(median(g1), 2); hi <- round(max(g1), 2) - 0.01
@@ -145,5 +190,6 @@ testServer(shiny::shinyAppDir("."), {
   ok("cohort" %in% scq$variable && all(grepl("^\\[filtered\\]", scq$note[scq$variable == "cohort"])) &&
      !any(grepl("^\\[filtered\\]", scq$note[scq$variable != "cohort"])),
      "(g) a variable in another active filter (cohort) is flagged [filtered]; the others are not")
+
 })
 finish("test_app_analysis")

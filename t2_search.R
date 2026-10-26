@@ -45,14 +45,28 @@ t2_rank_matches = function(q, names, limit = 50, low = tolower(names)) {
 ## The data object behind a selectize: the choices and their lowercase names.
 ## Built ONCE per menu and shared by every selector that offers it (the seven
 ## selectors of the Select tab); `lower` = tolower(choices) when the caller has it
-## already (the bundle keeps names_lower).
-t2_menu = function(choices, lower = NULL) {
-  choices = as.character(unlist(choices)); choices = choices[!is.na(choices)]
+## already (the bundle keeps names_lower). `num`: TRUE for the numeric variables;
+## the rows then carry num = 1 and a selector created with T2_QUANT_RENDER shows
+## the quantize marker (a small down-triangle) on those options
+## (ANALYSIS-SPEC.md 2c: a numeric can be split into quantile groups).
+t2_menu = function(choices, lower = NULL, num = NULL) {
+  keep = !is.na(as.character(unlist(choices)))
+  choices = as.character(unlist(choices))[keep]
   lab = if (is.null(names(choices))) choices else ifelse(nzchar(names(choices)), names(choices), choices)
   data = data.frame(label = lab, value = unname(choices), stringsAsFactors = FALSE)
+  if (!is.null(num) && length(num) == length(keep)) data$num = as.integer(num[keep] %in% TRUE)
   attr(data, "names_lower") = if (!is.null(lower) && length(lower) == length(choices)) lower else tolower(data$value)
   data
 }
+
+## the selectize render option for menus with the num column: the label, then the
+## muted quantize triangle on numeric rows (display only; the group count is chosen
+## with the control next to the selector, never inside the dropdown)
+T2_QUANT_RENDER = shiny::HTML(
+  "{ option: function(item, escape) {
+       return '<div class=\"option\">' + escape(item.label) +
+              (item.num ? ' <span class=\"t2-quant\">\u25BE</span>' : '') + '</div>';
+     } }")
 
 ## updateSelectizeInput(server = TRUE) with ranked search. `choices`: a character
 ## vector (names = labels, optional) or a t2_menu() object; `selected`: values.

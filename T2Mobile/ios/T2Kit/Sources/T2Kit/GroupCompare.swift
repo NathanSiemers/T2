@@ -26,7 +26,9 @@ public extension Stats {
         let w = rankSum - n1 * (n1 + 1) / 2
         var ties: [Double: Double] = [:]
         for x in values { ties[x, default: 0] += 1 }
-        let tieSum = ties.values.reduce(0) { $0 + ($1 * $1 * $1 - $1) }
+        // sorted key order: a dictionary's order varies per instance, and the summation
+        // order moves sigma in the last bits from one run to the next (see kruskalWallis)
+        let tieSum = ties.keys.sorted().reduce(0) { acc, x in let t = ties[x]!; return acc + (t * t * t - t) }
         let sigma = (n1 * n2 / 12 * ((n + 1) - tieSum / (n * (n - 1)))).squareRoot()
         guard sigma > 0, sigma.isFinite else { return nil }       // every value identical
         let centred = w - n1 * n2 / 2

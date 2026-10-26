@@ -108,12 +108,14 @@ public extension Stats {
         var sum: [Int: Double] = [:], count: [Int: Double] = [:]
         for (k, row) in rows.enumerated() { sum[group[row], default: 0] += r[k]; count[group[row], default: 0] += 1 }
         guard sum.count >= 2 else { return nil }
+        // summed in sorted key order: dictionary order varies per instance, and a different
+        // summation order moves the statistic in the last bits from one run to the next
         var h = 0.0
-        for (g, s) in sum { h += s * s / count[g]! }
+        for g in sum.keys.sorted() { h += sum[g]! * sum[g]! / count[g]! }
         h = 12 / (n * (n + 1)) * h - 3 * (n + 1)
         var ties: [Double: Double] = [:]
         for x in values { ties[x, default: 0] += 1 }
-        let correction = 1 - ties.values.reduce(0) { $0 + ($1 * $1 * $1 - $1) } / (n * n * n - n)
+        let correction = 1 - ties.keys.sorted().reduce(0) { acc, x in let t = ties[x]!; return acc + (t * t * t - t) } / (n * n * n - n)
         guard correction > 0 else { return nil }           // every value identical
         h /= correction
         let df = sum.count - 1

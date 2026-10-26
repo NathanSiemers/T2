@@ -10,7 +10,7 @@ struct T2App: App {
         // Filter screen's range sliders); give every slider a knob in the app's accent colour
         UISlider.appearance().thumbTintColor = UIColor(named: "AccentColor") ?? .systemPurple
     }
-    // the tab shown first can be chosen at launch (-t2Tab select|plot|filter|publish):
+    // the tab shown first can be chosen at launch (-t2Tab select|plot|filter|analysis|publish):
     // mac_setup.sh and the UI tests use it to photograph each screen
     @State private var tab = UserDefaults.standard.string(forKey: "t2Tab") ?? "select"
     // the one-time research-use notice (ResearchNoticeView.swift)
@@ -25,6 +25,8 @@ struct T2App: App {
                     .tabItem { Label("Plot", systemImage: "chart.dots.scatter") }.tag("plot")
                 FilterView()
                     .tabItem { Label("Filter", systemImage: "slider.horizontal.3") }.tag("filter")
+                AnalysisView()
+                    .tabItem { Label("Analysis", systemImage: "chart.bar.xaxis") }.tag("analysis")
                 PublishView()
                     .tabItem { Label("Publish", systemImage: "square.and.arrow.up") }.tag("publish")
             }
@@ -108,6 +110,10 @@ struct VariableSearch: View {
     var multiple = false
     /// the chosen names (one, or the list in `multiple` mode; [""] = "none")
     let done: ([String]) -> Void
+    /// when set, a numeric row gets a small down-arrow menu: "2 / 3 / 4 groups" hands the name and
+    /// the number of quantile groups over (a continuous variable used as a derived category).
+    /// Nothing is shown on a row whose kind is not known to be numeric.
+    var quantize: ((String, Int) -> Void)? = nil
 
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -224,26 +230,61 @@ struct VariableSearch: View {
         return "\(what), \(h.isNumeric ? "numeric" : "categorical")"
     }
 
-    private func row(_ name: String) -> some View {
-        Button {
-            if multiple {
-                if !chosen.contains(name) { chosen.append(name) }
-                query = ""
-                typing = true
-            } else {
-                done([name])
-            }
-        } label: {
+    /// is this row a number for certain? A search hit says so (`kind`); a clinical column listed
+    /// before any typing is known once it is loaded.
+    private func isNumeric(_ name: String) -> Bool {
+        if !q.isEmpty { return hits[name]?.isNumeric ?? false }
+        return model.column(name)?.isNumeric ?? false
+    }
+
+    @ViewBuilder private func row(_ name: String) -> some View {
+        if let quantize, isNumeric(name) {
             HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(name).foregroundStyle(Color.primary)
-                    if let kind = kindLine(name) { Text(kind).font(.caption2).foregroundStyle(.secondary) }
+                Button { pick(name) } label: {
+                    HStack {
+                        rowText(name)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
                 }
-                Spacer()
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(name)
+                Menu {
+                    ForEach(2...4, id: \.self) { k in Button("\(k) groups") { quantize(name, k) } }
+                } label: {
+                    Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).padding(.horizontal, 8).padding(.vertical, 6)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Split \(name) into groups").accessibilityIdentifier("quantize-\(name)")
                 if (multiple && chosen.contains(name)) || name == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
             }
+        } else {
+            Button { pick(name) } label: {
+                HStack {
+                    rowText(name)
+                    Spacer()
+                    if (multiple && chosen.contains(name)) || name == current { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                }
+            }
+            .accessibilityIdentifier(name)
         }
-        .accessibilityIdentifier(name)
+    }
+
+    private func rowText(_ name: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(name).foregroundStyle(Color.primary)
+            if let kind = kindLine(name) { Text(kind).font(.caption2).foregroundStyle(.secondary) }
+        }
+    }
+
+    private func pick(_ name: String) {
+        if multiple {
+            if !chosen.contains(name) { chosen.append(name) }
+            query = ""
+            typing = true
+        } else {
+            done([name])
+        }
     }
 }
 

@@ -3,7 +3,7 @@ import Foundation
 /// The statistical methods the app computes on the device (Stats.swift, StatsMore.swift),
 /// with the papers that define them, as full references. The log-rank and Kruskal-Wallis
 /// p-values use the chi-square distribution, and the correlations Student's t distribution,
-/// as reference distributions only: no further test is computed.
+/// as reference distributions only. The Analysis tab's group comparisons are in GroupCompare.swift.
 public enum MethodReferences {
     public static let group = "Methods"
 
@@ -30,6 +30,26 @@ public enum MethodReferences {
         Reference(group: group, title: "Use of Ranks in One-Criterion Variance Analysis",
                   authors: "Kruskal WH, Wallis WA", journal: "Journal of the American Statistical Association", year: 1952,
                   doi: "10.1080/01621459.1952.10483441",
-                  note: "Used for the Kruskal\u{2013}Wallis test that compares the groups of a box plot."),
+                  note: "Used for the Kruskal\u{2013}Wallis test that compares a number across three or more groups on the Analysis tab."),
+        Reference(group: group, title: "Individual Comparisons by Ranking Methods",
+                  authors: "Wilcoxon F", journal: "Biometrics Bulletin", year: 1945,
+                  doi: "10.2307/3001968",
+                  note: "Used for the rank-sum test that compares a number between two groups on the Analysis tab."),
+        Reference(group: group, title: "On the criterion that a given system of deviations from the probable in the case of a correlated system of variables is such that it can be reasonably supposed to have arisen from random sampling",
+                  authors: "Pearson K", journal: "Philosophical Magazine, Series 5", year: 1900,
+                  doi: "10.1080/14786440009463897",
+                  note: "Used for the chi-squared test of independence for categorical comparisons on the Analysis tab."),
+        Reference(group: group, title: "The logic of inductive inference",
+                  authors: "Fisher RA", journal: "Journal of the Royal Statistical Society", year: 1935,
+                  doi: "10.2307/2342435",
+                  note: "Used for the exact test of 2x2 tables with small expected counts on the Analysis tab."),
+        Reference(group: group, title: "The generalization of 'Student's' problem when several different population variances are involved",
+                  authors: "Welch BL", journal: "Biometrika", year: 1947,
+                  doi: "10.1093/biomet/34.1-2.28",
+                  note: "Used for the unequal-variance t test and ANOVA behind the means-based option on the Analysis tab."),
+        Reference(group: group, title: "Controlling the False Discovery Rate: A Practical and Powerful Approach to Multiple Testing",
+                  authors: "Benjamini Y, Hochberg Y", journal: "Journal of the Royal Statistical Society, Series B", year: 1995,
+                  doi: "10.1111/j.2517-6161.1995.tb02031.x",
+                  note: "Used for the false-discovery-rate correction of the clinical screen on the Analysis tab."),
     ]
 }

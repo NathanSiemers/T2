@@ -404,7 +404,7 @@ ui = fluidPage(
             h5( Sys.Date() ),
             h4("Types of Data Available"),
             htmlOutput('datatypes'),
-            h4("Survival analysis methods"),
+            h4("Statistical methods"),
             tags$p("The survival analysis in T2 (Kaplan-Meier curves, log-rank test, Cox model) uses these methods:"),
             HTML(paste(vapply(T2_METHOD_REFERENCES, t2_reference_html, ""), collapse = "")),
             h4("Clinical variables"),

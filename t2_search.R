@@ -50,9 +50,12 @@ t2_rank_matches = function(q, names, limit = 50, low = tolower(names)) {
 ## the quantize marker (a small down-triangle) on those options
 ## (ANALYSIS-SPEC.md 2c: a numeric can be split into quantile groups).
 t2_menu = function(choices, lower = NULL, num = NULL) {
-  keep = !is.na(as.character(unlist(choices)))
-  choices = as.character(unlist(choices))[keep]
-  lab = if (is.null(names(choices))) choices else ifelse(nzchar(names(choices)), names(choices), choices)
+  v = unlist(choices)
+  keep = !is.na(v)
+  nm = names(v)                              # kept before as.character, which drops names
+  choices = as.character(v)[keep]
+  nm = if (is.null(nm)) NULL else nm[keep]
+  lab = if (is.null(nm)) choices else ifelse(nzchar(nm), nm, choices)
   data = data.frame(label = lab, value = unname(choices), stringsAsFactors = FALSE)
   if (!is.null(num) && length(num) == length(keep)) data$num = as.integer(num[keep] %in% TRUE)
   attr(data, "names_lower") = if (!is.null(lower) && length(lower) == length(choices)) lower else tolower(data$value)

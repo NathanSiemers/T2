@@ -10,6 +10,7 @@ source('gitr.R')                 # gitr(), T2_LIMITS, t2_sample_keep(); the file
 source('t2_api_client.R')        # the data layer of the app: the t2api service
 source('marker_ops.R')           # shared: combine_markers_median_z, residualize_on
 source('survival_prototype.R')   # Kaplan-Meier survival mode (survival_km, tte_names)
+source('group_compare.R')         # Analysis tab: group comparison + clinical screen (pure layer)
 source('plot_style.R')           # Appearance settings, themes, the ggplot tweak registry
 source('figure_export.R')        # Publish tab: figure presets, validation, rendering
 source('t2_search.R')            # ranked search in the variable menus

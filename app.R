@@ -631,18 +631,22 @@ server = function(input, output, session) {
     ##   keep  NULL when Thanos adds nothing beyond the Select tab's own filters,
     ##         else the surviving sample ids
     ##   note  one line for the plot summary (NULL when there is no Filter tab)
+    ##   mask/base  the full-length logical vectors over backend$samples (the Analysis
+    ##         tab builds its group splits from them; see docs/ANALYSIS-SPEC.md)
     filter_state = function(b) {
         h = th_for(b)
-        if (is.null(h)) return(list(keep = NULL, note = NULL, active = character(0), n_kept = NA, n_base = NA))
+        if (is.null(h)) return(list(keep = NULL, note = NULL, active = character(0), n_kept = NA, n_base = NA,
+                                    mask = NULL, base = NULL))
         m = h$th$mask()
         base = h$base()
         base = if (is.null(base)) rep(TRUE, length(m)) else (base & !is.na(base))
         active = t2_describe_filters(h$th$filters(), h$backend)
         if (identical(m, base)) {
             return(list(keep = NULL, active = character(0), n_kept = sum(m), n_base = sum(base),
+                        mask = m, base = base,
                         note = sprintf("Filter tab: no additional filtering (%d samples).", sum(m))))
         }
-        list(keep = h$backend$samples[m], active = active, n_kept = sum(m), n_base = sum(base),
+        list(keep = h$backend$samples[m], active = active, n_kept = sum(m), n_base = sum(base), mask = m, base = base,
              note = sprintf("Filter tab: %d of %d samples pass. %s", sum(m), sum(base),
                             if (length(active)) paste0("Active filters: ", paste(active, collapse = "; "), ".")
                             else "Samples with missing values (NA) are excluded for at least one variable."))

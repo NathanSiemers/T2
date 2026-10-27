@@ -597,6 +597,7 @@ server = function(input, output, session) {
         old = isolate(selected_vars()$vars)
         prev = isolate(sanitize_t2_input(input, bundle()))   # the picks to carry over
         bundle(b)
+        color_menu_state <<- "plain"; color_menu_key <<- "plain"; color_saved <<- ""   # the new dataset re-derives the color menu
         sel = apply_bundle_choices(b, keep = prev[c('x', 'y', 'color', 'size', 'facet', 'condition', 'cohort')])
         ## the selections the new dataset starts with, as selected_vars will report them
         new = unlist(c(sel$x, sel$y, sel$color, sel$size, sel$facet,
@@ -672,16 +673,42 @@ server = function(input, output, session) {
             quant_rewrite(sl, input[[paste0('quant_chip_', sl)]])), ignoreInit = TRUE)
     })
 
-    ## when multi_y is toggled on, add "probe" to color choices and select it
-    observeEvent(input$multi_y, t2_guarded("multi-Y switch", {
+    ## ---- color menu state: plain / quanta / probe / probe_quanta (UI-REWORK C2/C4a) ----
+    ## One owner of the color menu. Reads y + multi_y + bundle, NEVER input$color (no loops).
+    color_state = reactive({
         b = bundle()
-        mgp = b$mygenesplus
-        stc = b$handles$name[b$handles$role == "sample_type"]     # the sample-type handle, if the data set has one
-        if (.t2_flag(input$multi_y)) {
-            update_selectize_ranked(session, 'color', c('probe', mgp), 'probe')
-        } else {
-            update_selectize_ranked(session, 'color', variable_menu(b, mgp, b$names_lower), if (length(stc)) stc[1] else "")
+        yp = as.character(unlist(input$y)); yp = yp[!is.na(yp) & nzchar(yp)]
+        q = if (length(yp)) t2_quant_parse(yp[1]) else NULL
+        ytok = !is.null(q) && q$name %in% b$mygenesplus && identical(.t2_menu_kind(b, q$name), "num")
+        my = .t2_flag(input$multi_y) && length(yp) >= 2
+        list(state = if (my && ytok) "probe_quanta" else if (my) "probe" else if (ytok) "quanta" else "plain",
+             yname = if (ytok) q$name else NULL, k = if (ytok) q$k else NULL)
+    })
+    color_menu_state = "plain"; color_menu_key = "plain"; color_saved = ""
+    observeEvent(color_state(), t2_guarded("color menu state", {
+        cs = color_state()
+        key = paste(cs$state, cs$yname, cs$k)     # a new k relabels the entry
+        if (identical(key, color_menu_key)) return(invisible(NULL))
+        b = bundle()
+        keep = !(b$mygenesplus %in% b$source$single_level_columns)
+        menu = variable_menu(b, b$mygenesplus[keep], b$names_lower[keep])
+        specials = switch(cs$state, plain = NULL,
+            probe        = c("Y probe" = "probe"),
+            quanta       = stats::setNames(T2_COLOR_QUANTA, sprintf("Y groups (%s)", t2_quant_label(cs$yname, cs$k))),
+            probe_quanta = c("Y probe x groups" = T2_COLOR_PROBE_QUANTA, "Y probe" = "probe"))
+        if (length(specials)) {
+            row = data.frame(label = names(specials), value = unname(specials), num = 0L, stringsAsFactors = FALSE)
+            low = c(tolower(unname(specials)), attr(menu, "names_lower"))
+            menu = rbind(row, menu); attr(menu, "names_lower") = low
         }
+        cur = utils::head(as.character(unlist(isolate(input$color))), 1)
+        if (identical(color_menu_state, "plain") && length(cur) && nzchar(cur) && !(cur %in% T2_COLOR_SPECIALS)) color_saved <<- cur
+        stc = b$handles$name[b$handles$role == "sample_type"]     # the sample-type handle, if the data set has one
+        sel = if (identical(cs$state, "plain")) {
+            if (nzchar(color_saved) && color_saved %in% menu$value) color_saved else if (length(stc)) stc[1] else ""
+        } else unname(specials)[1]
+        color_menu_state <<- cs$state; color_menu_key <<- key
+        update_selectize_ranked(session, 'color', menu, sel)
     }), ignoreInit = TRUE)
 
     ## ---- Thanos: one instance per dataset, started on first use ----
@@ -722,7 +749,7 @@ server = function(input, output, session) {
         cap = function(v, n) utils::head(as.character(unlist(v)), n)
         ## a t2q:: token stands for its source variable (the Filter tab knows columns only)
         v = c(t2_quant_source(cap(input$x, T2_LIMITS$x_vars)), t2_quant_source(cap(input$y, T2_LIMITS$y_vars)),
-              t2_quant_source(cap(input$color, 1)), t2_quant_source(cap(input$size, 1)),
+              t2_quant_source(setdiff(cap(input$color, 1), T2_COLOR_SPECIALS)), t2_quant_source(cap(input$size, 1)),
               t2_quant_source(cap(input$facet, T2_LIMITS$facet_vars)),
               if (!identical(input$pcortype, 'none')) t2_quant_source(cap(input$condition, T2_LIMITS$condition_vars)))
         list(dataset = bundle()$key, vars = unique(v[!is.na(v) & nzchar(v)]))
@@ -792,7 +819,7 @@ server = function(input, output, session) {
     output$var_help = renderUI({
         b = bundle()
         inp = sanitize_t2_input(input, b)
-        t2_describe_vars(t2_quant_source(c(inp$x, inp$y, inp$color, inp$size, inp$facet)), b$descriptions)
+        t2_describe_vars(t2_quant_source(c(inp$x, inp$y, setdiff(inp$color, T2_COLOR_SPECIALS), inp$size, inp$facet)), b$descriptions)
     })
     output$clinical_help = renderUI({
         d = bundle()$descriptions
@@ -1132,7 +1159,7 @@ server = function(input, output, session) {
             kc = .t2_num(input[[paste0('quant_chip_', slot)]], c(0, 2:4), 0)
             kk = if (kc %in% 2:4) as.integer(kc) else 3L
             for (v in as.character(unlist(sp[[slot]]))) {
-                if (is.na(v) || !nzchar(v) || v %in% c("probe", "all")) next
+                if (is.na(v) || !nzchar(v) || v %in% c(T2_COLOR_SPECIALS, "all")) next
                 q = t2_quant_parse(v)
                 if (identical(slot, "x") && v %in% tte_names(b)) {
                     add_v(v)                                      # a tte endpoint (may also be a served numeric): test variable only

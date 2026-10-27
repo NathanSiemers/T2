@@ -17,7 +17,7 @@ PR #15 -> PR #14).
 | # | step | status |
 |---|---|---|
 | 0 | branch + round doc | DONE (this commit) |
-| 1 | spec: 2c token table, section 9 caption/.txt grammar + literal examples | pending |
+| 1 | spec: 2c token table, section 9 caption/.txt grammar + literal examples | DONE (this commit) |
 | 2 | N1 pure layer: styled t2_plot_group_*, t2_analysis_caption/text, filename 3-arg | pending |
 | 3 | N3 UI+server: shared appearance panel, publish slimming, preset->shared, live redraw | pending |
 | 4 | N3 test rewrite (browser 111-209, fuzz :131) | pending |

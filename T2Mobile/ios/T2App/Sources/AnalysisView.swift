@@ -7,6 +7,7 @@ import T2Kit
 struct AnalysisView: View {
     @Environment(AppModel.self) private var model
     @State private var tableURL: URL?
+    @State private var textURL: URL?
     @State private var groupsOpen = false
     @State private var sourcesOpen = false
     /// a number chosen as the grouping from the list: asks how many groups
@@ -189,10 +190,18 @@ struct AnalysisView: View {
                     .id(tableURL)
                 Text(tableURL.lastPathComponent).font(.caption.monospaced()).foregroundStyle(.secondary)
             }
+            Button("Export the statistics (text)") { Task { textURL = await model.writeAnalysisText() } }
+                .accessibilityIdentifier("analysis-text-make")
+            if let textURL {
+                ShareLink(item: textURL) { Label("Share or save the statistics", systemImage: "square.and.arrow.up") }
+                    .accessibilityIdentifier("analysis-text-share")
+                    .id(textURL)
+                Text(textURL.lastPathComponent).font(.caption.monospaced()).foregroundStyle(.secondary)
+            }
         } header: {
             Text("Table")
         } footer: {
-            Text("The groups, then the test, as CSV.")
+            Text("The groups, then the test, as CSV; or the figure caption sentences and the same tables as text.")
         }
     }
 

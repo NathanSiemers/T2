@@ -726,4 +726,27 @@ final class T2UITests: XCTestCase {
         XCTAssertTrue(row.exists, "the clinical screen listed no variable")
         shot("42-analysis-screen")
     }
+
+    /// PUBLISH-UNIFY step 9: the Analysis result as a publication figure (Publish > Figure of > Analysis)
+    func test11_PublishAnalysis() {
+        launch(tab: "analysis")
+        let split = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'analysis-split-'")).firstMatch
+        XCTAssertTrue(split.waitForExistence(timeout: dataTimeout), "no Split row for the cohort filter")
+        split.tap()
+        pick("Test variable", search: "OS.time", choose: "OS.time")
+        scrollTo("analysis-run").tap()
+        let method = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Kruskal-Wallis' OR label CONTAINS 'Wilcoxon rank-sum'")).firstMatch
+        var swipes = 0
+        while !method.waitForExistence(timeout: 5) && swipes < 12 { app.swipeUp(velocity: .slow); swipes += 1 }
+        XCTAssertTrue(method.exists, "no test method in the Statistics rows")
+        openTab("Publish")
+        let picker = element("publish-source-picker")
+        XCTAssertTrue(picker.waitForExistence(timeout: dataTimeout), "no Figure of picker on the Publish tab")
+        picker.buttons["Analysis"].tap()
+        waitFor("publish-preview", "the analysis figure preview")
+        XCTAssertTrue(element("publish-readout").waitForExistence(timeout: 10), "no size readout for the analysis figure")
+        let shown = element("publish-preview").value as? String ?? ""
+        XCTAssertTrue(shown.contains("caption"), "the analysis figure has no caption: \(shown)")
+        shot("43-publish-analysis")
+    }
 }

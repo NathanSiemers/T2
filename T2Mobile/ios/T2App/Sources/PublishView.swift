@@ -16,6 +16,10 @@ struct PublishView: View {
     @State private var exporting: String?
     @State private var savedToPhotos = false
     @State private var presetID = FigurePreset.all[0].id
+    /// which figure is published: the Select tab's plot, or the Analysis result's plot with its full caption.
+    /// (View state: PublishView builds its scene locally, from the model, on every render.)
+    @State private var source = PublishSource.plot
+    enum PublishSource: String { case plot, analysis }
 
     var body: some View {
         NavigationStack {
@@ -33,8 +37,22 @@ struct PublishView: View {
 
     @ViewBuilder private var form: some View {
         @Bindable var model = model
-        let scene = model.scene(fitLine: model.figure.style.showFit)
+        let analysisScene = model.analysis.outcome?.scene != nil ? model.analysisFigureScene() : nil
+        let scene = (source == .analysis ? analysisScene : nil) ?? model.scene(fitLine: model.figure.style.showFit)
         Form {
+            if analysisScene != nil {
+                Section {
+                    Picker("Figure of", selection: $source) {
+                        Text("Plot").tag(PublishSource.plot)
+                        Text("Analysis").tag(PublishSource.analysis)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("publish-source-picker")
+                    .onChange(of: source) { _, _ in exported = nil; message = ""; savedToPhotos = false }
+                } header: {
+                    Text("Figure of")
+                }
+            }
             Section {
                 GeometryReader { geo in
                     let scale = min(1, geo.size.width / CGFloat(model.figure.widthIn * 72))
@@ -224,8 +242,12 @@ struct PublishView: View {
     private func fileBase() -> String {
         let f = model.figure
         var parts = ["T2", model.y, "by", model.x]
-        if !model.facet.isEmpty { parts += ["per", model.facet] }
-        if !model.color.isEmpty { parts += ["color", model.color] }
+        if source == .analysis, let o = model.analysis.outcome, o.scene != nil {
+            parts = ["T2_analysis", o.variable, "by", o.groupingName]
+        } else {
+            if !model.facet.isEmpty { parts += ["per", model.facet] }
+            if !model.color.isEmpty { parts += ["color", model.color] }
+        }
         parts.append(String(format: "%.2fx%.2fin", f.widthIn, f.heightIn))
         let stamp = DateFormatter()
         stamp.dateFormat = "yyyyMMdd-HHmmss-SSS"

@@ -108,9 +108,9 @@ ok(grepl(format(n1, big.mark = ""), gsub(",", "", st), fixed = TRUE), "its sampl
 shot("4_plot")
 
 ## ---- the other two Plot buttons also land on the Plot tab ----
-app$set_inputs(tabs = "appearance"); settle(500)
-ok(visible("#plot_btn2") && visible("#surv_max_days") && !visible("#plot_btn"),
-   "Appearance tab holds the fiddly options")
+settle(500)  # already on the Plot tab (plot_btn3)
+ok(visible("#plot_btn2") && visible("#surv_max_days") && visible(".t2-appearance"),
+   "the shared appearance panel is shown on the Plot tab")
 shot("5_appearance")
 ok(js("document.querySelectorAll('.gg-name').length") >= 12,
    "Appearance settings carry their ggplot name underneath")
@@ -146,6 +146,12 @@ app$click("plot_btn2"); settle(4000)
 ok(identical(app$get_value(input = "tabs"), "plot"), "Appearance-tab Plot button switches to the Plot tab")
 ok(js("document.querySelector('#main_plot img').height") == 500, "Plot height setting resizes the plot (500 px)")
 shot("5c_plot_tweaked")
+## live restyle: a style change after a plot is drawn redraws it with no Plot button
+src0 <- js("document.querySelector('#main_plot img').src")
+app$set_inputs(title_size = "22"); settle(2500)
+src1 <- js("document.querySelector('#main_plot img').src")
+ok(nzchar(src0) && nzchar(src1) && !identical(src0, src1), "changing title_size redraws the plot without pressing Plot")
+app$set_inputs(title_size = "16")
 pick(character(0))
 app$set_inputs(plot_height = "700", legend_size = "11")
 app$set_inputs(tabs = "select"); settle(500)
@@ -161,18 +167,22 @@ ok(length(i0) == 4 && i0[1] == 1050 && i0[2] == 960,
    "the preview is the default figure itself: 3.5 x 3.2 in at 300 dpi = 1050 x 960 px")
 ok(grepl("3.50 x 3.20 in", app$get_value(output = "pub_readout")) && grepl("1,050 x 960 pixels", app$get_value(output = "pub_readout")),
    "the readout states size, resolution and pixels")
-ok(identical(app$get_value(input = "pub_title_size"), "8") && identical(app$get_value(input = "pub_axis_text_size"), "6") &&
-   identical(app$get_value(input = "title_size"), "16"),
-   "the figure has its own print-scale sizes; the Appearance tab's are untouched")
+ok(!js("!!document.querySelector('#pub_title_size')") && visible(".t2-appearance") && identical(app$get_value(input = "title_size"), "16"),
+   "the Publish tab has no style copies; the shared panel (title 16 pt) is shown there")
 ok(visible("#t2_citation") && grepl("Nathan O. Siemers", js("document.getElementById('t2_citation').innerText")),
    "the citation is shown")
 shot("8_publish")
+## the shared panel is hidden off the plot/publish tabs
+app$set_inputs(tabs = "select"); settle(500)
+ok(!visible(".t2-appearance"), "the shared appearance panel is hidden on the Select tab")
+app$set_inputs(tabs = "publish"); settle(3000)
 ## a preset fills in size, resolution and slide-scale sizes
 app$set_inputs(pub_preset = "slide"); settle(6000)
 i1 <- unlist(img())
-ok(identical(app$get_value(input = "pub_title_size"), "24") && app$get_value(input = "pub_width") == 13.33 &&
+ok(identical(app$get_value(input = "title_size"), "24") && app$get_value(input = "pub_width") == 13.33 &&
    identical(app$get_value(input = "pub_dpi"), "150"),
-   "choosing the slide preset fills in 13.33 x 7.5 in, 150 dpi and slide-scale text")
+   "choosing the slide preset fills in 13.33 x 7.5 in, 150 dpi and writes slide-scale text into the shared title_size")
+shot("8a_publish_slide_shared")
 ok(abs(i1[1] / i1[2] - 13.33 / 7.5) < 0.01 && i1[3] <= 1100, "the preview redraws at the new shape, fitted to the window")
 ## custom size + zoom modes
 app$set_inputs(pub_preset = "full_half"); settle(5000)
@@ -191,11 +201,11 @@ app$set_inputs(pub_source = FALSE); settle(4000)
 ok(grepl("removed the source line", js("document.querySelector('.t2-cite').innerText")),
    "removing the source line brings up the citation reminder")
 shot("8b_publish_full")
-## the Publish tab's own ggplot settings, with the preset's default shown
-app$run_js("$('#pub_tweak_pick')[0].selectize.setValue(['theme|legend.key.size','theme|legend.position'])"); settle(2000)
-ok(identical(app$get_value(input = "pub_tw_theme_legend_key_size"), "8") &&
-   identical(app$get_value(input = "pub_tw_theme_legend_position"), "right"),
-   "the figure's own ggplot settings appear with the figure defaults (8 pt legend keys)")
+## the ggplot settings are the shared ones
+app$run_js("$('#tweak_pick')[0].selectize.setValue(['theme|legend.key.size','theme|legend.position'])"); settle(2000)
+ok(!is.null(app$get_value(input = "tw_theme_legend_key_size")) &&
+   identical(app$get_value(input = "tw_theme_legend_position"), "right"),
+   "the shared ggplot settings appear on the Publish tab too")
 ## download = the full-resolution file, as specified
 app$set_inputs(pub_preset = "half_third"); settle(5000)
 app$set_inputs(pub_format = "png", pub_source = TRUE); settle(4000)
@@ -206,7 +216,7 @@ ok(di[2] == 1050 && di[1] == 960, "Plot: the downloaded PNG is 1050 x 960 px (3.
 app$set_inputs(pub_format = "pdf"); settle(3000)
 dlp <- app$get_download("pub_download")
 ok(identical(rawToChar(readBin(dlp, "raw", 5)), "%PDF-"), "Plot: PDF download works")
-app$run_js("$('#pub_tweak_pick')[0].selectize.setValue([])")
+app$run_js("$('#tweak_pick')[0].selectize.setValue([])")
 app$set_inputs(pub_format = "png")
 
 ## ---- About tab ----
@@ -215,8 +225,13 @@ ok(js("document.querySelectorAll('#datatypes table tbody tr').length") > 5, "Abo
 shot("6_about")
 
 ## ---- dataset switch: DEMO gets its own (empty of TCGA fields) panel set ----
+## DEMO is a hidden dataset (dataset_meta `hidden`, 5848d94): not in the menu, but the
+## server accepts it by name (app.R T2_SOURCES_SERVED). The menu's selectize would drop
+## an unknown value, so the by-name open adds the option first - what a client that
+## knows the name does; set_inputs alone stopped working when DEMO became hidden.
 app$set_inputs(tabs = "select"); settle(500)
-app$set_inputs(dataset = "DEMO"); settle(4000)
+app$run_js("var s = $('#dataset')[0].selectize; s.addOption({value: 'DEMO', label: 'DEMO'}); s.setValue('DEMO');")
+settle(4000)
 dv <- app$get_value(input = "th_DEMO-vars")
 cat("    DEMO x =", app$get_value(input = "x"), " y =", app$get_value(input = "y"),
     " | DEMO Filter columns:", paste(dv, collapse = ", "), "\n")

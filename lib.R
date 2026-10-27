@@ -384,7 +384,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     active_condition = if (!is.null(condition) && pcortype != 'none') condition else NULL
     ## a quantized variable (t2q::<k>::<name>, ANALYSIS-SPEC.md 2c) arrives as color / facet: the
     ## FETCH list holds its parsed source name; the derived column is made right after the fetch
-    list.of.markers = c( x, y, t2_quant_source(color), shape, size, t2_quant_source(facet), c(extra), c(active_condition)  )
+    list.of.markers = c( t2_quant_source(x), t2_quant_source(y), t2_quant_source(color), shape, t2_quant_source(size),
+                         t2_quant_source(facet), c(extra), t2_quant_source(c(active_condition))  )
     ## save original parameter values before transformations
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
     orig_size = size; orig_facet = facet; orig_condition = condition
@@ -406,7 +407,7 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     ## quantized color / facet: global cuts over the plotted rows (complete x and y), computed once
     ## before any faceting; a refusal drops the token with a note (it joins `warnings` below)
     quant_warn = c()
-    xy_now = unique(c(x, y)); xy_now = xy_now[xy_now %in% colnames(data)]
+    xy_now = unique(t2_quant_source(c(x, y))); xy_now = xy_now[xy_now %in% colnames(data)]
     quant_universe = if (length(xy_now)) complete.cases(data[, xy_now, drop = FALSE]) else rep(TRUE, nrow(data))
     quant_resolve = function(v) {
         out = character(0)
@@ -432,8 +433,26 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
         if (length(out)) out else NULL
     }
+    ## y, size and condition have no plot meaning for groups: the source column is plotted and a notice queued
+    quant_demote = function(v, role) {
+        if (is.null(v)) return(v)
+        for (tok in as.character(v)) {
+            q = t2_quant_parse(tok)
+            if (!is.null(q)) quant_warn <<- c(quant_warn, sprintf("%s: groups have no meaning as %s; the plot uses the continuous values (the groups are offered on the Analysis tab).", q$name, role))
+        }
+        t2_quant_source(v)
+    }
+    ## x: the derived categorical, or (cut refused) the source column, so x is never emptied
+    if (!is.null(x)) x = unlist(lapply(as.character(x), function(tok) {
+        r = quant_resolve(tok)
+        if (is.null(r)) t2_quant_source(tok) else r }))
+    y = quant_demote(y, "y")
+    size = quant_demote(size, "size")
+    if (!is.null(condition)) condition = if (is.null(active_condition)) t2_quant_source(condition) else quant_demote(condition, "remove influences of")
+    if (!is.null(active_condition)) active_condition = condition
     if (!is.null(color)) color = quant_resolve(color)
     if (!is.null(facet)) facet = quant_resolve(facet)
+    orig_x = x; orig_y = y; orig_size = size; orig_condition = condition
     orig_color = color; orig_facet = facet
 
     ## build data summary before any transformations
@@ -942,7 +961,8 @@ fun_table1 = function ( input, ctx = t2_default_ctx() ) {
     ##        input$size, input$facet, input$sep, sep = ' + ' ) ) ) )
     ## a quantized variable (t2q:: token) is fetched as its source column; the table holds the
     ## source, not the derived groups (the cuts depend on the plotted rows)
-    my.input = c( input$x, input$y, t2_quant_source(input$color), input$size, t2_quant_source(input$facet) )
+    my.input = c( t2_quant_source(input$x), t2_quant_source(input$y), t2_quant_source(input$color),
+                  t2_quant_source(input$size), t2_quant_source(input$facet) )
     my.input = setdiff( my.input, 'probe' )   # multi-Y colour handle, not a column
     ## a Kaplan-Meier plot forces nonormal (fun_plot1); its table must hold the same samples
     km = length(input$x) > 0 && input$x[1] %in% tte_names(ctx)
@@ -1016,6 +1036,14 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
     if (length(input$x) && input$x[1] %in% tte_names(ctx)) {
         if (!length(input$y) || !nzchar(input$y[1]))
             return(list(warning = "Survival plot: pick a Y marker to stratify into groups."))
+        ## y / size / condition groups have no plot meaning: the source column is used (the notice joins the summary)
+        surv_notes = character(0)
+        for (rl in list(c("y", "y"), c("size", "size"), c("condition", "remove influences of")))
+            for (tok in as.character(input[[rl[1]]])) {
+                q = t2_quant_parse(tok)
+                if (!is.null(q)) surv_notes = c(surv_notes, sprintf("%s: groups have no meaning as %s; the plot uses the continuous values (the groups are offered on the Analysis tab).", q$name, rl[2]))
+            }
+        for (rl in c("y", "size", "condition")) if (!is.null(input[[rl]])) input[[rl]] = t2_quant_source(input[[rl]])
         ## survival_km never reads `color`, and would treat a token in `facet` as an unknown column
         if (any(startsWith(as.character(c(input$color, input$facet)), "t2q::")))
             return(list(warning = "Survival plot: quantized variables are not a survival marker yet."))
@@ -1038,6 +1066,7 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
                         base_size = base_size, base_family = base_family,
                         ctx = ctx)
             ## not-detected values set to 0 / the floor: said in the caption and the summary, as for a scatter
+            if (length(surv_notes)) attr(km, "t2summary") = paste(c(attr(km, "t2summary"), "", surv_notes), collapse = "\n")
             fi = attr(km, "t2fill")
             if (length(fi$filled)) attr(km, "t2summary") = paste(c(attr(km, "t2summary"), t2_fill_summary(fi)), collapse = "\n")
             t2_style_survival(km, style = km_style, gg = gg, fig_width = fig_width,

@@ -80,6 +80,8 @@ struct VariablePicker: View {
     var multiple = false
     var choose: (String) -> Void = { _ in }
     var chooseMany: ([String]) -> Void = { _ in }
+    /// optional: numeric rows get the chevron menu (2 / 3 / 4 groups); see VariableSearch
+    var quantize: ((String, Int) -> Void)? = nil
 
     @State private var open = false
 
@@ -95,10 +97,10 @@ struct VariablePicker: View {
         }
         .accessibilityIdentifier("pick-\(title)")
         .sheet(isPresented: $open) {
-            VariableSearch(title: title, current: current, allowNone: allowNone, multiple: multiple) { names in
+            VariableSearch(title: title, current: current, allowNone: allowNone, multiple: multiple, done: { names in
                 open = false
                 if multiple { chooseMany(names) } else if let n = names.first { choose(n) }
-            }
+            }, quantize: quantize.map { q in { name, k in open = false; q(name, k) } })
         }
     }
 }
@@ -378,6 +380,19 @@ struct SelectView: View {
         }
     }
 
+    /// the quantize chip under a row: shown only while the slot's variable is a number
+    @ViewBuilder private func cutChip(_ name: String, cut: Int, id: String, set: @escaping (Int) -> Void) -> some View {
+        if !name.isEmpty, model.column(name)?.isNumeric == true {
+            Picker("Use as", selection: Binding(get: { cut }, set: set)) {
+                Text("values").tag(0)
+                ForEach(2...4, id: \.self) { Text("\($0)").tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Groups of \(name)")
+            .accessibilityIdentifier(id)
+        }
+    }
+
     @ViewBuilder private var form: some View {
         @Bindable var model = model
         Form {
@@ -398,15 +413,21 @@ struct SelectView: View {
                 }
             }
             Section {
-                VariablePicker(title: "X", current: model.x, allowNone: false) { v in Task { await model.setVariable(.x, to: v) } }
+                VariablePicker(title: "X", current: model.x, allowNone: false, choose: { v in Task { await model.setVariable(.x, to: v) } },
+                               quantize: { v, k in Task { await model.setVariable(.x, to: v, cut: k) } })
+                cutChip(model.x, cut: model.xCut, id: "quant-x") { model.xCut = $0 }
                 // survival is the app's strongest analysis: say where it is, when the dataset has time-to-event variables
                 if let hint = model.meta?.survivalHintShort, !hint.isEmpty {
                     Text(hint).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("survival-hint-select")
                 }
                 VariablePicker(title: "Y", current: model.y, allowNone: false) { v in Task { await model.setVariable(.y, to: v) } }
-                VariablePicker(title: "Color", current: model.colorLabel) { v in Task { await model.setVariable(.color, to: v) } }
+                VariablePicker(title: "Color", current: model.colorLabel, choose: { v in Task { await model.setVariable(.color, to: v) } },
+                               quantize: { v, k in Task { await model.setVariable(.color, to: v, cut: k) } })
+                cutChip(model.color, cut: model.colorCut, id: "quant-color") { model.colorCut = $0 }
                 VariablePicker(title: "Size", current: model.size) { v in Task { await model.setVariable(.size, to: v) } }
-                VariablePicker(title: "Graph for each", current: model.facet) { v in Task { await model.setVariable(.facet, to: v) } }
+                VariablePicker(title: "Graph for each", current: model.facet, choose: { v in Task { await model.setVariable(.facet, to: v) } },
+                               quantize: { v, k in Task { await model.setVariable(.facet, to: v, cut: k) } })
+                cutChip(model.facet, cut: model.facetCut, id: "quant-facet") { model.facetCut = $0 }
                 // "Not detected": only where the values answer for the plotted variables offers more than missing
                 if model.fillOptions.count > 1 {
                     VStack(alignment: .leading, spacing: 6) {

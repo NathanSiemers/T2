@@ -380,7 +380,7 @@ public func groupTest(values: Column.Data?, kind: GroupVariableKind, assignment:
             let t = rowsKept.map { r in colsKept.map { table[r][$0] } }
             return row("group", "Fisher exact", nil, nil, Stats.fisher2x2(t[0][0], t[0][1], t[1][0], t[1][1]))
         }
-        return row("group", "Chi-squared", chi.statistic, Double(chi.df), chi.p)
+        return row("group", "Pearson chi-squared", chi.statistic, Double(chi.df), chi.p)
     case .survival:
         out.groups = labels.indices.map { g in
             let km = Stats.kaplanMeierBand(time: members[g].map { time[$0] }, event: members[g].map { event[$0] })

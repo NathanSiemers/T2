@@ -198,7 +198,7 @@ final class GroupingTests: XCTestCase {
         // 2x2, all expected counts >= 5: chi-squared (pinned in GroupCompareTests)
         var t = table([[20, 10], [8, 17]])
         var r = groupTest(values: t.data, kind: .categorical, assignment: t.assignment, means: true, tte: nil, maxDays: .infinity)
-        XCTAssertEqual(r.test[0].method, "Chi-squared"); XCTAssertEqual(r.test[0].statistic!, 6.55731922398589, accuracy: 1e-10)
+        XCTAssertEqual(r.test[0].method, "Pearson chi-squared"); XCTAssertEqual(r.test[0].statistic!, 6.55731922398589, accuracy: 1e-10)
         XCTAssertEqual(r.test[0].df, 1); XCTAssertEqual(r.test[0].p!, 0.0104453608171268, accuracy: 1e-12)
         XCTAssertEqual(r.levels.count, 4); XCTAssertEqual(r.levels[0].prop, 20.0 / 30)
         XCTAssertEqual(r.groups.map { $0.n }, [30, 25])
@@ -210,7 +210,7 @@ final class GroupingTests: XCTestCase {
         // a larger table is never Fisher
         t = table([[12, 5, 9, 7], [8, 14, 6, 10], [3, 9, 15, 4]])
         r = groupTest(values: t.data, kind: .categorical, assignment: t.assignment, means: false, tte: nil, maxDays: .infinity)
-        XCTAssertEqual(r.test[0].method, "Chi-squared"); XCTAssertEqual(r.test[0].df, 6)
+        XCTAssertEqual(r.test[0].method, "Pearson chi-squared"); XCTAssertEqual(r.test[0].df, 6)
         XCTAssertEqual(r.test[0].statistic!, 15.9209659364528, accuracy: 1e-10); XCTAssertEqual(r.test[0].p!, 0.0141845206529683, accuracy: 1e-12)
         // a level nobody has is not a column: 2x2 after dropping, same as the plain 2x2
         let gaps = Column.Data.categorical(levels: ["L0", "unused", "L1"], codes: { if case .categorical(_, let c) = table([[20, 10], [8, 17]]).data { return c.map { $0 == 1 ? 2 : 0 } }; return [] }())

@@ -83,14 +83,14 @@ sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable 
     ## makes an output depend on every input (e.g. DT table state) and re-render forever
     vars = b$mygenesplus
     c(list(
-        x         = .t2_pick(input$x, c(vars, tte_names(b)), T2_LIMITS$x_vars),
-        y         = .t2_pick(input$y, vars, T2_LIMITS$y_vars),
+        x         = .t2_pick(input$x, c(vars, tte_names(b), Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$x)))), T2_LIMITS$x_vars),
+        y         = .t2_pick(input$y, c(vars, Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$y)))), T2_LIMITS$y_vars),
         color     = if (.t2_quant_ok(input$color, b)) as.character(input$color)[1] else .t2_one(input$color, c('probe', vars), ""),
-        size      = .t2_one(input$size, vars, ""),
+        size      = if (.t2_quant_ok(input$size, b)) as.character(input$size)[1] else .t2_one(input$size, vars, ""),
         cohort    = .t2_cohort_pick(input$cohort, unname(b$mycohorts), T2_LIMITS$cohorts),
         facet     = .t2_pick(input$facet, c(vars, Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$facet)))),
                              T2_LIMITS$facet_vars),
-        condition = .t2_pick(input$condition, vars, T2_LIMITS$condition_vars),
+        condition = .t2_pick(input$condition, c(vars, Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$condition)))), T2_LIMITS$condition_vars),
         pcortype  = .t2_one(input$pcortype, T2_CONTROLS$pcortype$choices, T2_CONTROLS$pcortype$default),
         multi_y        = .t2_flag(input$multi_y),
         zscore_y       = .t2_flag(input$zscore_y),

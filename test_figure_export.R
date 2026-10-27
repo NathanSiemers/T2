@@ -310,4 +310,13 @@ hy <- quiet(fun_plot1(list(x = "NKX2-1.mut", y = "CD8A", cohort = "all", allComp
 ok(is.list(hy) && any(vapply(hy$plot$layers, function(l) inherits(l$geom, "GeomBoxplot"), NA)),
    "a categorical X whose name has a hyphen draws the boxplot")
 
+cat("\n== PUBLISH-UNIFY: analysis figure filename ==\n")
+d2 <- list(width = 3.5, height = 3.2, dpi = 300, format = "png")
+ok(identical(t2_figure_filename(list(x = "CD8A", y = "FOXP3"), d2), "T2_CD8A_vs_FOXP3_3.5x3.2in_300dpi.png"), "2-arg filename unchanged")
+ok(identical(t2_figure_filename(list(x = "CD8A", y = "FOXP3"), d2, NULL), "T2_CD8A_vs_FOXP3_3.5x3.2in_300dpi.png"), "analysis = NULL is the 2-arg name")
+fa <- t2_figure_filename(NULL, d2, list(var = "CD8A", label = "Split: cohort"))
+ok(identical(fa, "T2_analysis_CD8A_by_Split-cohort_3.5x3.2in_300dpi.png"), "3-arg: T2_analysis_<var>_by_<label>_<w>x<h>in_<dpi>dpi.<ext>")
+ok(identical(t2_figure_filename(NULL, list(width = 7, height = 5, dpi = 300, format = "pdf"), list(var = "a/../b c", label = "x;rm -rf")), "T2_analysis_a-..-b-c_by_x-rm--rf_7x5in.pdf") &&
+     !grepl("[^A-Za-z0-9._+-]", fa), "3-arg: cleaned like the 2-arg name; pdf has no dpi")
+
 finish("test_figure_export")

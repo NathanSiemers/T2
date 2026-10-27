@@ -52,9 +52,9 @@ gg_label = function(label, gg = NULL) {
 }
 ## one of the fixed style menus (see T2_STYLE in plot_style.R). `prefix` and
 ## `default` give the Publish tab its own copy with print-scale defaults.
-style_select = function(id, prefix = "", default = NULL) {
+style_select = function(id, prefix = "", default = NULL, note = "") {
     st = T2_STYLE[[id]]
-    inline(selectInput(paste0(prefix, id), gg_label(st$label, st$gg), choices = st$choices,
+    inline(selectInput(paste0(prefix, id), gg_label(paste0(st$label, note), st$gg), choices = st$choices,
                        selected = if (is.null(default)) st$default else default))
 }
 ## the search box over every other ggplot setting
@@ -94,18 +94,63 @@ tweak_widgets = function(input, prefix = "", defaults = list()) {
     })
 }
 
+## ONE appearance panel for the Plot and Publish tabs (ANALYSIS-SPEC section 10): the same ids as ever.
+## It sits below the tab bar content; a figure preset writes these widgets when chosen.
+appearance_panel_ui = function() {
+    div(class = "t2-appearance",
+        tags$hr(),
+        h4('Plot appearance'),
+        tags$p(class = "text-muted", "(shared between the Plot and Publish tabs; a figure preset writes these)"),
+        helpText("Sizes are real ggplot values (font sizes in points). A size of 0 removes that item. ",
+                 "The green line under each name is what ggplot calls the setting."),
+        style_select('point_size'),
+        style_select('alpha'),
+        style_select('title_size'),
+        style_select('subtitle_size'),
+        tags$br(),
+        style_select('axis_title_size'),
+        style_select('axis_text_size'),
+        style_select('strip_size'),
+        style_select('legend_size'),
+        tags$br(),
+        inline( selectInput('scales', gg_label('Multi-graph scales', 'facet_wrap(scales = )'),
+                            choices = T2_CONTROLS$scales$choices, selected = T2_CONTROLS$scales$default) ),
+        style_select('ncols'),
+        inline( selectInput('smooth', gg_label('Fit line', 'geom_smooth(method = "lm")'),
+                            choices = T2_CONTROLS$smooth$choices, selected = T2_CONTROLS$smooth$default) ),
+        style_select('plot_height', note = " (screen only)"),
+        tags$br(),
+        inline(checkboxInput("show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
+        inline(checkboxInput("allComplete", "Show only results with complete information", value = TRUE)),
+        tags$br(),
+        ## survival (Kaplan-Meier) options - used when X is a time-to-event variable of the data set
+        inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = T2_CONTROLS$km_groups$choices,
+                               selected = T2_CONTROLS$km_groups$default) ),
+        inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = T2_CONTROLS$surv_max_days$default,
+                             min = min(T2_CONTROLS$surv_max_days$choices), step = 30) ),
+        h4('More ggplot settings'),
+        helpText("Search every other ggplot setting: all theme elements (axis text angle, legend position, ",
+                 "grid lines, backgrounds, spacing ...) and the drawing settings of points, boxplots and the fit line. ",
+                 "Each one you pick appears below with its current default; choose from the menu, or type your own number or #hex colour."),
+        tweak_picker(),
+        div(class = "t2-tweaks", uiOutput('tweak_inputs')),
+        actionButton("plot_btn2", "Plot")
+    )
+}
+
 ## the Publish tab: a figure of a given physical size and resolution
 publish_tab_ui = function() {
     pr = T2_FIG_PRESETS[[T2_FIG_DEFAULT_PRESET]]
-    sty = function(id) style_select(id, "pub_", pr$style[[id]])
     tagList(
         tags$br(),
         helpText("A figure for a paper or a slide: choose its real size and resolution, adjust until the ",
                  "preview reads well, then press ", tags$b("Plot"), " to download the file. The preview is the figure itself, ",
-                 "drawn at the size you asked for. These settings are separate from the Appearance tab: ",
-                 "sizes that suit the screen do not suit a 3.5 inch figure."),
+                 "drawn at the size you asked for. The appearance panel below is shared with the Plot tab; choosing a preset writes it. ",
+                 "Choose ", tags$b("Analysis result"), " to publish the last comparison from the Analysis tab instead."),
         fluidRow(
             column(4,
+                radioButtons('pub_what', 'Figure of', choices = c("Select-tab plot" = "plot", "Analysis result" = "analysis"),
+                             selected = "plot", inline = TRUE),
                 selectInput('pub_preset', 'Start from', width = '100%',
                             choices = stats::setNames(names(T2_FIG_PRESETS),
                                                       vapply(T2_FIG_PRESETS, `[[`, "", "label")),
@@ -118,11 +163,6 @@ publish_tab_ui = function() {
                 inline(selectInput('pub_format', 'File format', choices = T2_FIG_FORMATS, selected = "png", width = '200px')),
                 inline(selectInput('pub_family', gg_label('Font', 'theme(text = element_text(family = ))'),
                                    choices = T2_FIG_FAMILIES, width = '300px')),
-                h5("Sizes at final print size"),
-                div(class = "t2-pub-style",
-                    sty('title_size'), sty('subtitle_size'), sty('axis_title_size'), sty('axis_text_size'),
-                    sty('strip_size'), sty('legend_size'), sty('point_size'), sty('alpha'), sty('ncols')),
-                inline(checkboxInput("pub_show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
                 ## a switch per text element of the figure (all on by default)
                 div(class = "t2-pub-text", tags$b("Text on the figure: "),
                     inline(checkboxInput("pub_show_title", "Title", value = TRUE)),
@@ -138,13 +178,12 @@ publish_tab_ui = function() {
                     tags$code(id = "t2_citation", T2_CITATION),
                     tags$a(href = "#", class = "t2-copy",
                            onclick = "navigator.clipboard.writeText(document.getElementById('t2_citation').innerText); this.innerText = 'copied'; return false;",
-                           "copy")),
-                h5("More ggplot settings"),
-                tweak_picker("pub_"),
-                div(class = "t2-tweaks", uiOutput('pub_tweak_inputs'))
+                           "copy"))
             ),
             column(8,
                 inline(downloadButton('pub_download', 'Plot: download figure')),
+                conditionalPanel("input.pub_what == 'analysis'",
+                                 inline(downloadButton('pub_an_stats', 'Download stats (.txt)'))),
                 inline(HTML(nbsp(3))),
                 inline(radioButtons('pub_zoom', NULL, inline = TRUE,
                                     choices = c("Fit to window" = "fit", "Print size (approx.)" = "print",
@@ -297,13 +336,13 @@ ui = fluidPage(
             tags$br(),
             inline( selectizeInput('dataset', 'Data set', choices = NULL ) ),
             tags$br(),
-            inline( selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE ) ),
-            inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE ) ),
+            inline( selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ) ),
+            inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ) ),
             inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
             inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
             uiOutput('x_survival_hint'),
             inline( selectizeInput('color', 'color', choices = NULL, options = list(render = T2_QUANT_RENDER)) ),
-            inline( selectizeInput('size', 'size', choices = NULL )),
+            inline( selectizeInput('size', 'size', choices = NULL, options = list(render = T2_QUANT_RENDER) )),
             inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
             inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) )),
             ## "as: values | 2 | 3 | 4 groups" for a numeric color / first facet pick
@@ -319,7 +358,7 @@ ui = fluidPage(
             tags$br(),
             ## what the chosen clinical variables mean (t2_descriptions.R)
             uiOutput('var_help'),
-            inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
+            inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) )),
             inline(HTML(nbsp(5))),
             inline(
                 radioButtons('pcortype', 'Remove influence on:',
@@ -331,7 +370,7 @@ ui = fluidPage(
             div(class = "t2-filter-status", textOutput('filter_status')),
             ## "Not-detected values": shown only when the values answer of this plot offers more than "missing"
             uiOutput('fill_ui'),
-            ## the plot area is rebuilt at the chosen Plot height (Appearance tab)
+            ## the plot area is rebuilt at the chosen Plot height (appearance panel)
             fluidRow( column(12, align="center", uiOutput('main_plot_ui')) ),
             h4("Data Summary"),
             verbatimTextOutput('plot_summary'),
@@ -359,47 +398,10 @@ ui = fluidPage(
             tableOutput('analysis_groups'),
             tableOutput('analysis_stats'),
             downloadButton('analysis_download', 'Download table (.csv)'),
+            downloadButton('analysis_stats_txt', 'Download stats (.txt)'),
             h4("Clinical screen"),
             tableOutput('analysis_screen_table'),
             selectInput('analysis_screen_pick', 'Open in the comparison above: pick, then press Compare', choices = NULL)
-        ),
-        ## ---- (d) plot appearance ----
-        tabPanel("Appearance", value = "appearance",
-            h4('Fiddly Options'),
-            helpText("Sizes are real ggplot values (font sizes in points). A size of 0 removes that item. ",
-                     "The green line under each name is what ggplot calls the setting."),
-            style_select('point_size'),
-            style_select('alpha'),
-            style_select('title_size'),
-            style_select('subtitle_size'),
-            tags$br(),
-            style_select('axis_title_size'),
-            style_select('axis_text_size'),
-            style_select('strip_size'),
-            style_select('legend_size'),
-            tags$br(),
-            inline( selectInput('scales', gg_label('Multi-graph scales', 'facet_wrap(scales = )'),
-                                choices = T2_CONTROLS$scales$choices, selected = T2_CONTROLS$scales$default) ),
-            style_select('ncols'),
-            inline( selectInput('smooth', gg_label('Fit line', 'geom_smooth(method = "lm")'),
-                                choices = T2_CONTROLS$smooth$choices, selected = T2_CONTROLS$smooth$default) ),
-            style_select('plot_height'),
-            tags$br(),
-            inline(checkboxInput("show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
-            inline(checkboxInput("allComplete", "Show only results with complete information", value = TRUE)),
-            tags$br(),
-            ## survival (Kaplan-Meier) options — used when X is a time-to-event variable of the data set
-            inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = T2_CONTROLS$km_groups$choices,
-                                   selected = T2_CONTROLS$km_groups$default) ),
-            inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = T2_CONTROLS$surv_max_days$default,
-                                 min = min(T2_CONTROLS$surv_max_days$choices), step = 30) ),
-            h4('More ggplot settings'),
-            helpText("Search every other ggplot setting: all theme elements (axis text angle, legend position, ",
-                     "grid lines, backgrounds, spacing ...) and the drawing settings of points, boxplots and the fit line. ",
-                     "Each one you pick appears below with its current default; choose from the menu, or type your own number or #hex colour."),
-            tweak_picker(),
-            div(class = "t2-tweaks", uiOutput('tweak_inputs')),
-            actionButton("plot_btn2", "Plot")
         ),
         ## ---- (e) publication-quality figure export ----
         tabPanel("Publish", value = "publish", publish_tab_ui()),
@@ -422,16 +424,17 @@ ui = fluidPage(
                 tags$li(tags$b("Select"), ": choose the data set, the variables to plot (X, Y, color, size, ",
                         "one graph per category) and the cohort(s); then press Plot."),
                 tags$li(tags$b("Plot"), ": the resulting graph, a summary of the samples behind it, ",
-                        "and a download of the plotted table."),
+                        "and a download of the plotted table. The appearance panel below it sets point size, transparency, ",
+                        "label sizes, multi-graph layout, fit line and survival-plot options, and searches every ",
+                        "other ggplot setting; changes redraw the plot."),
                 tags$li(tags$b("Filter"), ": interactive histograms and sliders/checkboxes for every selected ",
                         "variable (and any others you add) to fine-tune which samples are plotted."),
                 tags$li(tags$b("Analysis"), ": compare groups (a filter's Selected vs Excluded, a variable cut into ",
                         "equal-count groups, or a category) on one variable with a statistical test, or screen all ",
                         "clinical variables with Benjamini-Hochberg correction; the table downloads as CSV."),
-                tags$li(tags$b("Appearance"), ": point size, transparency, label sizes, multi-graph layout, ",
-                        "fit line and survival-plot options, and a search over every other ggplot setting."),
                 tags$li(tags$b("Publish"), ": the current plot as a figure of a chosen physical size and ",
-                        "resolution (PNG, TIFF or PDF), with a live preview.")
+                        "resolution (PNG, TIFF or PDF), with a live preview; it shares the appearance panel with the Plot tab, ",
+                        "and choosing a figure preset writes that panel.")
             ),
             tags$p(tags$b("Citing T2: "), T2_CITATION),
             h5( paste( 'PI:', a.PI ) ),
@@ -450,6 +453,8 @@ ui = fluidPage(
             verbatimTextOutput('print1')
         )
     ),
+    ## the shared appearance panel: below the tab content on the Plot and Publish tabs (its inputs stay bound while hidden)
+    conditionalPanel("input.tabs == 'plot' || input.tabs == 'publish'", appearance_panel_ui()),
     div(class = "t2-footer", "For research use by biomedical scientists only; not medical advice. Sources: About tab.")
 )
 
@@ -602,6 +607,8 @@ server = function(input, output, session) {
     ## extra menu row so selectize accepts it); 'values' rewrites it back. The
     ## rewrite happens ONLY in the chip's own event, and only when it changes the
     ## value, so a re-rendered chip reporting its initial state cannot loop.
+    T2_QUANT_SLOTS = c(x = "X", y = "Y", color = "color", size = "size", facet = "graph for each",
+                       condition = "remove influences of")
     quant_chip_state = function(v, b) {      # list(name, k) for a numeric / token pick, else NULL
         v = as.character(unlist(v))[1]
         if (is.na(v) || !nzchar(v)) return(NULL)
@@ -617,10 +624,14 @@ server = function(input, output, session) {
             radioButtons(id, NULL, choices = c("values" = 0, "2" = 2, "3" = 3, "4" = 4), selected = st$k,
                          inline = TRUE),
             tags$span("groups"))
-        cs = quant_chip_state(input$color, b)
-        fs = quant_chip_state(utils::head(as.character(unlist(input$facet)), 1), b)
-        tagList(if (!is.null(cs)) one('quant_chip_color', "color", cs),
-                if (!is.null(fs)) one('quant_chip_facet', "graph for each", fs))
+        chips = lapply(names(T2_QUANT_SLOTS), function(slot) {
+            st = quant_chip_state(utils::head(as.character(unlist(input[[slot]])), 1), b)
+            if (is.null(st)) return(NULL)
+            tagList(one(paste0('quant_chip_', slot), T2_QUANT_SLOTS[[slot]], st),
+                    if (slot %in% c("y", "size", "condition"))
+                        tags$div(class = "t2-quant-chip", tags$small("groups apply on the Analysis tab; the plot uses the values")))
+        })
+        do.call(tagList, chips)
     })
     quant_rewrite = function(id, chip) {
         b = bundle()
@@ -640,10 +651,11 @@ server = function(input, output, session) {
         }
         update_selectize_ranked(session, id, menu, new)
     }
-    observeEvent(input$quant_chip_color, t2_guarded("quantize chip (color)",
-        quant_rewrite('color', input$quant_chip_color)), ignoreInit = TRUE)
-    observeEvent(input$quant_chip_facet, t2_guarded("quantize chip (facet)",
-        quant_rewrite('facet', input$quant_chip_facet)), ignoreInit = TRUE)
+    for (slot in names(T2_QUANT_SLOTS)) local({
+        sl = slot
+        observeEvent(input[[paste0('quant_chip_', sl)]], t2_guarded(paste0("quantize chip (", sl, ")"),
+            quant_rewrite(sl, input[[paste0('quant_chip_', sl)]])), ignoreInit = TRUE)
+    })
 
     ## when multi_y is toggled on, add "probe" to color choices and select it
     observeEvent(input$multi_y, t2_guarded("multi-Y switch", {
@@ -694,10 +706,10 @@ server = function(input, output, session) {
         ## send any number of names, whatever the selector shows
         cap = function(v, n) utils::head(as.character(unlist(v)), n)
         ## a t2q:: token stands for its source variable (the Filter tab knows columns only)
-        v = c(cap(input$x, T2_LIMITS$x_vars), cap(input$y, T2_LIMITS$y_vars),
-              t2_quant_source(cap(input$color, 1)), cap(input$size, 1),
+        v = c(t2_quant_source(cap(input$x, T2_LIMITS$x_vars)), t2_quant_source(cap(input$y, T2_LIMITS$y_vars)),
+              t2_quant_source(cap(input$color, 1)), t2_quant_source(cap(input$size, 1)),
               t2_quant_source(cap(input$facet, T2_LIMITS$facet_vars)),
-              if (!identical(input$pcortype, 'none')) cap(input$condition, T2_LIMITS$condition_vars))
+              if (!identical(input$pcortype, 'none')) t2_quant_source(cap(input$condition, T2_LIMITS$condition_vars)))
         list(dataset = bundle()$key, vars = unique(v[!is.na(v) & nzchar(v)]))
     })
     selected_vars_d = debounce(selected_vars, 500)
@@ -765,7 +777,7 @@ server = function(input, output, session) {
     output$var_help = renderUI({
         b = bundle()
         inp = sanitize_t2_input(input, b)
-        t2_describe_vars(c(inp$x, inp$y, inp$color, inp$size, inp$facet), b$descriptions)
+        t2_describe_vars(t2_quant_source(c(inp$x, inp$y, inp$color, inp$size, inp$facet)), b$descriptions)
     })
     output$clinical_help = renderUI({
         d = bundle()$descriptions
@@ -788,7 +800,15 @@ server = function(input, output, session) {
     fill_choice = reactiveVal("na")
     fill_state = reactiveVal(NULL)       # t2_fill_of() of the last plot's data (NULL: no plot yet / a new source)
     fill_bump = reactiveVal(0)           # a changed choice draws the plot again, like pressing Plot
-    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump()))
+    ## a changed appearance setting redraws the current plot (debounced; never before a first Plot press)
+    style_bump = reactiveVal(0)
+    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump(), style_bump()))
+    style_state = reactive(list(sanitize_t2_style(input), sanitize_t2_tweaks(input), input$scales, input$smooth,
+                                input$show_legend, input$allComplete, input$km_groups, input$surv_max_days))
+    style_state_d = debounce(style_state, 800)
+    observeEvent(style_state_d(), {
+        if (isolate(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump())) > 0) style_bump(style_bump() + 1)
+    }, ignoreInit = TRUE)
     ## the plot's height on the page is, like every Appearance setting, taken at
     ## the moment Plot is pressed
     plot_height = reactiveVal(t2_style_default('plot_height'))
@@ -904,9 +924,9 @@ server = function(input, output, session) {
         updateNumericInput(session, 'pub_height', value = pr$height)
         updateSelectInput(session, 'pub_units', selected = pr$units)
         updateSelectInput(session, 'pub_dpi', selected = pr$dpi)
-        for (id in names(pr$style)) updateSelectInput(session, paste0('pub_', id), selected = pr$style[[id]])
+        ## the style menus are the SHARED ones (plot_height is screen-only: no preset carries it)
+        for (id in setdiff(names(pr$style), "plot_height")) updateSelectInput(session, id, selected = pr$style[[id]])
     }, ignoreInit = TRUE)
-    output$pub_tweak_inputs = renderUI(tweak_widgets(input, "pub_", pub_preset()$gg))
 
     pub_fig = reactive(sanitize_t2_figure(input))
     ## everything that decides what is drawn (not how large the file is)
@@ -914,15 +934,27 @@ server = function(input, output, session) {
         ## only the Publish tab draws a figure: no work on every input change elsewhere
         req(identical(input$tabs, "publish"))
         b = bundle()
+        what = .t2_one(input$pub_what, c("plot", "analysis"), "plot")
+        if (identical(what, "analysis")) {
+            s = an_snap()
+            if (is.null(s)) return(NULL)
+            if (!identical(s$dataset, b$key))
+                return(list(kind = "analysis", refusal = sprintf(
+                    "The comparison was made on %s; reopen that dataset or run a new comparison.", s$dataset)))
+            fig = pub_fig()
+            pr = T2_FIG_PRESETS[[fig$preset]]
+            return(list(kind = "analysis", snap = s, fig = fig, st = sanitize_t2_style(input),
+                        gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input)),
+                        source_line = if (fig$source_line) T2_CITATION else "",
+                        show = fig[c("show_title", "show_subtitle", "show_axis_titles", "show_caption")]))
+        }
         inp = sanitize_t2_input(input, b)
         if (length(inp$x) == 0 || length(inp$y) == 0) return(NULL)
         fig = pub_fig()
         pr = T2_FIG_PRESETS[[fig$preset]]
-        st = sanitize_t2_style(input, "pub_", pr$style)
-        st$plot_height = NULL
-        inp[names(st)] = st
-        ## the preset's own defaults for unlisted settings, then the user's picks
-        gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input, "pub_"))
+        ## (inp already carries the shared appearance styles)
+        ## the preset's own defaults for unlisted settings (publish-only base), then the shared tweaks
+        gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input))
         fs = filter_state(b)
         samp = sanitize_t2_samples(input, b)
         list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules, fill = fill_choice()), gg = gg,
@@ -934,16 +966,39 @@ server = function(input, output, session) {
              show = fig[c("show_title", "show_subtitle", "show_axis_titles")])
     })
     pub_draw = function(s) {
+        if (identical(s$kind, "analysis")) return(pub_draw_analysis(s))
         t2_apply_text_switches(
             fun_plot1(s$inp, reactive = FALSE, ctx = s$ctx, gg = s$gg,
                       base_size = s$base_size, base_family = s$family, caption = s$caption,
                       fig_width = s$fig_width, filter_caption = s$filter_caption, fill_caption = s$fill_caption),
             title = s$show$show_title, subtitle = s$show$show_subtitle, axis_titles = s$show$show_axis_titles)
     }
+    ## the Analysis result as a figure: drawn from the snapshot (no re-query), the same data as output$analysis_plot
+    pub_draw_analysis = function(s) {
+        validate(need(is.null(s$refusal), s$refusal))
+        sn = s$snap; fig = s$fig
+        cap = if (isTRUE(fig$show_caption))
+                  t2_analysis_caption(sn, fig_width = fig$width, size = 0.75 * fig$base_size, source_line = s$source_line)
+              else t2_caption_text("", s$source_line, fig$width, 0.75 * fig$base_size)
+        sty = list(style = s$st, gg = s$gg, caption = cap, base_size = fig$base_size, base_family = fig$family,
+                   fig_width = fig$width)
+        p = switch(sn$a$var_kind,
+            num = do.call(t2_plot_group_box, c(list(sn$x, sn$g$grp, sn$a$var, sn$label), sty)),
+            cat = do.call(t2_plot_group_counts, c(list(sn$x, sn$g$grp, sn$a$var, sn$label), sty)),
+            tte = do.call(t2_plot_group_km, c(list(sn$tte$time, sn$tte$event, sn$g$grp, sn$ent$label %||% sn$a$var,
+                                                   unit = t2_tte_unit(sn$ent$time_unit %||% "days"), max_days = sn$max_days), sty)))
+        t2_apply_text_switches(p, title = s$show$show_title, subtitle = s$show$show_subtitle,
+                               axis_titles = s$show$show_axis_titles)
+    }
     ## redraw about a second after the last change, not on every keystroke
     pub_spec_d = debounce(pub_spec, 900)
     pub_fig_d  = debounce(pub_fig, 900)
-    pub_result = reactive({ s = pub_spec_d(); if (is.null(s)) NULL else pub_draw(s) })
+    pub_result = reactive({
+        s = pub_spec_d()
+        if (is.null(s)) NULL
+        else if (identical(s$kind, "analysis")) { validate(need(is.null(s$refusal), s$refusal)); pub_draw(s) }
+        else pub_draw(s)
+    })
 
     output$pub_readout = renderText({
         fig = pub_fig()
@@ -954,6 +1009,8 @@ server = function(input, output, session) {
         obj = t2_figure_object(res)
         if (is.null(obj)) {
             msg = if (is.list(res) && !is.null(res$warning)) res$warning
+                  else if (identical(.t2_one(input$pub_what, c("plot", "analysis"), "plot"), "analysis"))
+                      "Run a comparison on the Analysis tab first (Compare), then publish it here."
                   else "Choose X and Y on the Select tab to see a figure here."
             validate(need(FALSE, msg))
         }
@@ -972,12 +1029,15 @@ server = function(input, output, session) {
     output$pub_download = downloadHandler(
         filename = function() {
             b = bundle()
-            t2_figure_filename(sanitize_t2_input(input, b), pub_fig())
+            sn = if (identical(.t2_one(input$pub_what, c("plot", "analysis"), "plot"), "analysis")) an_snap() else NULL
+            if (!is.null(sn)) t2_figure_filename(NULL, pub_fig(), analysis = list(var = sn$a$var, label = sn$label))
+            else t2_figure_filename(sanitize_t2_input(input, b), pub_fig())
         },
         content = function(file) {
             s = pub_spec()
             obj = if (is.null(s)) NULL else t2_figure_object(pub_draw(s))
-            if (is.null(obj)) stop("Nothing to plot: choose X and Y on the Select tab.")
+            if (is.null(obj)) stop(if (identical(.t2_one(input$pub_what, c("plot", "analysis"), "plot"), "analysis"))
+                "Nothing to plot: run a comparison on the Analysis tab first." else "Nothing to plot: choose X and Y on the Select tab.")
             fig = pub_fig()
             t2_render_figure(obj, file, fig$width, fig$height, fig$dpi, fig$format)
         })
@@ -1035,6 +1095,60 @@ server = function(input, output, session) {
         sanitize_t2_analysis(inp, b, active_cols = names(h$th$filters()))
     }
 
+    ## The Select-tab picks as seen by the Analysis menus (ANALYSIS-SPEC.md 9b). Built from the
+    ## SANITIZED x / y / color / size / facet / condition (a hostile token is already gone) and the
+    ## slot's quantize chip (k of a bare numeric pick; 2..4, else 3). Returns
+    ##   list(groupings = data.frame(value, label, token), vars = character())
+    ## `token` is TRUE for a t2q:: row to ADD to the group menu, FALSE for a categorical name that is
+    ## already in it (to be moved). vars: source names + a tte endpoint picked as x. Both in pick
+    ## order, de-duplicated. Advisory only: sanitize_t2_analysis is the gate.
+    select_picks = reactive({
+        empty = list(groupings = data.frame(value = character(0), label = character(0), token = logical(0),
+                                            stringsAsFactors = FALSE), vars = character(0))
+        b = bundle()
+        if (is.null(b) || is.null(b$mygenesplus)) return(empty)
+        sp = tryCatch(sanitize_t2_input(input, b), error = function(e) NULL)
+        if (is.null(sp)) return(empty)
+        gv = character(0); gl = character(0); gt = logical(0); vv = character(0)
+        add_g = function(value, label, token) if (!(value %in% gv)) {
+            gv <<- c(gv, value); gl <<- c(gl, label); gt <<- c(gt, token) }
+        add_v = function(name) if (!(name %in% vv)) vv <<- c(vv, name)
+        for (slot in names(T2_QUANT_SLOTS)) {
+            kc = .t2_num(input[[paste0('quant_chip_', slot)]], c(0, 2:4), 0)
+            kk = if (kc %in% 2:4) as.integer(kc) else 3L
+            for (v in as.character(unlist(sp[[slot]]))) {
+                if (is.na(v) || !nzchar(v) || v %in% c("probe", "all")) next
+                q = t2_quant_parse(v)
+                if (identical(slot, "x") && v %in% tte_names(b)) {
+                    add_v(v)                                      # a tte endpoint (may also be a served numeric): test variable only
+                } else if (!is.null(q)) {
+                    if (q$name %in% b$mygenesplus && identical(.t2_menu_kind(b, q$name), "num")) {
+                        add_g(v, t2_quant_label(q$name, q$k), TRUE); add_v(q$name)
+                    }
+                } else if (v %in% b$mygenesplus) {
+                    kind = .t2_menu_kind(b, v)
+                    if (identical(kind, "num")) { add_g(t2_quant_token(v, kk), t2_quant_label(v, kk), TRUE); add_v(v) }
+                    else if (identical(kind, "cat")) { add_g(v, v, FALSE); add_v(v) }
+                }
+            }
+        }
+        list(groupings = data.frame(value = gv, label = gl, token = gt, stringsAsFactors = FALSE), vars = vv)
+    })
+    ## move the rows whose value is in `values` to the front of a menu (after `after` leading rows),
+    ## suffixing their LABEL (value unchanged, never duplicated); names_lower follows the rows
+    front_menu_rows = function(menu, values, after = 0L) {
+        low = attr(menu, "names_lower")
+        hit = which(menu$value %in% values & !duplicated(menu$value))
+        hit = hit[order(match(menu$value[hit], values))]
+        if (!length(hit)) return(menu)
+        menu$label[hit] = paste0(menu$label[hit], " - from Select")
+        head_i = seq_len(after); rest = setdiff(seq_len(nrow(menu)), c(head_i, hit))
+        ord = c(head_i, hit, rest)
+        out = menu[ord, , drop = FALSE]; rownames(out) = NULL
+        attr(out, "names_lower") = low[ord]
+        out
+    }
+
     ## the choices: filter splits first, then every served variable (ranked search, t2_search.R)
     analysis_group_menu = reactive({
         req(identical(input$tabs, "analysis"))
@@ -1048,6 +1162,21 @@ server = function(input, output, session) {
         m = t2_menu(c(unname(custom), b$mygenesplus), lower = c(tolower(unname(custom)), b$names_lower),
                     num = c(rep(0L, length(custom)), kind == "num"))    # split tokens: no marker
         m$label = c(names(custom), b$mygenesplus)      # t2_menu() drops names: the custom rows carry readable labels
+        ## Select-tab picks next (9b): tokens are added rows, categorical names are moved rows
+        gp = select_picks()$groupings
+        if (nrow(gp)) {
+            low = attr(m, "names_lower")
+            add = gp[gp$token & !(gp$value %in% m$value), , drop = FALSE]
+            if (nrow(add)) {
+                row = data.frame(label = paste0(add$label, " - from Select"), value = add$value, num = 0L, stringsAsFactors = FALSE)
+                at = length(custom)
+                m = rbind(m[seq_len(at), , drop = FALSE], row, m[setdiff(seq_len(nrow(m)), seq_len(at)), , drop = FALSE])
+                rownames(m) = NULL
+                low = c(low[seq_len(at)], tolower(add$value), low[setdiff(seq_along(low), seq_len(at))])
+                attr(m, "names_lower") = low
+            }
+            m = front_menu_rows(m, gp$value[!gp$token], after = length(custom) + nrow(add))
+        }
         m
     })
     observe(t2_guarded("analysis choices", {
@@ -1060,8 +1189,10 @@ server = function(input, output, session) {
         b = bundle()
         vars = c(b$mygenesplus, tte_names(b))
         cur = isolate(.t2_one(input$analysis_var, vars, ""))
-        update_selectize_ranked(session, 'analysis_var', t2_menu(vars, lower = c(b$names_lower, tolower(tte_names(b)))),
-                                if (nzchar(cur)) cur else vars[1])
+        sv = select_picks()$vars
+        m = front_menu_rows(t2_menu(vars, lower = c(b$names_lower, tolower(tte_names(b)))), sv)
+        update_selectize_ranked(session, 'analysis_var', m,
+                                if (nzchar(cur)) cur else if (length(sv)) sv[1] else vars[1])
     }))
     ## the number of groups, only for a continuous grouping variable
     output$analysis_quant_ui = renderUI({
@@ -1076,7 +1207,7 @@ server = function(input, output, session) {
         paste0("Maintained filters: ", if (length(fs$active)) paste(fs$active, collapse = "; ") else "none beyond the Select tab", ".")
     an_p = function(p) vapply(p, fmtp, "")
     an_num = function(v) ifelse(is.na(v), "", sprintf("%.4g", v))
-    an_snapshot = NULL
+    an_snap = reactiveVal(NULL)           # the last comparison (the Publish tab and the downloads read it)
 
     analysis_result = eventReactive(input$analysis_run, t2_guarded("analysis", {
         req(identical(input$tabs, "analysis"))
@@ -1098,7 +1229,7 @@ server = function(input, output, session) {
         validate(need(is.null(res$refused), res$refused))
         snap = list(label = gl$label, g = g, res = res, a = a, x = x, tte = tte, ent = ent, max_days = max_days,
                     filters = an_filters_line(fs), dataset = b$key)
-        an_snapshot <<- snap
+        an_snap(snap)
         snap
     }))
     output$analysis_note = renderUI({
@@ -1127,11 +1258,21 @@ server = function(input, output, session) {
     output$analysis_download = downloadHandler(
         filename = function() sprintf("t2-analysis-%s-%s.csv", gsub("[^A-Za-z0-9.-]+", "-", bundle()$key), format(Sys.Date())),
         content = function(file) {
-            s = an_snapshot
+            s = an_snap()
             if (is.null(s)) stop("Nothing to download: press Compare first.")
             tab = t2_group_result_table(s$res, header = c(s$label, sprintf("universe n = %d", s$g$n_universe), s$filters))
             utils::write.table(tab, file, sep = ",", row.names = FALSE, col.names = FALSE, qmethod = "double")
         })
+
+    an_stats_handler = function() downloadHandler(
+        filename = function() sprintf("T2_analysis_%s_stats.txt", gsub("[^A-Za-z0-9.-]+", "-", bundle()$key)),
+        content = function(file) {
+            s = an_snap()
+            if (is.null(s)) stop("Nothing to export - run a comparison first.")
+            writeLines(t2_analysis_text(s), file)
+        })
+    output$analysis_stats_txt = an_stats_handler()
+    output$pub_an_stats = an_stats_handler()
 
     ## ---- the clinical screen: the grouping against every handle + clinical variable ----
     screen_result = eventReactive(input$analysis_screen, t2_guarded("analysis screen", {

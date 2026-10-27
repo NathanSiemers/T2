@@ -3,7 +3,8 @@
 ## bundle and a plot builds against the synthetic dataset too.
 suppressMessages(library(shiny))
 
-source("t2_test_helpers.R")   # ok() counts failures, finish() exits non-zero, quiet()
+source("t2_test_helpers.R")
+`%||%` <- function(a, b) if (is.null(a)) b else a   # ok() counts failures, finish() exits non-zero, quiet()
 
 ## NB: unselected `multiple` selectize inputs arrive as NULL in real Shiny
 ## (and fun_plot1 strips NULLs), so facet/condition are intentionally absent.
@@ -80,5 +81,40 @@ testServer(shiny::shinyAppDir("."), {
   ## ---- switch back to TCGA ----
   session$setInputs(dataset = "TCGA")
   ok(bundle()$name == "TCGA", "bundle switched back to TCGA")
+  ## ---- PUBLISH-UNIFY step 3: one shared appearance state ----
+  session$setInputs(tabs = "publish", x = "cohort", y = "CD8A", color = "sample_type", title_size = 20, pub_preset = "slide")
+  s_pub <- pub_spec()
+  ok(!is.null(s_pub) && identical(s_pub$inp$title_size, 20), "pub_spec carries the SHARED title_size (unified style)")
+  ok(identical(pub_preset()$style$title_size, 24) && !is.null(pub_spec()$gg$smooth.linewidth),
+     "the preset's gg stays the publish-only base under the shared tweaks")
+  ## the preset observer writes the shared (unprefixed) ids: it must run clean for a style-carrying preset
+  r_pre <- tryCatch({ session$setInputs(pub_preset = "nature2"); session$flushReact(); "" }, error = function(e) conditionMessage(e))
+  ok(identical(r_pre, ""), paste("choosing a preset runs the shared-id writer without error", r_pre))
+  ## live restyle: a style change after a plot redraws, debounced; none before the first Plot press
+  session$setInputs(tabs = "plot", plot_btn = 20)
+  invisible(plot_result()); session$flushReact()
+  k0 <- plot_clicks(); b0 <- style_bump()
+  session$setInputs(title_size = 12)
+  session$elapse(1000); session$flushReact()
+  ok(style_bump() == b0 + 1 && plot_clicks() == k0 + 1, "a style change after a plot bumps plot_clicks (debounced redraw)")
+  b1 <- style_bump(); session$elapse(2000); session$flushReact()
+  ok(style_bump() == b1, "with no further change there is no further redraw (no loop)")
+  ## ---- PUBLISH-UNIFY step 6: per-role quantize tokens ----
+  session$setInputs(dataset = "DEMO")
+  bq <- bundle()
+  tk <- t2_quant_token("GENE01", 3)
+  sq <- sanitize_t2_input(list(x = tk, y = tk, size = tk, condition = tk), bq)
+  ok(identical(sq$x, tk) && identical(sq$y, tk) && identical(sq$size, tk) && identical(sq$condition, tk),
+     "sanitizer keeps a valid token in x, y, size and condition")
+  sb <- sanitize_t2_input(list(x = "t2q::9::GENE01", y = "t2q::3::NOSUCH", size = "t2q::3::NOSUCH", condition = c("t2q::9::GENE01", "t2q::3::NOSUCH")), bq)
+  ok(is.null(sb$x) && is.null(sb$y) && is.null(sb$condition) && !nzchar(sb$size %||% ""),
+     "the sanitizer drops malformed / unknown tokens in x, y, size and condition")
+  ## survival (TCGA): a Y token is demoted; a color token keeps the existing refusal
+  session$setInputs(dataset = "TCGA", tabs = "plot")
+  ts <- t2_quant_token("CD8A", 3)
+  rv <- fun_plot1(sanitize_t2_input(list(x = "OS", y = ts, cohort = "all"), bundle()), reactive = FALSE, ctx = t2_plot_ctx(bundle()))
+  ok(inherits(rv, "ggsurvplot") && grepl("groups have no meaning as y", attr(rv, "t2summary") %||% ""), "survival: a Y token is demoted with the notice")
+  rv2 <- fun_plot1(sanitize_t2_input(list(x = "OS", y = "CD8A", color = t2_quant_token("MKI67", 3), cohort = "all"), bundle()), reactive = FALSE, ctx = t2_plot_ctx(bundle()))
+  ok(grepl("quantized variables are not a survival marker", rv2$warning %||% ""), "survival: a color token keeps its refusal")
 })
 finish("test_app_server")

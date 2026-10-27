@@ -165,5 +165,81 @@ cat("  FMTP:", paste(sprintf("\"%s\"", fp), collapse = ", "), "\n")
 want <- c("NA", "< 1e-300", "< 1e-300", "1.0e-320", "1.0e-300", "1.0e-10", "1.2e-04", "1.0e-03", "0.001", "0.0123", "0.05", "0.5", "1", "1")
 ok(identical(fp, want), "fmtp strings pinned")
 
+cat("\n== PUBLISH-UNIFY: styled plots, caption, stats text ==\n")
+## the styling helpers + t2_caption_text only (lib.R as a whole needs the service)
+suppressMessages(source("plot_style.R"))
+for (e in parse("lib.R")) if (is.call(e) && as.character(e[[1]]) %in% c("=", "<-") && identical(as.character(e[[2]]), "t2_caption_text")) eval(e)
+## (a) default calls keep today's theme: theme_minimal(12) + t2_font_theme()
+th0 <- theme_minimal(base_size = 12) + t2_font_theme()
+def_plots <- list(box = t2_plot_group_box(x3, g3, "Marker", "Grouping"), counts = t2_plot_group_counts(xc, gc, "Stage", "Grouping"),
+                  km = t2_plot_group_km(tm, ev, gt, "OS"))
+for (nm in names(def_plots)) {
+  pt <- def_plots[[nm]]$theme
+  ok(identical(calc_element("plot.title", pt)$size, calc_element("plot.title", th0)$size) &&
+       identical(calc_element("plot.title", pt)$size, 16) && identical(calc_element("axis.text", pt)$size, 11) &&
+       identical(calc_element("axis.title", pt)$size, 14) && identical(calc_element("legend.text", pt)$size, 11) &&
+       identical(calc_element("text", pt)$family, calc_element("text", th0)$family), sprintf("%s: default theme = theme_minimal(12) + t2_font_theme()", nm))
+  ok(is.null(def_plots[[nm]]$labels$caption), sprintf("%s: no caption by default", nm))
+}
+ok(identical(calc_element("legend.position", def_plots$km$theme), "bottom") && !identical(calc_element("legend.position", def_plots$counts$theme), "bottom"), "default legend positions (km bottom)")
+ok(identical(.gc_theme(), th0), ".gc_theme() with defaults is exactly today's theme")
+pdef <- ggplot_build(def_plots$box)$data
+ok(any(vapply(def_plots$box$layers, function(l) isTRUE(l$aes_params$size == 1.2 && l$aes_params$alpha == 0.6), NA)), "box: default jitter size 1.2, alpha 0.6")
+## (b) styled calls build, caption lands, geometry scales
+sty <- list(point_size = 0.9, alpha = 0.5, title_size = 8, legend_size = 6)
+styled <- list(
+  box = t2_plot_group_box(x3, g3, "Marker", "Grouping", style = sty, gg = list("theme|plot.caption|size" = 5), caption = "x", base_size = 7, fig_width = 3.5),
+  counts = t2_plot_group_counts(xc, gc, "Stage", "Grouping", style = sty, gg = list("theme|plot.caption|size" = 5), caption = "x", base_size = 7, fig_width = 3.5),
+  km = t2_plot_group_km(tm, ev, gt, "OS", style = sty, gg = list("theme|plot.caption|size" = 5), caption = "x", base_size = 7, fig_width = 3.5))
+for (nm in names(styled)) {
+  ok(!inherits(try(ggplot_build(styled[[nm]]), silent = TRUE), "try-error"), sprintf("%s: styled call builds", nm))
+  ok(identical(styled[[nm]]$labels$caption, "x"), sprintf("%s: caption lands in labels$caption", nm))
+  ok(identical(calc_element("plot.title", styled[[nm]]$theme)$size, 8) && identical(calc_element("plot.caption", styled[[nm]]$theme)$size, 5),
+     sprintf("%s: style title size and the caption tweak apply", nm))
+}
+ok(any(vapply(styled$box$layers, function(l) isTRUE(l$aes_params$size == 0.9 && l$aes_params$alpha == 0.5), NA)), "box: style point_size / alpha override the jitter")
+ok(identical(styled$km$layers[[1]]$aes_params$linewidth, 1 * 7 / 12) && identical(def_plots$km$layers[[1]]$aes_params$linewidth, 1), "km: step linewidth scales by base_size / 12")
+ok(identical(calc_element("text", styled$box$theme)$size, 7), "base_size reaches theme_minimal")
+ok(identical(calc_element("legend.position", t2_plot_group_km(tm, ev, gt, "OS", style = list(show_legend = FALSE))$theme), "none"), "show_legend = FALSE beats the km bottom legend")
+lt <- t2_plot_group_box(rep(x3, 1), g3, paste(rep("a very long variable label", 4), collapse = " "), "Grouping", fig_width = 3.5)
+ok(grepl("\n", lt$labels$title), "a long title is wrapped when fig_width is given")
+
+## (c) the caption, pinned to ANALYSIS-SPEC.md 9a
+xa <- c(3,1,4,1,5,5,2,6,5,3,5,8,9,7,9,3,2,3,8,4); ga <- factor(rep(c("Selected", "Excluded"), c(9, 11)), levels = c("Selected", "Excluded"))
+mksnap <- function(res, n_universe, label, note = "", filters = "Maintained filters: none beyond the Select tab.", dataset = "TCGA")
+  list(label = label, g = list(n_universe = n_universe, note = note), res = res, filters = filters, dataset = dataset)
+s_w <- mksnap(t2_group_test(xa, ga, "num"), 20L, "Split: cohort")
+s_t <- mksnap(t2_group_test(xa, ga, "num", means = TRUE), 20L, "Split: cohort")
+cap_w <- .gc_caption_sentences(s_w); cap_t <- .gc_caption_sentences(s_t)
+ok(identical(cap_w[1], "Groups (Split: cohort): Selected n=9, Excluded n=11; universe n=20."), "caption 1: groups sentence (pinned)")
+ok(identical(cap_w[2], "Wilcoxon rank-sum: W = 30, p = 0.145."), "caption 2: Wilcoxon (pinned)")
+ok(identical(cap_t[2], "Welch t-test: t = -1.939, df = 17.6, p = 0.0687."), "caption 2: Welch t (pinned)")
+tab <- rbind(c(12, 30, 18), c(25, 9, 6)); gl <- rep(c("Low", "High"), c(60, 40))
+xl <- factor(c(rep(c("a", "b", "c"), c(12, 30, 18)), rep(c("a", "b", "c"), c(25, 9, 6))), levels = c("a", "b", "c"))
+s_c <- mksnap(t2_group_test(xl, factor(gl, levels = c("Low", "High")), "cat"), 100L, "Split: x")
+cap_c <- .gc_caption_sentences(s_c)
+ok(identical(cap_c[2], "Pearson chi-squared: chi-squared = 18.62, df = 2, p = 9.1e-05."), "caption 2: Pearson chi-squared (pinned)")
+ok(identical(cap_c[1], "Groups (Split: x): Low n=60, High n=40; universe n=100."), "caption 1: categorical n = sum of the group's level counts")
+g6 <- factor(rep(c("treatment", "control"), c(21, 21)), levels = c("treatment", "control"))
+t6 <- c(6,6,6,6,7,9,10,10,11,13,16,17,19,20,22,23,25,32,32,34,35, 1,1,2,2,3,4,4,5,5,8,8,8,8,11,11,12,12,15,17,22,23)
+e6 <- c(1,1,1,0,1,0,1,0,0,1,1,0,0,0,1,1,0,0,0,0,0, rep(1, 21))
+s_k <- mksnap(t2_group_test(NULL, g6, "tte", tte = list(time = t6, event = e6)), 42L, "Arm")
+ok(identical(.gc_caption_sentences(s_k)[2], "Log-rank: chi-squared = 16.79, df = 1, p = 4.2e-05."), "caption 2: Log-rank (pinned)")
+f2 <- mk2(4, 6, 5, 5); s_f <- mksnap(t2_group_test(f2$x, f2$g, "cat"), 20L, "Arm")
+ok(grepl("^Fisher exact: p = [0-9.e-]+\\.$", .gc_caption_sentences(s_f)[2]) && grepl("^Expected count below 5", .gc_caption_sentences(s_f)[3]), "Fisher: no statistic clause; the test note is its own sentence")
+ok(identical(cap_w[3:4], c("Maintained filters: none beyond the Select tab.", "Data: TCGA.")), "caption 4-5: filters and data")
+ok(identical(t2_analysis_caption(s_w, source_line = "SRC"), paste(c(cap_w, "SRC"), collapse = "\n")), "t2_analysis_caption: unwrapped sentences + source line")
+wr <- t2_analysis_caption(s_w, fig_width = 3.5, size = 9)
+ok(grepl("\n", wr) && identical(gsub("\n", " ", wr), paste(cap_w, collapse = " ")), "t2_analysis_caption: wrapped to the figure width")
+
+## (d) the stats text
+tx <- t2_analysis_text(s_w)
+ok(grepl("^# T2 analysis: TCGA, [0-9]{4}-[0-9]{2}-[0-9]{2}\\.$", tx[1]) && tx[2] == "" && identical(tx[3:6], cap_w), "text: header, blank, caption sentences")
+ok(tx[7] == "" && grepl("^group +n +median +q1 +q3$", tx[8]), "text: blank then the aligned groups block")
+bl <- which(tx == ""); th_i <- bl[3] + 1L
+ok(length(bl) == 3 && grepl("^term +method +statistic +df +p +p_bh +note +p_text$", tx[th_i]) && grepl("Wilcoxon rank-sum", tx[th_i + 1L]) && grepl(paste0(fmtp(s_w$res$test$p), "$"), tx[th_i + 1L]),
+   "text: aligned test block with the p_text column")
+ok(length(tx) == 13, "text: line count (header, caption, two blocks)")
+
 cat(sprintf("\n%d failure(s)\n", nfail))
 if (nfail > 0) quit(status = 1)

@@ -246,4 +246,42 @@ extension AppModel {
             return url
         }.value
     }
+
+    // MARK: publication (spec 9a)
+
+    /// the caption of the published figure: the statistical sentences (the renderer adds the source line)
+    func analysisCaption(_ o: AnalysisOutcome) -> String {
+        AnalysisExport.caption(grouping: o.groupingName, kind: o.kind, result: o.result, nUniverse: o.assignment.nUniverse,
+                               maintained: o.maintained, dataset: meta?.label ?? "", notes: analysisNotes(o))
+    }
+    private func analysisNotes(_ o: AnalysisOutcome) -> [String] {
+        [o.assignment.note, o.result.refused].compactMap { $0 } + o.result.test.compactMap(\.note)
+    }
+    /// the Analysis plot as a figure scene, with the full-story caption; nil when there is no plot
+    func analysisFigureScene() -> PlotScene? {
+        guard let o = analysis.outcome, var scene = o.scene else { return nil }
+        scene.caption = analysisCaption(o)
+        return scene
+    }
+    /// the stats text (spec 9a): the caption sentences and the tidy tables, space-aligned
+    func analysisText(_ o: AnalysisOutcome) -> String {
+        let day = DateFormatter()
+        day.dateFormat = "yyyy-MM-dd"
+        return AnalysisExport.text(grouping: o.groupingName, kind: o.kind, result: o.result, nUniverse: o.assignment.nUniverse,
+                                   maintained: o.maintained, dataset: meta?.label ?? "", notes: analysisNotes(o), date: day.string(from: Date()))
+    }
+    /// the stats text in a new file in the temporary folder, to share
+    func writeAnalysisText() async -> URL? {
+        guard let m = meta, let o = analysis.outcome else { return nil }
+        let text = analysisText(o)
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyyMMdd-HHmmss"
+        let file = "T2_analysis_\(m.dataset)_\(stamp.string(from: Date()))_stats.txt"
+            .replacingOccurrences(of: "[^A-Za-z0-9._-]+", with: "-", options: .regularExpression)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(file)
+        return await Task.detached(priority: .userInitiated) { () -> URL? in
+            do { try text.write(to: url, atomically: true, encoding: .utf8) } catch { return nil }
+            return url
+        }.value
+    }
 }

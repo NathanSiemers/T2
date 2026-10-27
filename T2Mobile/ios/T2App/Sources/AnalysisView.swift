@@ -7,6 +7,7 @@ import T2Kit
 struct AnalysisView: View {
     @Environment(AppModel.self) private var model
     @State private var tableURL: URL?
+    @State private var textURL: URL?
     @State private var groupsOpen = false
     @State private var sourcesOpen = false
     /// a number chosen as the grouping from the list: asks how many groups
@@ -81,6 +82,18 @@ struct AnalysisView: View {
 
     // MARK: grouping
 
+    /// the grouping rows for the current Select picks (x, color, graph-for-each), each once
+    private var selectGroupings: [(Grouping, String)] {
+        var out: [(Grouping, String)] = []
+        for (v, cut) in [(model.x, model.xCut), (model.color, model.colorCut), (model.facet, model.facetCut)] where !v.isEmpty {
+            guard let col = model.column(v) else { continue }
+            let grouping: Grouping = col.isNumeric ? .quantized(name: v, k: (2...4).contains(cut) ? cut : 3) : .categorical(v)
+            guard !out.contains(where: { $0.0 == grouping }) else { continue }
+            out.append((grouping, "\(model.groupingName(grouping)) - from Select"))
+        }
+        return out
+    }
+
     @ViewBuilder private var groupingSection: some View {
         let active = model.activeFilters
         let g = model.analysis.grouping
@@ -100,6 +113,14 @@ struct AnalysisView: View {
             if let g, !isFilterSplit(g) {
                 GroupRow(label: model.groupingName(g), description: "Groups of a variable", isOn: true) {}
                     .accessibilityIdentifier("analysis-variable-grouping")
+            }
+            // spec 9b: the Select tab's picks, ready made (numbers cut with that slot's chip, default 3)
+            ForEach(selectGroupings, id: \.1) { grouping, label in
+                GroupRow(label: label, description: "Groups of a variable", isOn: g == grouping) {
+                    model.analysis.grouping = grouping
+                    Task { try? await model.ensureLoaded([model.sourceColumn(of: grouping) ?? ""]) }
+                }
+                .accessibilityIdentifier("analysis-select-\(model.groupingName(grouping))")
             }
             Button { groupsOpen = true } label: {
                 HStack {
@@ -189,10 +210,18 @@ struct AnalysisView: View {
                     .id(tableURL)
                 Text(tableURL.lastPathComponent).font(.caption.monospaced()).foregroundStyle(.secondary)
             }
+            Button("Export the statistics (text)") { Task { textURL = await model.writeAnalysisText() } }
+                .accessibilityIdentifier("analysis-text-make")
+            if let textURL {
+                ShareLink(item: textURL) { Label("Share or save the statistics", systemImage: "square.and.arrow.up") }
+                    .accessibilityIdentifier("analysis-text-share")
+                    .id(textURL)
+                Text(textURL.lastPathComponent).font(.caption.monospaced()).foregroundStyle(.secondary)
+            }
         } header: {
             Text("Table")
         } footer: {
-            Text("The groups, then the test, as CSV.")
+            Text("The groups, then the test, as CSV; or the figure caption sentences and the same tables as text.")
         }
     }
 

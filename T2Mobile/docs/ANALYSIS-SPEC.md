@@ -67,14 +67,19 @@ propagates to the Analysis menus (section 9b) regardless of plot meaning.
 |---|---|---|
 | x | yes | derived categorical on X (the categorical-x box/count paths); cuts GLOBAL over the plotted complete source-x/y rows, computed once; a refused cut falls back to the source column with the refusal notice |
 | color, facet | yes | derived categorical (as shipped in the ANALYSIS round) |
-| y, size, condition | **none** | the plot uses the SOURCE continuous column and queues the notice "<name>: groups have no meaning as <role>; the plot uses the continuous values (the groups are offered on the Analysis tab)." Conditioning is a numeric residualization (lib.R), so a categorical condition is structurally meaningless. |
+| y | as color (UI-REWORK round) | the plot keeps the SOURCE continuous column on Y. DEFAULT: the groups become the plot's COLOR - the color menu offers and auto-selects the special entry `quanta` (constant T2_COLOR_QUANTA, t2_util.R); with multi-Y also `probe_quanta` (probe x group, ONE k = the first token's, applied to every probe). Cuts GLOBAL over the plotted complete source-x/y rows, from RAW values, BEFORE conditioning/z-score (same window as x/color tokens). Notice when the groups are consumed as color: "<name>: the plot keeps the continuous values; the groups color the plot (and are offered on the Analysis tab)." When the user overrides color with anything else, the token demotes with the ORIGINAL wording below. A refused cut drops the special color with the refusal notice (probe_quanta degrades to plain probe coloring). |
+| size, condition | **none** | the plot uses the SOURCE continuous column and queues the notice "<name>: groups have no meaning as <role>; the plot uses the continuous values (the groups are offered on the Analysis tab)." Conditioning is a numeric residualization (lib.R), so a categorical condition is structurally meaningless. UI-REWORK: condition no longer OFFERS a quantize affordance (chip removed; tokens still sanitize and strip/demote for robustness); its picks still propagate to the Analysis menus (default k = 3). |
 
-Survival plots (x = tte): y/size/condition tokens demote as above BEFORE the existing
-color/facet guard; the guard's refusal of color/facet tokens is unchanged. Thanos, table
-downloads and variable descriptions always see the SOURCE column (t2_quant_source), never a
-token. iOS mirrors the meaningful roles only (x, color, graph-for-each); its universe for a
-Select-tab cut = current mask AND finite source-x AND finite y - the same plotted-complete-rows
-rule, pinned cross-platform (watchlist 14).
+Survival plots (x = tte): y/size/condition tokens demote with the ORIGINAL wording BEFORE
+the existing color/facet guard (survival_km cuts y itself via km_groups; the quanta color
+specials are stripped there - survival_km never reads color); the guard's refusal of
+color/facet tokens is unchanged. The color specials (`probe`, `quanta`, `probe_quanta`) are
+never fetched as markers and never reach Thanos, table downloads or variable descriptions;
+those always see the SOURCE column (t2_quant_source), never a token. iOS mirrors x, color,
+graph-for-each, and (UI-REWORK step 6, after web gates) the y-cut-as-color default with the
+same semantics and notices; its universe for a Select-tab cut = current mask AND finite
+source-x AND finite y - the same plotted-complete-rows rule, pinned cross-platform
+(watchlist 14/15).
 
 ### 2d. Existing categorical variable
 - U = m. Group = value within U; NA = no group. Levels = the SERVED level order restricted to
@@ -167,9 +172,14 @@ auto. The screen stays nonparametric-only. Swift model port = its own round 2.
 11. The publication caption string (section 9a): byte-identical on both platforms before
     wrapping (pin whole captions for one num, one cat, one tte example).
 12. The stats .txt format (section 9a).
-13. Per-role token behavior (section 2c table): x resolves, y/size/condition demote with the
-    pinned notice text.
+13. Per-role token behavior (section 2c table): x resolves; size/condition demote with the
+    pinned notice text; y keeps continuous values with the groups as default color (quanta),
+    original demote wording on user override.
 14. iOS Select-tab cut universe == web plotted-complete-rows rule (group n's pinned).
+15. Quanta coloring parity (UI-REWORK): web and iOS y-cut group labels/sizes identical over
+    the same universe; probe_quanta (probe x group, first token's k) web-only unless iOS has
+    a multi-probe plot mode. The PERMANENT interaction suite (test_app_interactions.R) runs
+    on every future UI round.
 
 ## 8. Cross-platform fixture
 

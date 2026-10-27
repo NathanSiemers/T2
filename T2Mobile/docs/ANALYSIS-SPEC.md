@@ -208,8 +208,8 @@ Worked literal examples (generated with R 4.5.3; the pinned fixtures of the Swif
 
 - numeric, 2 groups (the GroupCompareTests `xa` fixture, 9 Selected / 11 Excluded):
   `Groups (Split: cohort): Selected n=9, Excluded n=11; universe n=20.`
-  `Wilcoxon rank-sum: W = 43, p = 0.649.`
-  means toggle: `Welch t-test: t = -0.5273, df = 17.7, p = 0.605.`
+  `Wilcoxon rank-sum: W = 30, p = 0.145.`
+  means toggle: `Welch t-test: t = -1.939, df = 17.6, p = 0.0687.`
 - categorical, 2x3 table rows Low/High, counts a=12,b=30,c=18 / a=25,b=9,c=6:
   `Pearson chi-squared: chi-squared = 18.62, df = 2, p = 9.1e-05.`
 - tte (the Gehan 6-MP fixture, treatment/control, no truncation):

@@ -195,10 +195,13 @@ t2_preview_dpi = function(fig, zoom = "fit", max_px = 1600) {
     min(fig$dpi, floor(max_px / max(fig$width, fig$height)))
 }
 
-## T2_<x>_vs_<y>_<w>x<h>in_<dpi>dpi.<ext>, from validated values only
-t2_figure_filename = function(inp, fig) {
+## T2_<x>_vs_<y>_<w>x<h>in_<dpi>dpi.<ext> (T2_analysis_<var>_by_<label>_... for an Analysis figure), from validated values only
+t2_figure_filename = function(inp, fig, analysis = NULL) {
     clean = function(v) gsub("[^A-Za-z0-9.-]+", "-", paste(head(as.character(v), 3), collapse = "+"))
-    sprintf("T2_%s_vs_%s_%sx%sin%s.%s", clean(inp$x), clean(inp$y),
+    ## an Analysis figure (list(var, label) of the comparison snapshot) is named for the comparison
+    stem = if (is.null(analysis)) sprintf("T2_%s_vs_%s", clean(inp$x), clean(inp$y))
+           else sprintf("T2_analysis_%s_by_%s", clean(analysis$var), clean(analysis$label))
+    sprintf("%s_%sx%sin%s.%s", stem,
             format(round(fig$width, 2)), format(round(fig$height, 2)),
             if (fig$format == "pdf") "" else sprintf("_%ddpi", as.integer(fig$dpi)),
             fig$format)

@@ -128,7 +128,7 @@ setv("km_groups", 1e9); setv("surv_max_days", -1); setv("plot_height", "99999")
 setv("pcortype", "both; system('id')"); setv("scales", "../etc"); setv("smooth", "MAYBE")
 setv("tweak_pick", list("theme.evil", "system")); setv("tw_theme_evil", "`id`")
 settle(800)
-app$set_inputs(tabs = "appearance"); settle(800)
+app$set_inputs(tabs = "plot"); settle(800)
 app$click("plot_btn2"); settle(5000)
 ok(alive() && plot_ok_or_refusal(), "out-of-range numbers, bad enums and invented tweak ids are sanitised")
 

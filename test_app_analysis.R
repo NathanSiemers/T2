@@ -136,7 +136,7 @@ testServer(shiny::shinyAppDir("."), {
   ok(grepl("not a numeric variable", rd$warning %||% ""), "(h) the note says why")
   ## the chip: a numeric color pick shows it; choosing 3 rewrites color to the token
   session$setInputs(color = "GENE02")
-  ok(grepl("quant_chip_color", paste(output$quant_chip_ui$html), fixed = TRUE), "(h) a numeric color pick shows the quantize chip")
+  ok(grepl("quant_chip_color", paste(output$quant_disc_color$html, collapse = ""), fixed = TRUE), "(h) a numeric color pick shows the quantize chip")
   session$setInputs(quant_chip_color = "3")
   ok(identical(sent$color$selected, tok) && tok %in% sent$color$choices$value && sent$color$choices$label[match(tok, sent$color$choices$value)] == lab,
      "(h) the chip's 3 rewrites color to the token (the token is an extra menu row with its label)")
@@ -145,13 +145,13 @@ testServer(shiny::shinyAppDir("."), {
   sent$color <- NULL; session$setInputs(color = tok, quant_chip_color = "3")
   ok(is.null(sent$color), "(h) a chip value equal to the current state rewrites nothing (no loop)")
   session$setInputs(color = "cohort")
-  ok(!grepl("quant_chip_color", paste(output$quant_chip_ui$html), fixed = TRUE), "(h) a categorical color pick shows no chip")
+  ok(!grepl("quant_chip_color", paste(output$quant_disc_color$html, collapse = ""), fixed = TRUE) && !grepl("<details", paste(output$quant_disc_color$html, collapse = ""), fixed = TRUE), "(h) a categorical color pick shows no chip")
 
   ## ---- (i)-(vi) PUBLISH-UNIFY step 6: per-role tokens on x / y / size / condition ----
   session$setInputs(tabs = "select", x = "GENE01", y = "GENE02", color = "", facet = character(0), size = "", condition = character(0))
   tx <- t2_quant_token("GENE01", 3); labx <- t2_quant_label("GENE01", 3)
   ty <- t2_quant_token("GENE02", 3)
-  ok(grepl("quant_chip_x", paste(output$quant_chip_ui$html), fixed = TRUE), "(i) a numeric X pick shows the quantize chip")
+  ok(grepl("quant_chip_x", paste(output$quant_disc_x$html), fixed = TRUE), "(i) a numeric X pick shows the quantize chip")
   sent <- list(); session$setInputs(quant_chip_x = "3")
   ok(identical(sent$x$selected, tx), "(i) the X chip's 3 rewrites x to the token")
   session$setInputs(x = tx)
@@ -212,6 +212,21 @@ testServer(shiny::shinyAppDir("."), {
   ok(identical(sent$analysis_var$selected, "GENE01"), "(s) an invalid current variable defaults to the first select-pick var")
   sent <- list(); session$setInputs(analysis_var = "GENE03", size = "")
   ok(is.null(sent$analysis_var) || identical(sent$analysis_var$selected, "GENE03"), "(s) a valid current variable is kept")
+  ## condition keeps the Analysis propagation but has no quantize affordance (UI-REWORK C3)
+  sent <- list()
+  session$setInputs(x = "cohort", y = "", color = "", size = "", facet = character(0), condition = "GENE03", pcortype = "y")
+  tkc <- t2_quant_token("GENE03", 3)
+  gmc <- analysis_group_menu()
+  ok(tkc %in% gmc$value && grepl(" - from Select$", gmc$label[match(tkc, gmc$value)]) && grepl("(tertiles)", gmc$label[match(tkc, gmc$value)], fixed = TRUE),
+     "(s) a numeric condition pick adds its tertile grouping row, labelled from Select")
+  ok(identical(sent$analysis_var$choices$value[1:2], c("cohort", "GENE03")) || "GENE03" %in% sent$analysis_var$choices$value[1:2],
+     "(s) the bare condition name is fronted in the var menu")
+  session$setInputs(tabs = "select", color = "GENE02", size = "GENE01")
+  dc <- vapply(names(T2_CHIP_SLOTS), function(sl) paste(output[[paste0("quant_disc_", sl)]]$html, collapse = ""), "")
+  ok(!("condition" %in% names(T2_CHIP_SLOTS)) && "condition" %in% T2_PROP_SLOTS &&
+       is.null(tryCatch(output$quant_disc_condition$html, error = function(e) NULL)) && !any(grepl("quant_chip_condition", dc, fixed = TRUE)),
+     "(s) condition has no quantize disclosure (no chip, no quant_disc_condition output)")
+  session$setInputs(tabs = "analysis", condition = character(0), pcortype = "none", color = "", size = "")
   ## a tte endpoint picked as x: a test variable only
   session$setInputs(x = tte1, color = "", y = "")
   sp8 <- select_picks()
@@ -225,6 +240,59 @@ testServer(shiny::shinyAppDir("."), {
   ok(length(sp9$groupings$value) == 0 && !any(grepl("NOPE|DROP|t2q::9", c(sp9$vars, analysis_group_menu()$value))),
      "(s) hostile / invalid picks the sanitizer drops never reach the menus")
   session$setInputs(x = "cohort", y = "GENE01", color = "", size = "")
+
+  ## ---- (q) UI-REWORK step 2: a quantized Y colors the plot (quanta / probe_quanta) ----
+  session$setInputs(tabs = "select", multi_y = FALSE, x = "GENE03", y = "GENE01", color = "cohort", facet = character(0), size = "",
+                    condition = character(0), pcortype = "none")
+  tyq <- t2_quant_token("GENE02", 3); laby <- t2_quant_label("GENE02", 3)
+  sent <- list(); session$setInputs(y = tyq)
+  ok(identical(sent$color$selected, T2_COLOR_QUANTA) && "num" %in% names(sent$color$choices) &&
+       identical(sent$color$choices$label[1], sprintf("Y groups (%s)", laby)) && identical(sent$color$choices$value[1], "quanta"),
+     "(q) a Y token (single Y): the color menu offers and selects 'quanta' (Y groups (GENE02 (tertiles))), num column kept")
+  sent <- list(); session$setInputs(multi_y = TRUE, y = c("GENE01", "GENE02"))
+  ok(identical(sent$color$selected, "probe") && "num" %in% names(sent$color$choices) && !("quanta" %in% sent$color$choices$value),
+     "(q) multi-Y + two plain Y: 'probe' selected, num column kept")
+  sent <- list(); session$setInputs(y = c(tyq, "GENE01"))
+  ok(identical(sent$color$selected, T2_COLOR_PROBE_QUANTA) && all(c("probe_quanta", "probe") %in% sent$color$choices$value[1:2]),
+     "(q) multi-Y + first Y a token: 'probe_quanta' selected, 'probe' also offered")
+  sent <- list(); session$setInputs(multi_y = FALSE, y = "GENE01")
+  ok(identical(sent$color$selected, "cohort") && !any(c("quanta", "probe", "probe_quanta") %in% sent$color$choices$value),
+     "(q) back to plain: the user's earlier color pick is restored, specials gone")
+  ## the plotter
+  rqa <- plot_with(x = "GENE01", y = tyq, color = "quanta")
+  ok(inherits(rqa$plot, "ggplot") && laby %in% names(rqa$plot$data) && "GENE02" %in% names(rqa$plot$data) &&
+       grepl("the groups color the plot", rqa$warning %||% "", fixed = TRUE) && !grepl("groups have no meaning", rqa$warning %||% "") &&
+       grepl("GENE02", rlang::as_label(rqa$plot$mapping$y), fixed = TRUE) && !grepl("t2q::", rlang::as_label(rqa$plot$mapping$y), fixed = TRUE),
+     "(q) y token + color = quanta: groups color the plot, y stays the source column, the pinned notice is queued")
+  rqo <- plot_with(x = "GENE01", y = tyq, color = "cohort")
+  ok(inherits(rqo$plot, "ggplot") && grepl("groups have no meaning as y", rqo$warning %||% "") && !grepl("the groups color the plot", rqo$warning %||% ""),
+     "(q) y token + another color: the ORIGINAL 'no meaning as y' wording")
+  session$setInputs(multi_y = TRUE)
+  rpq <- plot_with(x = "GENE03", y = c(tyq, "GENE01"), color = "probe_quanta")
+  pqd <- rpq$plot$data
+  ok(inherits(rpq$plot, "ggplot") && "probe_quanta" %in% names(pqd) && is.factor(pqd$probe_quanta) &&
+       all(c("GENE02 / Low", "GENE01 / High") %in% levels(pqd$probe_quanta)) && !any(grepl("^\\.qg\\.", names(pqd))) &&
+       inherits(rpq$plot$facet, "FacetNull"),
+     "(q) multi-Y + token + probe_quanta: probe x group column, no .qg helper columns, not auto-faceted by probe")
+  ok(all(as.character(pqd$probe_quanta[!is.na(pqd$probe_quanta)]) %in% levels(pqd$probe_quanta)) &&
+       identical(sub(" / .*$", "", as.character(pqd$probe_quanta)), ifelse(is.na(pqd$probe_quanta), NA_character_, as.character(pqd$probe))),
+     "(q) every dummy value carries its own row's probe")
+  rpn <- plot_with(x = "GENE03", y = c("GENE02", "GENE01"), color = "probe_quanta")
+  ok(inherits(rpn$plot, "ggplot") && grepl("nothing to color by", rpn$warning %||% "") && "probe" %in% names(rpn$plot$data) && !("probe_quanta" %in% names(rpn$plot$data)),
+     "(q) probe_quanta without a Y token: noted and ignored (plain probe coloring)")
+  rpo <- plot_with(x = "GENE03", y = "GENE01", color = "probe")
+  ok(inherits(rpo$plot, "ggplot") && !("probe" %in% names(rpo$plot$data)),
+     "(q) multi_y on with ONE Y + color = probe: normalized, color dropped silently, plot draws")
+  session$setInputs(multi_y = FALSE)
+  ok(identical(sanitize_t2_input(list(color = "quanta", y = tyq), b)$color, "quanta") &&
+       identical(sanitize_t2_input(list(color = "probe_quanta", y = tyq), b)$color, "probe_quanta"),
+     "(q) the sanitizer accepts quanta / probe_quanta for color")
+  rjq <- plot_with(x = "GENE01", y = "GENE02", color = "quanta")
+  ok(inherits(rjq$plot, "ggplot") && grepl("nothing to color by", rjq$warning %||% ""), "(q) color = quanta with a plain Y: plots with the 'nothing to color by' note")
+  tbq <- fun_table1(sanitize_t2_input(list(x = "GENE01", y = tyq, color = "quanta", cohort = "all"), b), ctx = t2_plot_ctx(b))
+  ok(all(c("GENE01", "GENE02") %in% names(tbq)) && !any(c("quanta", "probe_quanta") %in% names(tbq)) && !any(grepl("t2q::", names(tbq))),
+     "(q) the table download with color = quanta holds source columns only")
+  session$setInputs(tabs = "analysis", x = "cohort", y = "GENE01", color = "", size = "")
 
   ## ---- (p) Publish the Analysis result (PUBLISH-UNIFY step 5) ----
   session$setInputs(analysis_group = "cohort", analysis_var = "GENE01", analysis_means = FALSE); run()

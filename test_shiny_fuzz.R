@@ -212,6 +212,19 @@ settle(800)
 ok(alive(), "junk pub_what and chip values do not end the session")
 app$set_inputs(tabs = "select"); settle(500)
 
+## 6d (UI-REWORK): color specials (quanta / probe_quanta), the removed condition chip, a real quanta-without-token plot
+cat("-- 6d2. color specials, removed condition chip\n")
+for (v in list("quanta", "probe_quanta", "QUANTA", " quanta", "t2q::3::quanta", list("quanta", "probe"), 42)) {
+  setv("color", v); settle(200)
+  if (!alive()) { ok(FALSE, "session died on a junk color special"); break }
+}
+ok(alive(), "junk color specials (quanta / probe_quanta / case / space / list / number) do not end the session")
+setv("quant_chip_condition", 3); settle(500)
+ok(alive(), "the removed condition chip's input is inert")
+setv("x", "cohort"); setv("y", "CD8A"); setv("color", "quanta"); settle(500)
+app$click("plot_btn"); settle(5000)
+ok(alive(), "color = quanta with a plain Y (the 'nothing to color by' path) plots without ending the session")
+
 ## ---------------------------------------------------------------------------
 ## 7. The whole storm left no uncaught R error and the app still plots normally.
 ## ---------------------------------------------------------------------------

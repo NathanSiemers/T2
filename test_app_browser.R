@@ -252,6 +252,54 @@ app$set_inputs(tabs = "filter"); settle()
 ok(visible("#th_TCGA-panels") && !visible("#th_DEMO-panels"), "back on TCGA: its panel set is shown again")
 ok(isTRUE(all.equal(app$get_value(input = "th_TCGA-filter_CD8A"), flt)), "TCGA's CD8A filter was kept")
 
+## ---- quantize disclosure (UI-REWORK C1): a per-picker glyph, the radio in a closed <details> ----
+app$set_inputs(tabs = "select"); settle(500)
+app$run_js("Shiny.setInputValue('color', 'CD8A')"); settle(2500)
+dsel <- ".t2-qp:has(#color) details.t2-quant-disc"
+ok(js(sprintf("document.querySelectorAll('%s').length", dsel)) == 1, "a numeric color pick shows its disclosure glyph")
+ok(js(sprintf("document.querySelector('%s').open", dsel)) == FALSE, "the disclosure starts closed")
+ok(js("document.getElementById('quant_chip_color') !== null"), "the chip radio is in the DOM while the details is closed")
+ok(js("document.querySelectorAll('.t2-qp:has(#facet) details.t2-quant-disc').length") == 0, "a picker with no numeric pick has no glyph")
+y0top <- js("document.getElementById('size').getBoundingClientRect().top")
+app$run_js(sprintf("document.querySelector('%s').open = true", dsel)); settle(500)
+ok(visible("#quant_chip_color + span, .t2-qp:has(#color) .t2-quant-pop input[name=quant_chip_color]"), "opened: the radio is visible")
+ok(abs(js("document.getElementById('size').getBoundingClientRect().top") - y0top) < 1, "opening the popover does not reflow the row")
+shot("9_quantize_disclosure_open")
+app$run_js("Shiny.setInputValue('quant_chip_color', '3')"); settle(2500)
+cq <- app$get_value(input = "color")
+ok(identical(cq, "t2q::3::CD8A"), sprintf("the chip's 3 rewrites color to the token (%s)", paste(cq, collapse = ",")))
+ok(identical(trimws(js(sprintf("document.querySelector('%s summary .t2-quant-count').textContent", dsel))), "3"), "the summary badge shows 3")
+shot("9b_quantize_disclosure_k3")
+app$run_js("Shiny.setInputValue('quant_chip_color', '0')"); settle(2000)
+app$run_js(sprintf("Shiny.setInputValue('color', %s)", jsonlite::toJSON(c0, auto_unbox = TRUE))); settle(1500)
+
+## ---- UI-REWORK C5/C6: Plot button on top, cohort on its own row, auto-replot ----
+ok(js("(document.querySelector('#plot_btn').compareDocumentPosition(document.querySelector('#dataset')) & 4) === 4"),
+   "the Plot button precedes the dataset picker in the document")
+ok(js("!!document.querySelector('.t2-cohort #cohort')"), "the cohort picker sits in its own row container")
+ok(js("document.querySelector('.t2-cohort').getBoundingClientRect().top > document.querySelector('.t2-qp:has(#facet)').getBoundingClientRect().top"),
+   "the cohort row is below the facet picker")
+ok(js("getComputedStyle(document.querySelector('.t2-cohort .selectize-input > input')).order === '-1'"),
+   "the typing line renders first; selections wrap below it")
+ftop <- js("document.querySelector('.t2-qp:has(#facet)').getBoundingClientRect().top")
+app$run_js("var s = $('#cohort')[0].selectize; s.addOption({value:'all', label:'all'}); s.addItem('all');"); settle(1500)
+ok(js("document.querySelectorAll('.t2-cohort .selectize-input .item .remove').length") >= 1,
+   "a selected cohort gets a remove button")
+ok(abs(js("document.querySelector('.t2-qp:has(#facet)').getBoundingClientRect().top") - ftop) < 1,
+   "cohort growth does not move the pickers above")
+shot("10_cohort_row")
+## auto-replot: after the first Plot press, a changed Select input redraws without a press
+app$set_inputs(tabs = "plot"); settle(500)
+ar0 <- js("document.querySelector('#main_plot img').src")
+yprev <- app$get_value(input = "y")
+ynew <- if (identical(yprev, "MKI67")) "CD8A" else "MKI67"
+app$run_js(sprintf("Shiny.setInputValue('y', '%s')", ynew)); settle(3500)
+ar1 <- js("document.querySelector('#main_plot img').src")
+ok(nzchar(ar0) && nzchar(ar1) && !identical(ar0, ar1), "changing Y redraws the plot with no Plot press")
+shot("11_auto_replot")
+app$run_js(sprintf("Shiny.setInputValue('y', %s)", jsonlite::toJSON(yprev, auto_unbox = TRUE))); settle(3000)
+app$set_inputs(tabs = "select"); settle(500)
+
 logs <- app$get_logs()
 errs <- logs[logs$level == "error" | grepl("Error", logs$message), ]
 ok(nrow(errs) == 0, "no errors in the browser console or R log")

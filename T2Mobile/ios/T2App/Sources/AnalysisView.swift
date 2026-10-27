@@ -82,10 +82,13 @@ struct AnalysisView: View {
 
     // MARK: grouping
 
-    /// the grouping rows for the current Select picks (x, color, graph-for-each), each once
+    /// the grouping rows for the current Select picks (x, quantized y, color, graph-for-each), each once
     private var selectGroupings: [(Grouping, String)] {
         var out: [(Grouping, String)] = []
-        for (v, cut) in [(model.x, model.xCut), (model.color, model.colorCut), (model.facet, model.facetCut)] where !v.isEmpty {
+        // (Y only when it was quantized: a plain Y is not a grouping)
+        var picks = [(model.x, model.xCut), (model.color, model.colorCut), (model.facet, model.facetCut)]
+        if (2...4).contains(model.yCut) { picks.insert((model.y, model.yCut), at: 1) }
+        for (v, cut) in picks where !v.isEmpty {
             guard let col = model.column(v) else { continue }
             let grouping: Grouping = col.isNumeric ? .quantized(name: v, k: (2...4).contains(cut) ? cut : 3) : .categorical(v)
             guard !out.contains(where: { $0.0 == grouping }) else { continue }

@@ -420,7 +420,9 @@ struct SelectView: View {
                 if let hint = model.meta?.survivalHintShort, !hint.isEmpty {
                     Text(hint).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("survival-hint-select")
                 }
-                VariablePicker(title: "Y", current: model.y, allowNone: false) { v in Task { await model.setVariable(.y, to: v) } }
+                VariablePicker(title: "Y", current: model.y, allowNone: false, choose: { v in Task { await model.setVariable(.y, to: v) } },
+                               quantize: { v, k in Task { await model.setVariable(.y, to: v, cut: k) } })
+                cutChip(model.y, cut: model.yCut, id: "quant-y") { model.yCut = $0 }
                 VariablePicker(title: "Color", current: model.colorLabel, choose: { v in Task { await model.setVariable(.color, to: v) } },
                                quantize: { v, k in Task { await model.setVariable(.color, to: v, cut: k) } })
                 cutChip(model.color, cut: model.colorCut, id: "quant-color") { model.colorCut = $0 }

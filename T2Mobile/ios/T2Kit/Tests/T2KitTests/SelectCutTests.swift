@@ -50,4 +50,76 @@ final class SelectCutTests: XCTestCase {
         let r = SelectCut.resolve(name: "c", k: 3, values: [Double](repeating: 1, count: 30), universe: universe())
         XCTAssertEqual(r.notice, "c cannot be split into 3 groups: it has fewer than 2 distinct values among the plotted samples; the plot uses the continuous values.")
     }
+
+    // MARK: a quantized Y (UI-REWORK step 6) - same fixtures, Y role
+
+    /// source X = NA wherever the fixture's x or y is NA, so the universe is the pinned 21 rows
+    private var sx: [Double] { var v = (1...30).map(Double.init); for i in [5, 25, 7, 14, 21, 28] { v[i - 1] = .nan }; return v }
+    private var yColumns: [String: Column] {
+        ["sx": Column(name: "sx", type: "n", data: .numeric(sx)),
+         "v": Column(name: "v", type: "n", data: .numeric((1...30).map(Double.init))),
+         "z": Column(name: "z", type: "n", data: .numeric(z)),
+         "grp": Column(name: "grp", type: "c", data: .categorical(levels: ["a", "b"], codes: (0..<30).map { $0 % 2 }))]
+    }
+    private func yc(_ name: String, _ k: Int, color: String = "", multi: Bool = false, survival: Bool = false) -> SelectCut.YColoring {
+        SelectCut.yColoring(name: name, k: k, userColor: color, multiY: multi, survival: survival, columns: yColumns, keep: keep, x: "sx")
+    }
+    private func scene(_ r: SelectCut.YColoring, color: String = "") -> PlotScene {
+        var cols = yColumns
+        var colorName = color
+        if let c = r.column { cols[c.name] = c; colorName = c.name }
+        var s = PlotBuilder.build(PlotRequest(x: ["sx"], y: ["v"], color: colorName), columns: cols, keep: keep)
+        s.warnings.append(contentsOf: r.notices)
+        return s
+    }
+
+    func testYCutGroupSizesMatchPinnedFixtures() {
+        // v = 1..30 over the same 21 rows as x above: halves 11/10, tertiles 7/7/7, quartiles 6/5/5/5
+        for (k, sizes, labels) in [(2, [11, 10], ["Low", "High"]), (3, [7, 7, 7], ["Low", "Mid", "High"]), (4, [6, 5, 5, 5], ["Q1", "Q2", "Q3", "Q4"])] {
+            let r = yc("v", k)
+            guard case .categorical(let levels, let codes)? = r.column?.data else { return XCTFail("no groups for k=\(k)") }
+            XCTAssertEqual(levels, labels)
+            XCTAssertEqual((0..<levels.count).map { g in codes.filter { $0 == g }.count }, sizes)
+            XCTAssertEqual(r.column?.name, SelectCut.label(name: "v", k: k))
+        }
+    }
+
+    func testYCutSceneKeepsContinuousYAndColorsByGroups() {
+        let s = scene(yc("v", 2))
+        XCTAssertEqual(s.kind, .scatter)
+        let p = s.panels[0].points
+        XCTAssertEqual(p.count, 21)
+        XCTAssertEqual(p.map(\.y), p.map { Double($0.sample + 1) })      // the continuous values
+        XCTAssertEqual(s.legend.entries.map(\.label), ["Low", "High"])
+        XCTAssertEqual(Set(p.map { "\($0.color)" }).count, 2)
+        XCTAssertEqual(s.warnings, ["v: the plot keeps the continuous values; the groups color the plot (and are offered on the Analysis tab)."])
+    }
+
+    func testUserColorWinsOverYCut() {
+        let r = yc("v", 3, color: "grp")
+        XCTAssertNil(r.column)
+        let s = scene(r, color: "grp")
+        XCTAssertEqual(s.legend.entries.map(\.label), ["a", "b"])
+        XCTAssertEqual(s.warnings, ["v: groups have no meaning as y; the plot uses the continuous values (the groups are offered on the Analysis tab)."])
+    }
+
+    func testMultiProbeAndSurvivalDemote() {
+        let note = "v: groups have no meaning as y; the plot uses the continuous values (the groups are offered on the Analysis tab)."
+        XCTAssertEqual(yc("v", 2, multi: true), SelectCut.YColoring(column: nil, notices: [note]))
+        XCTAssertEqual(yc("v", 2, survival: true), SelectCut.YColoring(column: nil, notices: [note]))
+    }
+
+    func testRefusedYCutGivesContinuousYAndNoGroups() {
+        let r = yc("z", 4)
+        XCTAssertNil(r.column)
+        XCTAssertEqual(r.notices, ["z cannot be split into 4 groups: the groups would hold only 7/5/5/4 samples (at least 5 are needed in each; many samples share one marker value). Try fewer groups; the plot uses the continuous values."])
+        var cols = yColumns; cols["sx"] = Column(name: "sx", type: "n", data: .numeric(sx))
+        let s = PlotBuilder.build(PlotRequest(x: ["sx"], y: ["z"]), columns: cols, keep: keep)
+        XCTAssertTrue(s.legend.isEmpty)
+    }
+
+    func testNoCutIsNoOpAndNonNumericIgnored() {
+        XCTAssertEqual(yc("v", 0), SelectCut.YColoring(column: nil, notices: []))
+        XCTAssertEqual(yc("grp", 3), SelectCut.YColoring(column: nil, notices: []))
+    }
 }

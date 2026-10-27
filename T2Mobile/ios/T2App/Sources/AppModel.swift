@@ -59,7 +59,7 @@ final class AppModel {
         var conditionOn: PlotRequest.ConditionTarget
         var kmGroups: Int, kmMaxDays: Double
         var zscoreY: Bool, flip: Bool, waterfall: Bool, yIndividually: Bool, fitLine: Bool
-        var xCut: Int, colorCut: Int, facetCut: Int
+        var xCut: Int, colorCut: Int, facetCut: Int, yCut: Int
         var filterRevision: Int, datasetRevision: Int
         var fill: String
     }
@@ -494,6 +494,8 @@ final class AppModel {
     var xCut = 0
     var colorCut = 0
     var facetCut = 0
+    /// a quantized Y keeps the continuous values; the groups colour the plot (SelectCut.yColoring)
+    var yCut = 0
     /// choose a variable and its cut together (the chevron menu of the picker)
     func setVariable(_ slot: Slot, to name: String, cut k: Int) async {
         await setVariable(slot, to: name)
@@ -501,6 +503,7 @@ final class AppModel {
         case .x where x == name: xCut = k
         case .color where color == name: colorCut = k
         case .facet where facet == name: facetCut = k
+        case .y where y == name: yCut = k
         default: break
         }
     }
@@ -511,7 +514,7 @@ final class AppModel {
             guard name.isEmpty || self.filter.columns[name] != nil || (slot == .x && self.isTTE(name)) else { return }
             switch slot {
             case .x: if self.x != name { self.xCut = 0 }; self.x = name
-            case .y: self.y = name
+            case .y: if self.y != name { self.yCut = 0 }; self.y = name
             case .color: if self.color != name { self.colorCut = 0 }; self.color = name
             case .size: self.size = name
             case .facet: if self.facet != name { self.facetCut = 0 }; self.facet = name
@@ -654,7 +657,7 @@ final class AppModel {
         let key = SceneKey(x: x, y: y, color: color, size: size, facet: facet, xMore: xMore, yMore: yMore, condition: condition,
                            conditionOn: conditionOn, kmGroups: kmGroups, kmMaxDays: kmCap, zscoreY: zscoreY, flip: flip,
                            waterfall: waterfall, yIndividually: yIndividually, fitLine: fitLine,
-                           xCut: xCut, colorCut: colorCut, facetCut: facetCut,
+                           xCut: xCut, colorCut: colorCut, facetCut: facetCut, yCut: yCut,
                            filterRevision: filter.revision, datasetRevision: datasetRevision, fill: fill)
         return sceneCache.get(key) {
             // The quantize chips: a numeric slot variable with a cut of 2-4 is swapped, for the plot
@@ -673,7 +676,14 @@ final class AppModel {
                 return r.label
             }
             let xPlot = cutName(x, xCut), colorPlot = cutName(color, colorCut), facetPlot = cutName(facet, facetCut)
-            var request = PlotRequest(x: [xPlot] + xMore, y: [y] + yMore, color: colorPlot, size: size, facet: facetPlot)
+            var colorFinal = colorPlot
+            if yCut != 0 {
+                let yc = SelectCut.yColoring(name: y, k: yCut, userColor: color, multiY: !yMore.isEmpty, survival: isSurvival,
+                                             columns: columns, keep: keep, x: x)
+                for n in yc.notices where !notices.contains(n) { notices.append(n) }
+                if let col = yc.column { columns[col.name] = col; colorFinal = col.name }
+            }
+            var request = PlotRequest(x: [xPlot] + xMore, y: [y] + yMore, color: colorFinal, size: size, facet: facetPlot)
             request.condition = condition
             request.conditionOn = condition.isEmpty ? .none : conditionOn
             request.kmGroups = kmGroups

@@ -53,4 +53,42 @@ public enum SelectCut {
         }
         return Result(label: lab, levels: Stats.groupLabels(made: cut.count), codes: cut.group, sizes: sizes, notice: nil)
     }
+
+    // MARK: a quantized Y (UI-REWORK step 6; spec 2c, role y)
+
+    /// The notice when the groups are consumed as the plot's colour.
+    public static func quantaNotice(_ name: String) -> String {
+        "\(name): the plot keeps the continuous values; the groups color the plot (and are offered on the Analysis tab)."
+    }
+    /// The notice when the groups cannot be the colour (a colour of the user's own, several
+    /// Y probes, a survival plot): the original "no meaning" wording.
+    public static func demoteNotice(_ name: String, role: String = "y") -> String {
+        "\(name): groups have no meaning as \(role); the plot uses the continuous values (the groups are offered on the Analysis tab)."
+    }
+
+    public struct YColoring: Sendable, Equatable {
+        /// the derived column to colour by (nil = none); it is added to the plot's columns under `column.name`
+        public var column: Column?
+        public var notices: [String]
+    }
+
+    /// A quantized Y keeps the continuous values on Y; the groups become the colour unless the
+    /// user chose a colour (that wins; the token demotes), several Y probes are plotted
+    /// (probe_quanta is not offered on iOS: demoted), or the plot is a survival plot (which
+    /// cuts its own Y). The cut universe is the same as the other cuts' (mask AND finite source X
+    /// AND finite Y); a refused cut gives no colour and the refusal notice.
+    public static func yColoring(name: String, k: Int, userColor: String, multiY: Bool, survival: Bool,
+                                 columns: [String: Column], keep: Mask, x: String) -> YColoring {
+        guard (2...4).contains(k), !name.isEmpty, let src = columns[name], let values = src.numbers else {
+            return YColoring(column: nil, notices: [])
+        }
+        if survival || multiY || !userColor.isEmpty {
+            return YColoring(column: nil, notices: [demoteNotice(name)])
+        }
+        let u = universe(keep: keep, required: [columns[x], src])
+        let r = resolve(name: name, k: k, values: values, universe: u)
+        if let why = r.notice { return YColoring(column: nil, notices: [why]) }
+        return YColoring(column: Column(name: r.label, type: "virtual", data: .categorical(levels: r.levels, codes: r.codes)),
+                         notices: [quantaNotice(name)])
+    }
 }

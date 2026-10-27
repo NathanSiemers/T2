@@ -73,6 +73,10 @@ t2_row_medians <- function(m) {
   pmid = pmid, doi = doi,
   url = if (nzchar(pmid)) paste0("https://pubmed.ncbi.nlm.nih.gov/", pmid, "/") else paste0("https://doi.org/", doi),
   note = note)
+## special color-menu entries: not dataset columns, resolved inside plotter
+T2_COLOR_QUANTA       = "quanta"         # color = the FIRST Y token's quantile groups
+T2_COLOR_PROBE_QUANTA = "probe_quanta"   # multi-Y x Y token: probe x group dummy
+T2_COLOR_SPECIALS     = c("probe", T2_COLOR_QUANTA, T2_COLOR_PROBE_QUANTA)
 T2_METHOD_REFERENCES <- list(
   .t2_ref("Nonparametric Estimation from Incomplete Observations", "Kaplan EL, Meier P",
           "Journal of the American Statistical Association", 1958, doi = "10.1080/01621459.1958.10501452",

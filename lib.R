@@ -379,12 +379,14 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     update_geom_defaults("point", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("ribbon", list( color = plasma(1), fill = plasma(1)  ) )
     update_geom_defaults("smooth", list( color = plasma(1), fill = plasma(1),  alpha = 0.5) )
+    ## one Y probe: nothing to plot individually
+    if (isTRUE(multi_y) && length(y) < 2) multi_y = FALSE
     ## retrieve tcga data  HELP
     ## only include conditioning variables if actually being used
     active_condition = if (!is.null(condition) && pcortype != 'none') condition else NULL
     ## a quantized variable (t2q::<k>::<name>, ANALYSIS-SPEC.md 2c) arrives as color / facet: the
     ## FETCH list holds its parsed source name; the derived column is made right after the fetch
-    list.of.markers = c( t2_quant_source(x), t2_quant_source(y), t2_quant_source(color), shape, t2_quant_source(size),
+    list.of.markers = c( t2_quant_source(x), t2_quant_source(y), t2_quant_source(setdiff(as.character(color), T2_COLOR_SPECIALS)), shape, t2_quant_source(size),
                          t2_quant_source(facet), c(extra), t2_quant_source(c(active_condition))  )
     ## save original parameter values before transformations
     orig_x = x; orig_y = y; orig_color = color; orig_shape = shape
@@ -446,7 +448,46 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
     if (!is.null(x)) x = unlist(lapply(as.character(x), function(tok) {
         r = quant_resolve(tok)
         if (is.null(r)) t2_quant_source(tok) else r }))
-    y = quant_demote(y, "y")
+    ## color = "quanta" / "probe_quanta": the Y token's groups color the plot; y stays continuous
+    quanta_consumed = character(0); quanta_k = NULL
+    y_tok = Filter(function(t) !is.null(t2_quant_parse(t)), as.character(y))
+    if (!is.null(color) && length(color) && color[1] %in% c(T2_COLOR_QUANTA, T2_COLOR_PROBE_QUANTA) && !length(y_tok)) {
+        quant_warn = c(quant_warn, "No Y groups are chosen, so there is nothing to color by; color ignored.")
+        color = NULL
+    }
+    if (!is.null(color) && length(color) && identical(color[1], T2_COLOR_QUANTA) && !isTRUE(multi_y)) {
+        r = quant_resolve(y_tok[1])
+        if (!is.null(r)) {
+            quant_warn = c(quant_warn, sprintf("%s: the plot keeps the continuous values; the groups color the plot (and are offered on the Analysis tab).", t2_quant_parse(y_tok[1])$name))
+            quanta_consumed = y_tok[1]
+            color = r
+        } else color = NULL
+    } else if (!is.null(color) && length(color) && identical(color[1], T2_COLOR_QUANTA)) {
+        ## quanta needs a single Y; with multi-Y the menu offers probe_quanta instead
+        color = NULL
+    }
+    if (!is.null(color) && length(color) && identical(color[1], T2_COLOR_PROBE_QUANTA) && isTRUE(multi_y) && length(y_tok)) {
+        quanta_k = t2_quant_parse(y_tok[1])$k
+        for (v in unique(t2_quant_source(y))) {
+            if (!(v %in% colnames(data)) || !is.numeric(data[[v]])) next
+            m = data[[v]]; m[!quant_universe] = NA
+            qg = t2_quantile_groups(m, quanta_k, min_n = 5L)
+            if (is.null(qg) || !is.null(qg$refused)) {
+                quant_warn = c(quant_warn, sprintf("%s cannot be split into %d groups; probe x group coloring dropped.", v, quanta_k))
+                quanta_k = NULL
+                break
+            }
+            data[[paste0(".qg.", v)]] = qg$grp
+        }
+        if (is.null(quanta_k)) {
+            color = "probe"
+            data = data[, !grepl("^\\.qg\\.", colnames(data)), drop = FALSE]
+        }
+        quanta_consumed = y_tok
+    } else if (!is.null(color) && length(color) && identical(color[1], T2_COLOR_PROBE_QUANTA)) {
+        color = if (isTRUE(multi_y)) "probe" else NULL
+    }
+    y = unlist(lapply(as.character(y), function(tok) if (tok %in% quanta_consumed) t2_quant_source(tok) else quant_demote(tok, "y")))
     size = quant_demote(size, "size")
     if (!is.null(condition)) condition = if (is.null(active_condition)) t2_quant_source(condition) else quant_demote(condition, "remove influences of")
     if (!is.null(active_condition)) active_condition = condition
@@ -593,8 +634,8 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
         }
     }
 
-    if ( length(unique( data [ , color ] ) ) < 2 ) { color = NULL }
-    if ( length(unique( data [ , size ] ) ) < 2 ) { size = NULL }
+    if (!is.null(color) && color %in% colnames(data) && length(unique(data[, color])) < 2) color = NULL
+    if (!is.null(size) && size %in% colnames(data) && length(unique(data[, size])) < 2) size = NULL
     x_title = x; y_title = y     # the variables as the title names them (before they are combined)
     if(length(x) > 1) {
         newvar = paste(x, sep = '.', collapse = '.')
@@ -626,16 +667,36 @@ plotter = function( x, y = NULL, color = NULL, shape = NULL, size = NULL, facet 
                              check.names = FALSE)
         data$probe = factor(data$probe, levels = y_probes)
         y = "y_value"
-        if (!is.null(color) && color != "" && color != "probe") {
+        if (!is.null(color) && color != "" && !(color %in% c("probe", T2_COLOR_PROBE_QUANTA))) {
             ## user has a different color variable — facet by probe, fill boxes by probe
             multi_y_fill = TRUE
             facet = c("probe", facet)
             facet = facet[facet != ""]
         } else {
-            ## color by probe identity, no auto-faceting
-            color = "probe"
+            ## color by probe identity (or probe x group), no auto-faceting
+            if (!identical(color, T2_COLOR_PROBE_QUANTA)) color = "probe"
         }
     }
+    ## probe x group dummy: each long row carries ITS probe's group; levels = the union over probes
+    ## in probe order (each probe's own group labels, so a merged-quantile probe loses no values)
+    if (identical(color, T2_COLOR_PROBE_QUANTA)) {
+        qcols = paste0(".qg.", levels(data$probe))
+        if ("probe" %in% colnames(data) && !is.null(quanta_k) && all(qcols %in% colnames(data))) {
+            pr = as.character(data$probe)
+            g = rep(NA_character_, nrow(data))
+            for (v in levels(data$probe)) {
+                ix = which(pr == v)
+                g[ix] = as.character(data[[paste0(".qg.", v)]][ix])
+            }
+            lv = unlist(lapply(levels(data$probe), function(v)
+                paste(v, levels(data[[paste0(".qg.", v)]]), sep = " / ")))
+            pq = ifelse(is.na(g), NA_character_, paste(pr, g, sep = " / "))
+            data[[T2_COLOR_PROBE_QUANTA]] = factor(pq, levels = lv)
+        } else color = "probe"
+    }
+    data = data[, !grepl("^\\.qg\\.", colnames(data)), drop = FALSE]
+    ## a color special that did not become a column (old single-Y + probe accident): dropped, plot draws
+    if (!is.null(color) && color %in% T2_COLOR_SPECIALS && !(color %in% colnames(data))) color = NULL
     ## will we need to remove NAs from X and possibly Y? ggplot might take care of it
     if( allComplete ) {
         ## only require completeness on the cohort and sample-type handles the
@@ -963,7 +1024,7 @@ fun_table1 = function ( input, ctx = t2_default_ctx() ) {
     ## source, not the derived groups (the cuts depend on the plotted rows)
     my.input = c( t2_quant_source(input$x), t2_quant_source(input$y), t2_quant_source(input$color),
                   t2_quant_source(input$size), t2_quant_source(input$facet) )
-    my.input = setdiff( my.input, 'probe' )   # multi-Y colour handle, not a column
+    my.input = setdiff( my.input, T2_COLOR_SPECIALS )   # multi-Y colour handle, not a column
     ## a Kaplan-Meier plot forces nonormal (fun_plot1); its table must hold the same samples
     km = length(input$x) > 0 && input$x[1] %in% tte_names(ctx)
     gitr( my.input,
@@ -1034,6 +1095,8 @@ fun_plot1 = function(input, reactive = TRUE, ctx = t2_default_ctx(), gg = list()
     ## `tte_variables`), draw a Kaplan-Meier plot of the Y marker's tertiles
     ## instead of a scatter.
     if (length(input$x) && input$x[1] %in% tte_names(ctx)) {
+        ## the color specials (quanta, probe_quanta, probe): survival_km never reads color
+        if (length(input$color) && input$color[1] %in% T2_COLOR_SPECIALS) input$color = NULL
         if (!length(input$y) || !nzchar(input$y[1]))
             return(list(warning = "Survival plot: pick a Y marker to stratify into groups."))
         ## y / size / condition groups have no plot meaning: the source column is used (the notice joins the summary)

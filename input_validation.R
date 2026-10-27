@@ -85,7 +85,7 @@ sanitize_t2_input = function(input, b) {   # b: the active bundle (its variable 
     c(list(
         x         = .t2_pick(input$x, c(vars, tte_names(b), Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$x)))), T2_LIMITS$x_vars),
         y         = .t2_pick(input$y, c(vars, Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$y)))), T2_LIMITS$y_vars),
-        color     = if (.t2_quant_ok(input$color, b)) as.character(input$color)[1] else .t2_one(input$color, c('probe', vars), ""),
+        color     = if (.t2_quant_ok(input$color, b)) as.character(input$color)[1] else .t2_one(input$color, c(T2_COLOR_SPECIALS, vars), ""),
         size      = if (.t2_quant_ok(input$size, b)) as.character(input$size)[1] else .t2_one(input$size, vars, ""),
         cohort    = .t2_cohort_pick(input$cohort, unname(b$mycohorts), T2_LIMITS$cohorts),
         facet     = .t2_pick(input$facet, c(vars, Filter(function(t) .t2_quant_ok(t, b), as.character(unlist(input$facet)))),

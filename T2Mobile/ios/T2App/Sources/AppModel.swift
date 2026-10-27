@@ -59,6 +59,7 @@ final class AppModel {
         var conditionOn: PlotRequest.ConditionTarget
         var kmGroups: Int, kmMaxDays: Double
         var zscoreY: Bool, flip: Bool, waterfall: Bool, yIndividually: Bool, fitLine: Bool
+        var xCut: Int, colorCut: Int, facetCut: Int
         var filterRevision: Int, datasetRevision: Int
         var fill: String
     }
@@ -487,16 +488,33 @@ final class AppModel {
 
     enum Slot { case x, y, color, size, facet }
 
+    /// The Select tab's quantize chip (spec 2c): 0 = the continuous values; 2-4 = that many
+    /// quantile groups, for the variable now in the slot. Only the plot sees the groups (as a
+    /// derived column, see `scene`); the Filter tab and everything else keep the source column.
+    var xCut = 0
+    var colorCut = 0
+    var facetCut = 0
+    /// choose a variable and its cut together (the chevron menu of the picker)
+    func setVariable(_ slot: Slot, to name: String, cut k: Int) async {
+        await setVariable(slot, to: name)
+        switch slot {
+        case .x where x == name: xCut = k
+        case .color where color == name: colorCut = k
+        case .facet where facet == name: facetCut = k
+        default: break
+        }
+    }
+
     func setVariable(_ slot: Slot, to name: String) async {
         await run(name.isEmpty ? "Updating" : "Loading \(name)") {
             try await self.ensureLoaded([name])
             guard name.isEmpty || self.filter.columns[name] != nil || (slot == .x && self.isTTE(name)) else { return }
             switch slot {
-            case .x: self.x = name
+            case .x: if self.x != name { self.xCut = 0 }; self.x = name
             case .y: self.y = name
-            case .color: self.color = name
+            case .color: if self.color != name { self.colorCut = 0 }; self.color = name
             case .size: self.size = name
-            case .facet: self.facet = name
+            case .facet: if self.facet != name { self.facetCut = 0 }; self.facet = name
             }
             self.filter.add(name)
         }
@@ -636,9 +654,26 @@ final class AppModel {
         let key = SceneKey(x: x, y: y, color: color, size: size, facet: facet, xMore: xMore, yMore: yMore, condition: condition,
                            conditionOn: conditionOn, kmGroups: kmGroups, kmMaxDays: kmCap, zscoreY: zscoreY, flip: flip,
                            waterfall: waterfall, yIndividually: yIndividually, fitLine: fitLine,
+                           xCut: xCut, colorCut: colorCut, facetCut: facetCut,
                            filterRevision: filter.revision, datasetRevision: datasetRevision, fill: fill)
         return sceneCache.get(key) {
-            var request = PlotRequest(x: [x] + xMore, y: [y] + yMore, color: color, size: size, facet: facet)
+            // The quantize chips: a numeric slot variable with a cut of 2-4 is swapped, for the plot
+            // only, for a derived categorical column (the AnalysisModel.analysisScene pattern; no
+            // PlotBuilder change). The universe is the web's plotted-complete-rows rule.
+            var columns = filter.columns
+            let keep = currentMask()
+            var notices: [String] = []
+            let sourceX = columns[x], sourceY = columns[y]
+            func cutName(_ name: String, _ k: Int) -> String {
+                guard (2...4).contains(k), !name.isEmpty, let src = columns[name], let values = src.numbers else { return name }
+                let universe = SelectCut.universe(keep: keep, required: [sourceX, sourceY])
+                let r = SelectCut.resolve(name: name, k: k, values: values, universe: universe)
+                if let why = r.notice { if !notices.contains(why) { notices.append(why) }; return name }
+                columns[r.label] = Column(name: r.label, type: "virtual", data: .categorical(levels: r.levels, codes: r.codes))
+                return r.label
+            }
+            let xPlot = cutName(x, xCut), colorPlot = cutName(color, colorCut), facetPlot = cutName(facet, facetCut)
+            var request = PlotRequest(x: [xPlot] + xMore, y: [y] + yMore, color: colorPlot, size: size, facet: facetPlot)
             request.condition = condition
             request.conditionOn = condition.isEmpty ? .none : conditionOn
             request.kmGroups = kmGroups
@@ -652,7 +687,9 @@ final class AppModel {
             let required = [m.cohortColumn, m.sampleTypeColumn].compactMap { $0 }
             let context = PlotBuilder.Context(datasetLabel: PlotBuilder.sourceWord(dataset: m.label, part: fixedPreset),
                                               tte: m.tte, typeLabels: m.typeWords, handleColumns: required, filters: filterNote, fills: fillNote)
-            return PlotBuilder.build(request, columns: filter.columns, keep: currentMask(), context: context)
+            var scene = PlotBuilder.build(request, columns: columns, keep: keep, context: context)
+            scene.warnings.append(contentsOf: notices)
+            return scene
         }
     }
 

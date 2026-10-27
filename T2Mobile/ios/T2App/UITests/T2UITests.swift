@@ -749,4 +749,25 @@ final class T2UITests: XCTestCase {
         XCTAssertTrue(shown.contains("caption"), "the analysis figure has no caption: \(shown)")
         shot("43-publish-analysis")
     }
+    /// PUBLISH-UNIFY step 8: the Select tab's quantize chip. A numeric X, cut into 3: the plot
+    /// redraws as boxes by tertiles, and the Analysis tab offers the pick as a ready-made row.
+    func test12_SelectQuantizeChip() {
+        launch()
+        waitFor("dataset-summary", "the dataset's sample count")
+        pick("X", search: "FOXP3", choose: "FOXP3")
+        openTab("Plot")
+        waitFor("plot-count", "the plot's sample count")
+        let before = element("plot").label
+        XCTAssertFalse(before.contains("tertiles"), "the continuous plot already says tertiles: \(before)")
+        openTab("Select")
+        let chip = scrollTo("quant-x")
+        chip.buttons["3"].tap()
+        openTab("Plot")
+        waitFor("plot-count", "the plot's sample count")
+        XCTAssertTrue(waitUntil(timeout: 30) { self.element("plot").label.contains("(tertiles)") }, "the plot does not carry (tertiles): \(element("plot").label)")
+        shot("44-select-quantize-x-tertiles")
+        openTab("Analysis")
+        let row = element("analysis-select-FOXP3 (tertiles)")
+        XCTAssertTrue(row.waitForExistence(timeout: 20) || scrollTo("analysis-select-FOXP3 (tertiles)").exists, "no from-Select grouping row")
+    }
 }

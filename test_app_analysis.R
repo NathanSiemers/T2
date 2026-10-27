@@ -147,6 +147,35 @@ testServer(shiny::shinyAppDir("."), {
   session$setInputs(color = "cohort")
   ok(!grepl("quant_chip_color", paste(output$quant_chip_ui$html), fixed = TRUE), "(h) a categorical color pick shows no chip")
 
+  ## ---- (i)-(vi) PUBLISH-UNIFY step 6: per-role tokens on x / y / size / condition ----
+  session$setInputs(tabs = "select", x = "GENE01", y = "GENE02", color = "", facet = character(0), size = "", condition = character(0))
+  tx <- t2_quant_token("GENE01", 3); labx <- t2_quant_label("GENE01", 3)
+  ty <- t2_quant_token("GENE02", 3)
+  ok(grepl("quant_chip_x", paste(output$quant_chip_ui$html), fixed = TRUE), "(i) a numeric X pick shows the quantize chip")
+  sent <- list(); session$setInputs(quant_chip_x = "3")
+  ok(identical(sent$x$selected, tx), "(i) the X chip's 3 rewrites x to the token")
+  session$setInputs(x = tx)
+  rx <- plot_with(x = tx)
+  ok(inherits(rx$plot, "ggplot") && grepl("(tertiles)", rx$summary, fixed = TRUE) && grepl("(tertiles)", rx$plot$labels$title %||% "", fixed = TRUE),
+     "(i) an X token plots; summary and title carry '(tertiles)'")
+  ry <- plot_with(x = "GENE01", y = ty)
+  ok(inherits(ry$plot, "ggplot") && grepl("groups have no meaning as y", ry$warning %||% "") && "GENE02" %in% names(ry$plot$data) && !grepl("t2q::", ry$summary),
+     "(ii) a Y token plots the source column with the notice")
+  rs <- plot_with(x = "GENE01", y = "GENE02", size = tok)
+  ok(inherits(rs$plot, "ggplot") && grepl("groups have no meaning as size", rs$warning %||% ""), "(ii) a size token is demoted with the notice")
+  ## (iii) too few samples per group: the plot draws on the source column with the refusal notice
+  rt <- plotter(x = tx, y = "GENE02", ctx = t2_plot_ctx(b, keep = h$backend$samples[1:8]))
+  ok(inherits(rt$plot, "ggplot") && grepl("cannot be split", rt$warning %||% "") && "GENE01" %in% names(rt$plot$data),
+     "(iii) a refused X cut falls back to the source column, with the refusal notice")
+  ## (v) the Filter tab sees source names only
+  session$setInputs(x = tx, y = ty, size = tok, condition = t2_quant_token("GENE02", 2), pcortype = "y")
+  sv <- selected_vars()$vars
+  ok(!any(grepl("t2q::", sv)) && all(c("GENE01", "GENE02") %in% sv), "(v) selected_vars holds source names only")
+  ## (vi) the plotted table holds the source column
+  tb <- fun_table1(sanitize_t2_input(list(x = tx, y = ty, size = tok, cohort = "all"), b), ctx = t2_plot_ctx(b))
+  ok(all(c("GENE01", "GENE02") %in% names(tb)) && !any(grepl("t2q::", names(tb))), "(vi) the table download has the source columns, not tokens")
+  session$setInputs(pcortype = "none", x = "cohort", y = "GENE01", size = "", condition = character(0))
+
   session$setInputs(tabs = "analysis", color = "", facet = character(0))      # back to the Analysis tab for (g)
 
   ## ---- (p) Publish the Analysis result (PUBLISH-UNIFY step 5) ----

@@ -336,13 +336,13 @@ ui = fluidPage(
             tags$br(),
             inline( selectizeInput('dataset', 'Data set', choices = NULL ) ),
             tags$br(),
-            inline( selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE ) ),
-            inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE ) ),
+            inline( selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ) ),
+            inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ) ),
             inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
             inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
             uiOutput('x_survival_hint'),
             inline( selectizeInput('color', 'color', choices = NULL, options = list(render = T2_QUANT_RENDER)) ),
-            inline( selectizeInput('size', 'size', choices = NULL )),
+            inline( selectizeInput('size', 'size', choices = NULL, options = list(render = T2_QUANT_RENDER) )),
             inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
             inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) )),
             ## "as: values | 2 | 3 | 4 groups" for a numeric color / first facet pick
@@ -358,7 +358,7 @@ ui = fluidPage(
             tags$br(),
             ## what the chosen clinical variables mean (t2_descriptions.R)
             uiOutput('var_help'),
-            inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
+            inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) )),
             inline(HTML(nbsp(5))),
             inline(
                 radioButtons('pcortype', 'Remove influence on:',
@@ -607,6 +607,8 @@ server = function(input, output, session) {
     ## extra menu row so selectize accepts it); 'values' rewrites it back. The
     ## rewrite happens ONLY in the chip's own event, and only when it changes the
     ## value, so a re-rendered chip reporting its initial state cannot loop.
+    T2_QUANT_SLOTS = c(x = "X", y = "Y", color = "color", size = "size", facet = "graph for each",
+                       condition = "remove influences of")
     quant_chip_state = function(v, b) {      # list(name, k) for a numeric / token pick, else NULL
         v = as.character(unlist(v))[1]
         if (is.na(v) || !nzchar(v)) return(NULL)
@@ -622,10 +624,14 @@ server = function(input, output, session) {
             radioButtons(id, NULL, choices = c("values" = 0, "2" = 2, "3" = 3, "4" = 4), selected = st$k,
                          inline = TRUE),
             tags$span("groups"))
-        cs = quant_chip_state(input$color, b)
-        fs = quant_chip_state(utils::head(as.character(unlist(input$facet)), 1), b)
-        tagList(if (!is.null(cs)) one('quant_chip_color', "color", cs),
-                if (!is.null(fs)) one('quant_chip_facet', "graph for each", fs))
+        chips = lapply(names(T2_QUANT_SLOTS), function(slot) {
+            st = quant_chip_state(utils::head(as.character(unlist(input[[slot]])), 1), b)
+            if (is.null(st)) return(NULL)
+            tagList(one(paste0('quant_chip_', slot), T2_QUANT_SLOTS[[slot]], st),
+                    if (slot %in% c("y", "size", "condition"))
+                        tags$div(class = "t2-quant-chip", tags$small("groups apply on the Analysis tab; the plot uses the values")))
+        })
+        do.call(tagList, chips)
     })
     quant_rewrite = function(id, chip) {
         b = bundle()
@@ -645,10 +651,11 @@ server = function(input, output, session) {
         }
         update_selectize_ranked(session, id, menu, new)
     }
-    observeEvent(input$quant_chip_color, t2_guarded("quantize chip (color)",
-        quant_rewrite('color', input$quant_chip_color)), ignoreInit = TRUE)
-    observeEvent(input$quant_chip_facet, t2_guarded("quantize chip (facet)",
-        quant_rewrite('facet', input$quant_chip_facet)), ignoreInit = TRUE)
+    for (slot in names(T2_QUANT_SLOTS)) local({
+        sl = slot
+        observeEvent(input[[paste0('quant_chip_', sl)]], t2_guarded(paste0("quantize chip (", sl, ")"),
+            quant_rewrite(sl, input[[paste0('quant_chip_', sl)]])), ignoreInit = TRUE)
+    })
 
     ## when multi_y is toggled on, add "probe" to color choices and select it
     observeEvent(input$multi_y, t2_guarded("multi-Y switch", {
@@ -699,10 +706,10 @@ server = function(input, output, session) {
         ## send any number of names, whatever the selector shows
         cap = function(v, n) utils::head(as.character(unlist(v)), n)
         ## a t2q:: token stands for its source variable (the Filter tab knows columns only)
-        v = c(cap(input$x, T2_LIMITS$x_vars), cap(input$y, T2_LIMITS$y_vars),
-              t2_quant_source(cap(input$color, 1)), cap(input$size, 1),
+        v = c(t2_quant_source(cap(input$x, T2_LIMITS$x_vars)), t2_quant_source(cap(input$y, T2_LIMITS$y_vars)),
+              t2_quant_source(cap(input$color, 1)), t2_quant_source(cap(input$size, 1)),
               t2_quant_source(cap(input$facet, T2_LIMITS$facet_vars)),
-              if (!identical(input$pcortype, 'none')) cap(input$condition, T2_LIMITS$condition_vars))
+              if (!identical(input$pcortype, 'none')) t2_quant_source(cap(input$condition, T2_LIMITS$condition_vars)))
         list(dataset = bundle()$key, vars = unique(v[!is.na(v) & nzchar(v)]))
     })
     selected_vars_d = debounce(selected_vars, 500)
@@ -770,7 +777,7 @@ server = function(input, output, session) {
     output$var_help = renderUI({
         b = bundle()
         inp = sanitize_t2_input(input, b)
-        t2_describe_vars(c(inp$x, inp$y, inp$color, inp$size, inp$facet), b$descriptions)
+        t2_describe_vars(t2_quant_source(c(inp$x, inp$y, inp$color, inp$size, inp$facet)), b$descriptions)
     })
     output$clinical_help = renderUI({
         d = bundle()$descriptions

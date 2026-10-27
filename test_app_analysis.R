@@ -149,6 +149,50 @@ testServer(shiny::shinyAppDir("."), {
 
   session$setInputs(tabs = "analysis", color = "", facet = character(0))      # back to the Analysis tab for (g)
 
+  ## ---- (p) Publish the Analysis result (PUBLISH-UNIFY step 5) ----
+  session$setInputs(analysis_group = "cohort", analysis_var = "GENE01", analysis_means = FALSE); run()
+  r5 <- analysis_result()
+  session$setInputs(tabs = "publish", pub_what = "plot")
+  session$setInputs(pub_what = "analysis", pub_source = TRUE, pub_show_caption = TRUE)
+  sp <- pub_spec()
+  ok(!is.null(sp) && identical(sp$kind, "analysis") && is.null(sp$refusal), "(p) pub_what = analysis: pub_spec() is an analysis spec")
+  pp <- pub_draw(sp)
+  cap <- pp$labels$caption
+  ok(inherits(pp, "ggplot") && is.character(cap), "(p) pub_draw returns a ggplot with a caption")
+  ok(grepl(r5$label, gsub("\n", " ", cap), fixed = TRUE) || grepl(r5$label, cap, fixed = TRUE), "(p) the caption names the grouping")
+  ok(grepl("universe n=", cap, fixed = TRUE), "(p) the caption has 'universe n='")
+  ok(grepl(gsub("\n", " ", r5$res$test$method[1]), gsub("\\s+", " ", cap), fixed = TRUE) || grepl(r5$res$test$method[1], cap, fixed = TRUE),
+     "(p) the caption names the method")
+  ok(grepl("p = ", cap, fixed = TRUE), "(p) the caption has 'p = '")
+  ok(grepl("Maintained filters", cap, fixed = TRUE), "(p) the caption has the maintained filters")
+  ok(grepl(substr(T2_CITATION, 1, 30), gsub("\n", " ", cap), fixed = TRUE), "(p) the caption carries the citation")
+  session$setInputs(pub_source = FALSE)
+  c2 <- pub_draw(pub_spec())$labels$caption
+  ok(!grepl(substr(T2_CITATION, 1, 30), gsub("\n", " ", c2 %||% ""), fixed = TRUE), "(p) pub_source = FALSE drops the citation")
+  session$setInputs(pub_source = TRUE, pub_show_caption = FALSE)
+  c3 <- pub_draw(pub_spec())$labels$caption %||% ""
+  ok(!grepl("universe n=", c3, fixed = TRUE) && !grepl("p = ", c3, fixed = TRUE), "(p) pub_show_caption = FALSE drops the stats sentences")
+  session$setInputs(pub_show_caption = TRUE)
+  fn <- t2_figure_filename(NULL, pub_fig(), analysis = list(var = r5$a$var, label = r5$label))
+  ok(grepl("^T2_analysis_", fn), sprintf("(p) the 3-arg filename: %s", fn))
+  ## the two stats .txt handlers
+  f1 <- tempfile(); f2 <- tempfile()
+  t1 <- output$analysis_stats_txt; t2 <- output$pub_an_stats
+  ok(!is.null(t1) && !is.null(t2), "(p) both .txt downloads produce a file")
+  l1 <- readLines(t1); l2 <- readLines(t2)
+  ok(identical(l1[1], l2[1]) && grepl("^# T2 analysis: DEMO", l1[1]), "(p) the two .txt downloads have the same first line")
+  ## a dataset guard
+  an_snap(modifyList(an_snap(), list(dataset = "OTHER")))
+  sg <- pub_spec()
+  ok(identical(sg$kind, "analysis") && grepl("made on OTHER", sg$refusal %||% ""), "(p) a snapshot from another dataset is refused")
+  ## no snapshot
+  an_snap(NULL)
+  ok(is.null(pub_spec()), "(p) pub_what = analysis with no comparison: pub_spec() is NULL")
+  ok(!is.na(msg(output$pub_an_stats)), "(p) no snapshot: the txt download refuses ('run a comparison first')")
+  session$setInputs(pub_what = "plot")
+  session$setInputs(tabs = "analysis", pub_what = "plot")
+  run(); ok(!is.null(an_snap()), "(p) Compare refills the snapshot")
+
   ## ---- (g) with an active Thanos filter ----
   set1(paste0(t2_thanos_id("DEMO"), "-vars"), "GENE01")
   med <- round(median(g1), 2); hi <- round(max(g1), 2) - 0.01

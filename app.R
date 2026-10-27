@@ -145,9 +145,12 @@ publish_tab_ui = function() {
         tags$br(),
         helpText("A figure for a paper or a slide: choose its real size and resolution, adjust until the ",
                  "preview reads well, then press ", tags$b("Plot"), " to download the file. The preview is the figure itself, ",
-                 "drawn at the size you asked for. The appearance panel below is shared with the Plot tab; choosing a preset writes it."),
+                 "drawn at the size you asked for. The appearance panel below is shared with the Plot tab; choosing a preset writes it. ",
+                 "Choose ", tags$b("Analysis result"), " to publish the last comparison from the Analysis tab instead."),
         fluidRow(
             column(4,
+                radioButtons('pub_what', 'Figure of', choices = c("Select-tab plot" = "plot", "Analysis result" = "analysis"),
+                             selected = "plot", inline = TRUE),
                 selectInput('pub_preset', 'Start from', width = '100%',
                             choices = stats::setNames(names(T2_FIG_PRESETS),
                                                       vapply(T2_FIG_PRESETS, `[[`, "", "label")),
@@ -179,6 +182,8 @@ publish_tab_ui = function() {
             ),
             column(8,
                 inline(downloadButton('pub_download', 'Plot: download figure')),
+                conditionalPanel("input.pub_what == 'analysis'",
+                                 inline(downloadButton('pub_an_stats', 'Download stats (.txt)'))),
                 inline(HTML(nbsp(3))),
                 inline(radioButtons('pub_zoom', NULL, inline = TRUE,
                                     choices = c("Fit to window" = "fit", "Print size (approx.)" = "print",
@@ -393,6 +398,7 @@ ui = fluidPage(
             tableOutput('analysis_groups'),
             tableOutput('analysis_stats'),
             downloadButton('analysis_download', 'Download table (.csv)'),
+            downloadButton('analysis_stats_txt', 'Download stats (.txt)'),
             h4("Clinical screen"),
             tableOutput('analysis_screen_table'),
             selectInput('analysis_screen_pick', 'Open in the comparison above: pick, then press Compare', choices = NULL)
@@ -921,6 +927,20 @@ server = function(input, output, session) {
         ## only the Publish tab draws a figure: no work on every input change elsewhere
         req(identical(input$tabs, "publish"))
         b = bundle()
+        what = .t2_one(input$pub_what, c("plot", "analysis"), "plot")
+        if (identical(what, "analysis")) {
+            s = an_snap()
+            if (is.null(s)) return(NULL)
+            if (!identical(s$dataset, b$key))
+                return(list(kind = "analysis", refusal = sprintf(
+                    "The comparison was made on %s; reopen that dataset or run a new comparison.", s$dataset)))
+            fig = pub_fig()
+            pr = T2_FIG_PRESETS[[fig$preset]]
+            return(list(kind = "analysis", snap = s, fig = fig, st = sanitize_t2_style(input),
+                        gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input)),
+                        source_line = if (fig$source_line) T2_CITATION else "",
+                        show = fig[c("show_title", "show_subtitle", "show_axis_titles", "show_caption")]))
+        }
         inp = sanitize_t2_input(input, b)
         if (length(inp$x) == 0 || length(inp$y) == 0) return(NULL)
         fig = pub_fig()
@@ -939,16 +959,39 @@ server = function(input, output, session) {
              show = fig[c("show_title", "show_subtitle", "show_axis_titles")])
     })
     pub_draw = function(s) {
+        if (identical(s$kind, "analysis")) return(pub_draw_analysis(s))
         t2_apply_text_switches(
             fun_plot1(s$inp, reactive = FALSE, ctx = s$ctx, gg = s$gg,
                       base_size = s$base_size, base_family = s$family, caption = s$caption,
                       fig_width = s$fig_width, filter_caption = s$filter_caption, fill_caption = s$fill_caption),
             title = s$show$show_title, subtitle = s$show$show_subtitle, axis_titles = s$show$show_axis_titles)
     }
+    ## the Analysis result as a figure: drawn from the snapshot (no re-query), the same data as output$analysis_plot
+    pub_draw_analysis = function(s) {
+        validate(need(is.null(s$refusal), s$refusal))
+        sn = s$snap; fig = s$fig
+        cap = if (isTRUE(fig$show_caption))
+                  t2_analysis_caption(sn, fig_width = fig$width, size = 0.75 * fig$base_size, source_line = s$source_line)
+              else t2_caption_text("", s$source_line, fig$width, 0.75 * fig$base_size)
+        sty = list(style = s$st, gg = s$gg, caption = cap, base_size = fig$base_size, base_family = fig$family,
+                   fig_width = fig$width)
+        p = switch(sn$a$var_kind,
+            num = do.call(t2_plot_group_box, c(list(sn$x, sn$g$grp, sn$a$var, sn$label), sty)),
+            cat = do.call(t2_plot_group_counts, c(list(sn$x, sn$g$grp, sn$a$var, sn$label), sty)),
+            tte = do.call(t2_plot_group_km, c(list(sn$tte$time, sn$tte$event, sn$g$grp, sn$ent$label %||% sn$a$var,
+                                                   unit = t2_tte_unit(sn$ent$time_unit %||% "days"), max_days = sn$max_days), sty)))
+        t2_apply_text_switches(p, title = s$show$show_title, subtitle = s$show$show_subtitle,
+                               axis_titles = s$show$show_axis_titles)
+    }
     ## redraw about a second after the last change, not on every keystroke
     pub_spec_d = debounce(pub_spec, 900)
     pub_fig_d  = debounce(pub_fig, 900)
-    pub_result = reactive({ s = pub_spec_d(); if (is.null(s)) NULL else pub_draw(s) })
+    pub_result = reactive({
+        s = pub_spec_d()
+        if (is.null(s)) NULL
+        else if (identical(s$kind, "analysis")) { validate(need(is.null(s$refusal), s$refusal)); pub_draw(s) }
+        else pub_draw(s)
+    })
 
     output$pub_readout = renderText({
         fig = pub_fig()
@@ -959,6 +1002,8 @@ server = function(input, output, session) {
         obj = t2_figure_object(res)
         if (is.null(obj)) {
             msg = if (is.list(res) && !is.null(res$warning)) res$warning
+                  else if (identical(.t2_one(input$pub_what, c("plot", "analysis"), "plot"), "analysis"))
+                      "Run a comparison on the Analysis tab first (Compare), then publish it here."
                   else "Choose X and Y on the Select tab to see a figure here."
             validate(need(FALSE, msg))
         }
@@ -977,12 +1022,15 @@ server = function(input, output, session) {
     output$pub_download = downloadHandler(
         filename = function() {
             b = bundle()
-            t2_figure_filename(sanitize_t2_input(input, b), pub_fig())
+            sn = if (identical(.t2_one(input$pub_what, c("plot", "analysis"), "plot"), "analysis")) an_snap() else NULL
+            if (!is.null(sn)) t2_figure_filename(NULL, pub_fig(), analysis = list(var = sn$a$var, label = sn$label))
+            else t2_figure_filename(sanitize_t2_input(input, b), pub_fig())
         },
         content = function(file) {
             s = pub_spec()
             obj = if (is.null(s)) NULL else t2_figure_object(pub_draw(s))
-            if (is.null(obj)) stop("Nothing to plot: choose X and Y on the Select tab.")
+            if (is.null(obj)) stop(if (identical(.t2_one(input$pub_what, c("plot", "analysis"), "plot"), "analysis"))
+                "Nothing to plot: run a comparison on the Analysis tab first." else "Nothing to plot: choose X and Y on the Select tab.")
             fig = pub_fig()
             t2_render_figure(obj, file, fig$width, fig$height, fig$dpi, fig$format)
         })
@@ -1081,7 +1129,7 @@ server = function(input, output, session) {
         paste0("Maintained filters: ", if (length(fs$active)) paste(fs$active, collapse = "; ") else "none beyond the Select tab", ".")
     an_p = function(p) vapply(p, fmtp, "")
     an_num = function(v) ifelse(is.na(v), "", sprintf("%.4g", v))
-    an_snapshot = NULL
+    an_snap = reactiveVal(NULL)           # the last comparison (the Publish tab and the downloads read it)
 
     analysis_result = eventReactive(input$analysis_run, t2_guarded("analysis", {
         req(identical(input$tabs, "analysis"))
@@ -1103,7 +1151,7 @@ server = function(input, output, session) {
         validate(need(is.null(res$refused), res$refused))
         snap = list(label = gl$label, g = g, res = res, a = a, x = x, tte = tte, ent = ent, max_days = max_days,
                     filters = an_filters_line(fs), dataset = b$key)
-        an_snapshot <<- snap
+        an_snap(snap)
         snap
     }))
     output$analysis_note = renderUI({
@@ -1132,11 +1180,21 @@ server = function(input, output, session) {
     output$analysis_download = downloadHandler(
         filename = function() sprintf("t2-analysis-%s-%s.csv", gsub("[^A-Za-z0-9.-]+", "-", bundle()$key), format(Sys.Date())),
         content = function(file) {
-            s = an_snapshot
+            s = an_snap()
             if (is.null(s)) stop("Nothing to download: press Compare first.")
             tab = t2_group_result_table(s$res, header = c(s$label, sprintf("universe n = %d", s$g$n_universe), s$filters))
             utils::write.table(tab, file, sep = ",", row.names = FALSE, col.names = FALSE, qmethod = "double")
         })
+
+    an_stats_handler = function() downloadHandler(
+        filename = function() sprintf("T2_analysis_%s_stats.txt", gsub("[^A-Za-z0-9.-]+", "-", bundle()$key)),
+        content = function(file) {
+            s = an_snap()
+            if (is.null(s)) stop("Nothing to export - run a comparison first.")
+            writeLines(t2_analysis_text(s), file)
+        })
+    output$analysis_stats_txt = an_stats_handler()
+    output$pub_an_stats = an_stats_handler()
 
     ## ---- the clinical screen: the grouping against every handle + clinical variable ----
     screen_result = eventReactive(input$analysis_screen, t2_guarded("analysis screen", {

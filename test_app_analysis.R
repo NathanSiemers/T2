@@ -136,7 +136,7 @@ testServer(shiny::shinyAppDir("."), {
   ok(grepl("not a numeric variable", rd$warning %||% ""), "(h) the note says why")
   ## the chip: a numeric color pick shows it; choosing 3 rewrites color to the token
   session$setInputs(color = "GENE02")
-  ok(grepl("quant_chip_color", paste(output$quant_chip_ui$html), fixed = TRUE), "(h) a numeric color pick shows the quantize chip")
+  ok(grepl("quant_chip_color", paste(output$quant_disc_color$html, collapse = ""), fixed = TRUE), "(h) a numeric color pick shows the quantize chip")
   session$setInputs(quant_chip_color = "3")
   ok(identical(sent$color$selected, tok) && tok %in% sent$color$choices$value && sent$color$choices$label[match(tok, sent$color$choices$value)] == lab,
      "(h) the chip's 3 rewrites color to the token (the token is an extra menu row with its label)")
@@ -145,13 +145,13 @@ testServer(shiny::shinyAppDir("."), {
   sent$color <- NULL; session$setInputs(color = tok, quant_chip_color = "3")
   ok(is.null(sent$color), "(h) a chip value equal to the current state rewrites nothing (no loop)")
   session$setInputs(color = "cohort")
-  ok(!grepl("quant_chip_color", paste(output$quant_chip_ui$html), fixed = TRUE), "(h) a categorical color pick shows no chip")
+  ok(!grepl("quant_chip_color", paste(output$quant_disc_color$html, collapse = ""), fixed = TRUE) && !grepl("<details", paste(output$quant_disc_color$html, collapse = ""), fixed = TRUE), "(h) a categorical color pick shows no chip")
 
   ## ---- (i)-(vi) PUBLISH-UNIFY step 6: per-role tokens on x / y / size / condition ----
   session$setInputs(tabs = "select", x = "GENE01", y = "GENE02", color = "", facet = character(0), size = "", condition = character(0))
   tx <- t2_quant_token("GENE01", 3); labx <- t2_quant_label("GENE01", 3)
   ty <- t2_quant_token("GENE02", 3)
-  ok(grepl("quant_chip_x", paste(output$quant_chip_ui$html), fixed = TRUE), "(i) a numeric X pick shows the quantize chip")
+  ok(grepl("quant_chip_x", paste(output$quant_disc_x$html), fixed = TRUE), "(i) a numeric X pick shows the quantize chip")
   sent <- list(); session$setInputs(quant_chip_x = "3")
   ok(identical(sent$x$selected, tx), "(i) the X chip's 3 rewrites x to the token")
   session$setInputs(x = tx)
@@ -212,6 +212,21 @@ testServer(shiny::shinyAppDir("."), {
   ok(identical(sent$analysis_var$selected, "GENE01"), "(s) an invalid current variable defaults to the first select-pick var")
   sent <- list(); session$setInputs(analysis_var = "GENE03", size = "")
   ok(is.null(sent$analysis_var) || identical(sent$analysis_var$selected, "GENE03"), "(s) a valid current variable is kept")
+  ## condition keeps the Analysis propagation but has no quantize affordance (UI-REWORK C3)
+  sent <- list()
+  session$setInputs(x = "cohort", y = "", color = "", size = "", facet = character(0), condition = "GENE03", pcortype = "y")
+  tkc <- t2_quant_token("GENE03", 3)
+  gmc <- analysis_group_menu()
+  ok(tkc %in% gmc$value && grepl(" - from Select$", gmc$label[match(tkc, gmc$value)]) && grepl("(tertiles)", gmc$label[match(tkc, gmc$value)], fixed = TRUE),
+     "(s) a numeric condition pick adds its tertile grouping row, labelled from Select")
+  ok(identical(sent$analysis_var$choices$value[1:2], c("cohort", "GENE03")) || "GENE03" %in% sent$analysis_var$choices$value[1:2],
+     "(s) the bare condition name is fronted in the var menu")
+  session$setInputs(tabs = "select", color = "GENE02", size = "GENE01")
+  dc <- vapply(names(T2_CHIP_SLOTS), function(sl) paste(output[[paste0("quant_disc_", sl)]]$html, collapse = ""), "")
+  ok(!("condition" %in% names(T2_CHIP_SLOTS)) && "condition" %in% T2_PROP_SLOTS &&
+       is.null(tryCatch(output$quant_disc_condition$html, error = function(e) NULL)) && !any(grepl("quant_chip_condition", dc, fixed = TRUE)),
+     "(s) condition has no quantize disclosure (no chip, no quant_disc_condition output)")
+  session$setInputs(tabs = "analysis", condition = character(0), pcortype = "none", color = "", size = "")
   ## a tte endpoint picked as x: a test variable only
   session$setInputs(x = tte1, color = "", y = "")
   sp8 <- select_picks()

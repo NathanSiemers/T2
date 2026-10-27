@@ -252,6 +252,27 @@ app$set_inputs(tabs = "filter"); settle()
 ok(visible("#th_TCGA-panels") && !visible("#th_DEMO-panels"), "back on TCGA: its panel set is shown again")
 ok(isTRUE(all.equal(app$get_value(input = "th_TCGA-filter_CD8A"), flt)), "TCGA's CD8A filter was kept")
 
+## ---- quantize disclosure (UI-REWORK C1): a per-picker glyph, the radio in a closed <details> ----
+app$set_inputs(tabs = "select"); settle(500)
+app$run_js("Shiny.setInputValue('color', 'CD8A')"); settle(2500)
+dsel <- ".t2-qp:has(#color) details.t2-quant-disc"
+ok(js(sprintf("document.querySelectorAll('%s').length", dsel)) == 1, "a numeric color pick shows its disclosure glyph")
+ok(js(sprintf("document.querySelector('%s').open", dsel)) == FALSE, "the disclosure starts closed")
+ok(js("document.getElementById('quant_chip_color') !== null"), "the chip radio is in the DOM while the details is closed")
+ok(js("document.querySelectorAll('.t2-qp:has(#facet) details.t2-quant-disc').length") == 0, "a picker with no numeric pick has no glyph")
+y0top <- js("document.getElementById('size').getBoundingClientRect().top")
+app$run_js(sprintf("document.querySelector('%s').open = true", dsel)); settle(500)
+ok(visible("#quant_chip_color + span, .t2-qp:has(#color) .t2-quant-pop input[name=quant_chip_color]"), "opened: the radio is visible")
+ok(abs(js("document.getElementById('size').getBoundingClientRect().top") - y0top) < 1, "opening the popover does not reflow the row")
+shot("9_quantize_disclosure_open")
+app$run_js("Shiny.setInputValue('quant_chip_color', '3')"); settle(2500)
+cq <- app$get_value(input = "color")
+ok(identical(cq, "t2q::3::CD8A"), sprintf("the chip's 3 rewrites color to the token (%s)", paste(cq, collapse = ",")))
+ok(identical(trimws(js(sprintf("document.querySelector('%s summary .t2-quant-count').textContent", dsel))), "3"), "the summary badge shows 3")
+shot("9b_quantize_disclosure_k3")
+app$run_js("Shiny.setInputValue('quant_chip_color', '0')"); settle(2000)
+app$run_js(sprintf("Shiny.setInputValue('color', %s)", jsonlite::toJSON(c0, auto_unbox = TRUE))); settle(1500)
+
 logs <- app$get_logs()
 errs <- logs[logs$level == "error" | grepl("Error", logs$message), ]
 ok(nrow(errs) == 0, "no errors in the browser console or R log")

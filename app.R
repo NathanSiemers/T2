@@ -41,6 +41,8 @@ nbsp = function(n) {
     paste( rep( '&nbsp;', n ), collapse = ' ')
 }
 inline = function (x) {  shiny::tags$div(style="display:inline-block;", x)  }
+## a quantize-capable picker: the selectize plus its per-picker disclosure slot (output$quant_disc_<slot>)
+quant_picker = function(sel, slot) tags$div(class = "t2-qp", sel, uiOutput(paste0('quant_disc_', slot), inline = TRUE))
 
 ################################################################
 ## UI
@@ -323,6 +325,14 @@ ui = fluidPage(
         .t2-quant-chip { font-size: 90%; margin: 0 0 6px 0; color: #555; }
         .t2-quant-chip .form-group { display: inline-block; margin: 0 0 0 6px; }
         .t2-quant-chip .radio-inline { margin-left: 6px; padding-left: 18px; }
+        .t2-qp { display:inline-block; position:relative; vertical-align:top; }
+        .t2-qp .shiny-input-container { display:inline-block; vertical-align:top; }
+        .t2-quant-disc { display:inline-block; vertical-align:bottom; margin:0 2px 8px 2px; }
+        .t2-quant-disc > summary { list-style:none; cursor:pointer; color:#2e8b57; opacity:.55; font-size:85%; padding:2px 4px; }
+        .t2-quant-disc > summary::-webkit-details-marker { display:none; }
+        .t2-quant-disc > summary:hover { opacity:1; }
+        .t2-quant-count { font-size:75%; color:#18bc9c; font-weight:600; margin-left:1px; }
+        .t2-quant-pop { position:absolute; left:0; top:100%; z-index:1000; background:#fff; border:1px solid #dce4ec; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,.18); padding:6px 10px; white-space:nowrap; }
         .t2-analysis-note { font-size: 90%; color: #555; margin: 6px 0; }
         .t2-fill .form-group { margin-bottom: 0; }
         .t2-fill label.control-label { font-weight: 600; margin-right: 8px; }
@@ -336,17 +346,15 @@ ui = fluidPage(
             tags$br(),
             inline( selectizeInput('dataset', 'Data set', choices = NULL ) ),
             tags$br(),
-            inline( selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ) ),
-            inline( selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ) ),
+            inline( quant_picker(selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ), 'x') ),
+            inline( quant_picker(selectizeInput('y', 'Gene (Y)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ), 'y') ),
             inline(checkboxInput("multi_y", "Plot Y probes individually", value = FALSE)),
             inline(checkboxInput("zscore_y", "Z-score Y", value = FALSE)),
             uiOutput('x_survival_hint'),
-            inline( selectizeInput('color', 'color', choices = NULL, options = list(render = T2_QUANT_RENDER)) ),
-            inline( selectizeInput('size', 'size', choices = NULL, options = list(render = T2_QUANT_RENDER) )),
+            inline( quant_picker(selectizeInput('color', 'color', choices = NULL, options = list(render = T2_QUANT_RENDER)), 'color') ),
+            inline( quant_picker(selectizeInput('size', 'size', choices = NULL, options = list(render = T2_QUANT_RENDER) ), 'size') ),
             inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
-            inline( selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) )),
-            ## "as: values | 2 | 3 | 4 groups" for a numeric color / first facet pick
-            uiOutput('quant_chip_ui'),
+            inline( quant_picker(selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ), 'facet') ),
             inline(HTML(nbsp(5))),
             inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
             inline(checkboxInput("waterfall", "Waterfall", value = FALSE)),
@@ -358,7 +366,7 @@ ui = fluidPage(
             tags$br(),
             ## what the chosen clinical variables mean (t2_descriptions.R)
             uiOutput('var_help'),
-            inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) )),
+            inline( selectizeInput('condition', 'Remove influences of:', choices = NULL, multiple = TRUE )),
             inline(HTML(nbsp(5))),
             inline(
                 radioButtons('pcortype', 'Remove influence on:',
@@ -600,15 +608,19 @@ server = function(input, output, session) {
         fill_choice("na"); fill_state(NULL)
     }), ignoreInit = TRUE)
 
-    ## ---- quantize chip (Select tab): "as: values | 2 | 3 | 4 groups" ----
-    ## Shown under the pickers when the color pick (or the FIRST facet pick; later
-    ## facet picks stay as they are, to keep the chip to one line) is a bare numeric
-    ## variable or a t2q:: token. Choosing k rewrites that selector to the token (an
-    ## extra menu row so selectize accepts it); 'values' rewrites it back. The
-    ## rewrite happens ONLY in the chip's own event, and only when it changes the
-    ## value, so a re-rendered chip reporting its initial state cannot loop.
-    T2_QUANT_SLOTS = c(x = "X", y = "Y", color = "color", size = "size", facet = "graph for each",
-                       condition = "remove influences of")
+    ## ---- quantize chip (Select tab): per-picker disclosure ----
+    ## Each of the five chip pickers (x, y, color, size, facet) carries a small ▾ beside
+    ## it when its first pick is a bare numeric variable or a t2q:: token. The ▾ opens a
+    ## <details> popover (absolutely positioned: the row never reflows) holding the
+    ## "values | 2 | 3 | 4 groups" radio; a count badge shows the active k. The radio is
+    ## rendered inside the CLOSED details (it stays in the DOM and bound), because the
+    ## browser suites set quant_chip_<slot> without opening it. Choosing k rewrites that
+    ## selector to the token (an extra menu row so selectize accepts it); 'values' rewrites
+    ## it back. The rewrite happens ONLY in the chip's own event, and only when it changes
+    ## the value, so a re-rendered chip reporting its initial state cannot loop.
+    ## Condition has no chip; its picks still reach the Analysis menus (T2_PROP_SLOTS).
+    T2_CHIP_SLOTS = c(x = "X", y = "Y", color = "color", size = "size", facet = "graph for each")
+    T2_PROP_SLOTS = c(names(T2_CHIP_SLOTS), "condition")   # Select picks that reach the Analysis menus
     quant_chip_state = function(v, b) {      # list(name, k) for a numeric / token pick, else NULL
         v = as.character(unlist(v))[1]
         if (is.na(v) || !nzchar(v)) return(NULL)
@@ -616,22 +628,25 @@ server = function(input, output, session) {
         if (!is.null(q)) return(if (identical(.t2_menu_kind(b, q$name), "num")) q else NULL)
         if (v %in% b$mygenesplus && identical(.t2_menu_kind(b, v), "num")) list(name = v, k = 0L) else NULL
     }
-    output$quant_chip_ui = renderUI({
-        req(identical(input$tabs, "select"))
-        b = bundle()
-        one = function(id, what, st) tags$div(class = "t2-quant-chip",
-            tags$span(paste0(what, ": ", st$name)),
-            radioButtons(id, NULL, choices = c("values" = 0, "2" = 2, "3" = 3, "4" = 4), selected = st$k,
-                         inline = TRUE),
-            tags$span("groups"))
-        chips = lapply(names(T2_QUANT_SLOTS), function(slot) {
-            st = quant_chip_state(utils::head(as.character(unlist(input[[slot]])), 1), b)
+    for (slot in names(T2_CHIP_SLOTS)) local({
+        sl = slot
+        output[[paste0('quant_disc_', sl)]] = renderUI({
+            req(identical(input$tabs, "select"))
+            st = quant_chip_state(utils::head(as.character(unlist(input[[sl]])), 1), bundle())
             if (is.null(st)) return(NULL)
-            tagList(one(paste0('quant_chip_', slot), T2_QUANT_SLOTS[[slot]], st),
-                    if (slot %in% c("y", "size", "condition"))
-                        tags$div(class = "t2-quant-chip", tags$small("groups apply on the Analysis tab; the plot uses the values")))
+            tags$details(class = "t2-quant-disc",
+                tags$summary(title = sprintf("split %s into groups", st$name),
+                    HTML("&#9662;"),
+                    if (st$k > 0) tags$span(class = "t2-quant-count", st$k)),
+                tags$div(class = "t2-quant-pop t2-quant-chip",
+                    tags$span(paste0(T2_CHIP_SLOTS[[sl]], ": ", st$name)),
+                    radioButtons(paste0('quant_chip_', sl), NULL,
+                                 choices = c("values" = 0, "2" = 2, "3" = 3, "4" = 4),
+                                 selected = st$k, inline = TRUE),
+                    tags$span("groups"),
+                    if (sl == "size") tags$div(tags$small("groups apply on the Analysis tab; the plot uses the values")),
+                    if (sl == "y")    tags$div(tags$small("the groups color the plot and are offered on the Analysis tab"))))
         })
-        do.call(tagList, chips)
     })
     quant_rewrite = function(id, chip) {
         b = bundle()
@@ -651,7 +666,7 @@ server = function(input, output, session) {
         }
         update_selectize_ranked(session, id, menu, new)
     }
-    for (slot in names(T2_QUANT_SLOTS)) local({
+    for (slot in names(T2_CHIP_SLOTS)) local({
         sl = slot
         observeEvent(input[[paste0('quant_chip_', sl)]], t2_guarded(paste0("quantize chip (", sl, ")"),
             quant_rewrite(sl, input[[paste0('quant_chip_', sl)]])), ignoreInit = TRUE)
@@ -1113,7 +1128,7 @@ server = function(input, output, session) {
         add_g = function(value, label, token) if (!(value %in% gv)) {
             gv <<- c(gv, value); gl <<- c(gl, label); gt <<- c(gt, token) }
         add_v = function(name) if (!(name %in% vv)) vv <<- c(vv, name)
-        for (slot in names(T2_QUANT_SLOTS)) {
+        for (slot in T2_PROP_SLOTS) {
             kc = .t2_num(input[[paste0('quant_chip_', slot)]], c(0, 2:4), 0)
             kk = if (kc %in% 2:4) as.integer(kc) else 3L
             for (v in as.character(unlist(sp[[slot]]))) {

@@ -178,6 +178,54 @@ testServer(shiny::shinyAppDir("."), {
 
   session$setInputs(tabs = "analysis", color = "", facet = character(0))      # back to the Analysis tab for (g)
 
+  ## ---- (s) Select picks propagate into the Analysis menus (PUBLISH-UNIFY step 7, spec 9b) ----
+  tte1 <- tte_names(b)[1]
+  tk1 <- t2_quant_token("GENE01", 3)
+  sent <- list()
+  session$setInputs(tabs = "analysis", x = "GENE01", quant_chip_x = "3", color = "cohort", y = "GENE02", size = "",
+                    facet = character(0), condition = character(0))
+  session$setInputs(x = tk1)
+  sp7 <- select_picks()
+  tk2 <- t2_quant_token("GENE02", 3)       # y = a bare numeric: tokenized with the default k = 3
+  ok(identical(sp7$groupings$value, c(tk1, tk2, "cohort")) && identical(sp7$vars, c("GENE01", "GENE02", "cohort")),
+     "(s) select_picks: token + categorical (+ the y gene at k = 3) as groupings, source names + categorical as vars, in pick order")
+  gm <- analysis_group_menu()
+  nsp <- gm[!startsWith(gm$value, "t2split::"), ]
+  ok(identical(nsp$value[1:3], c(tk1, tk2, "cohort")) && grepl("(tertiles)", nsp$label[1], fixed = TRUE) && grepl(" - from Select$", nsp$label[1]) &&
+       identical(nsp$label[3], "cohort - from Select") && sum(gm$value == "cohort") == 1 && sum(gm$value == tk1) == 1,
+     "(s) group menu: the token row is added and the categorical row moved to the front, labelled from Select, no duplicates")
+  ok(nrow(gm) == length(b$mygenesplus) + 2 + sum(startsWith(gm$value, "t2split::")) && length(attr(gm, "names_lower")) == nrow(gm),
+     "(s) group menu: exactly one extra row, names_lower stays aligned")
+  vm <- sent$analysis_var$choices
+  ok(identical(vm$value[1:3], c("GENE01", "GENE02", "cohort")) && all(grepl(" - from Select$", vm$label[1:3])) &&
+       sum(vm$value == "GENE01") == 1 && !any(grepl("t2q::", vm$value)) && length(attr(vm, "names_lower")) == nrow(vm),
+     "(s) var menu: the source names are moved to the front, labelled, not duplicated")
+  ok(identical(sent$analysis_var$selected, "GENE01") || nzchar(sent$analysis_var$selected %||% ""), "(s) var menu: a default is selected")
+  ## a run through the propagated token equals the direct call
+  session$setInputs(analysis_group = tk1, analysis_var = "GENE02", analysis_means = FALSE); run()
+  rp <- analysis_result()
+  gd <- t2_group_quantized(g1, all60, 3)
+  ok(identical(rp$res$test$p, t2_group_test(g2, gd$grp, "num")$test$p) && identical(rp$label, t2_quant_label("GENE01", 3)),
+     "(s) a run via the propagated token equals the direct t2_group_test on t2_group_quantized")
+  ## default selection: an invalid current variable falls to the first select-pick var; a valid one stays
+  sent <- list(); session$setInputs(analysis_var = "no_such_var", size = "GENE03")      # a Select change rebuilds the menu
+  ok(identical(sent$analysis_var$selected, "GENE01"), "(s) an invalid current variable defaults to the first select-pick var")
+  sent <- list(); session$setInputs(analysis_var = "GENE03", size = "")
+  ok(is.null(sent$analysis_var) || identical(sent$analysis_var$selected, "GENE03"), "(s) a valid current variable is kept")
+  ## a tte endpoint picked as x: a test variable only
+  session$setInputs(x = tte1, color = "", y = "")
+  sp8 <- select_picks()
+  ok(tte1 %in% sp8$vars && !(tte1 %in% sp8$groupings$value) && !any(grepl(paste0("^t2q::[0-9]::", tte1, "$"), analysis_group_menu()$value)) &&
+       !any(grepl("from Select", analysis_group_menu()$label)),
+     "(s) an x tte endpoint is a var row only, never a grouping row")
+  ok(grepl(" - from Select$", sent$analysis_var$choices$label[match(tte1, sent$analysis_var$choices$value)]), "(s) the tte endpoint is fronted in the var menu")
+  ## dropped picks do not appear
+  session$setInputs(x = "t2q::3::NOPE", color = "t2q::9::GENE01", y = "GENE02'; DROP", size = "")
+  sp9 <- select_picks()
+  ok(length(sp9$groupings$value) == 0 && !any(grepl("NOPE|DROP|t2q::9", c(sp9$vars, analysis_group_menu()$value))),
+     "(s) hostile / invalid picks the sanitizer drops never reach the menus")
+  session$setInputs(x = "cohort", y = "GENE01", color = "", size = "")
+
   ## ---- (p) Publish the Analysis result (PUBLISH-UNIFY step 5) ----
   session$setInputs(analysis_group = "cohort", analysis_var = "GENE01", analysis_means = FALSE); run()
   r5 <- analysis_result()

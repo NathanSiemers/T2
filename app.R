@@ -1095,6 +1095,60 @@ server = function(input, output, session) {
         sanitize_t2_analysis(inp, b, active_cols = names(h$th$filters()))
     }
 
+    ## The Select-tab picks as seen by the Analysis menus (ANALYSIS-SPEC.md 9b). Built from the
+    ## SANITIZED x / y / color / size / facet / condition (a hostile token is already gone) and the
+    ## slot's quantize chip (k of a bare numeric pick; 2..4, else 3). Returns
+    ##   list(groupings = data.frame(value, label, token), vars = character())
+    ## `token` is TRUE for a t2q:: row to ADD to the group menu, FALSE for a categorical name that is
+    ## already in it (to be moved). vars: source names + a tte endpoint picked as x. Both in pick
+    ## order, de-duplicated. Advisory only: sanitize_t2_analysis is the gate.
+    select_picks = reactive({
+        empty = list(groupings = data.frame(value = character(0), label = character(0), token = logical(0),
+                                            stringsAsFactors = FALSE), vars = character(0))
+        b = bundle()
+        if (is.null(b) || is.null(b$mygenesplus)) return(empty)
+        sp = tryCatch(sanitize_t2_input(input, b), error = function(e) NULL)
+        if (is.null(sp)) return(empty)
+        gv = character(0); gl = character(0); gt = logical(0); vv = character(0)
+        add_g = function(value, label, token) if (!(value %in% gv)) {
+            gv <<- c(gv, value); gl <<- c(gl, label); gt <<- c(gt, token) }
+        add_v = function(name) if (!(name %in% vv)) vv <<- c(vv, name)
+        for (slot in names(T2_QUANT_SLOTS)) {
+            kc = .t2_num(input[[paste0('quant_chip_', slot)]], c(0, 2:4), 0)
+            kk = if (kc %in% 2:4) as.integer(kc) else 3L
+            for (v in as.character(unlist(sp[[slot]]))) {
+                if (is.na(v) || !nzchar(v) || v %in% c("probe", "all")) next
+                q = t2_quant_parse(v)
+                if (identical(slot, "x") && v %in% tte_names(b)) {
+                    add_v(v)                                      # a tte endpoint (may also be a served numeric): test variable only
+                } else if (!is.null(q)) {
+                    if (q$name %in% b$mygenesplus && identical(.t2_menu_kind(b, q$name), "num")) {
+                        add_g(v, t2_quant_label(q$name, q$k), TRUE); add_v(q$name)
+                    }
+                } else if (v %in% b$mygenesplus) {
+                    kind = .t2_menu_kind(b, v)
+                    if (identical(kind, "num")) { add_g(t2_quant_token(v, kk), t2_quant_label(v, kk), TRUE); add_v(v) }
+                    else if (identical(kind, "cat")) { add_g(v, v, FALSE); add_v(v) }
+                }
+            }
+        }
+        list(groupings = data.frame(value = gv, label = gl, token = gt, stringsAsFactors = FALSE), vars = vv)
+    })
+    ## move the rows whose value is in `values` to the front of a menu (after `after` leading rows),
+    ## suffixing their LABEL (value unchanged, never duplicated); names_lower follows the rows
+    front_menu_rows = function(menu, values, after = 0L) {
+        low = attr(menu, "names_lower")
+        hit = which(menu$value %in% values & !duplicated(menu$value))
+        hit = hit[order(match(menu$value[hit], values))]
+        if (!length(hit)) return(menu)
+        menu$label[hit] = paste0(menu$label[hit], " - from Select")
+        head_i = seq_len(after); rest = setdiff(seq_len(nrow(menu)), c(head_i, hit))
+        ord = c(head_i, hit, rest)
+        out = menu[ord, , drop = FALSE]; rownames(out) = NULL
+        attr(out, "names_lower") = low[ord]
+        out
+    }
+
     ## the choices: filter splits first, then every served variable (ranked search, t2_search.R)
     analysis_group_menu = reactive({
         req(identical(input$tabs, "analysis"))
@@ -1108,6 +1162,21 @@ server = function(input, output, session) {
         m = t2_menu(c(unname(custom), b$mygenesplus), lower = c(tolower(unname(custom)), b$names_lower),
                     num = c(rep(0L, length(custom)), kind == "num"))    # split tokens: no marker
         m$label = c(names(custom), b$mygenesplus)      # t2_menu() drops names: the custom rows carry readable labels
+        ## Select-tab picks next (9b): tokens are added rows, categorical names are moved rows
+        gp = select_picks()$groupings
+        if (nrow(gp)) {
+            low = attr(m, "names_lower")
+            add = gp[gp$token & !(gp$value %in% m$value), , drop = FALSE]
+            if (nrow(add)) {
+                row = data.frame(label = paste0(add$label, " - from Select"), value = add$value, num = 0L, stringsAsFactors = FALSE)
+                at = length(custom)
+                m = rbind(m[seq_len(at), , drop = FALSE], row, m[setdiff(seq_len(nrow(m)), seq_len(at)), , drop = FALSE])
+                rownames(m) = NULL
+                low = c(low[seq_len(at)], tolower(add$value), low[setdiff(seq_along(low), seq_len(at))])
+                attr(m, "names_lower") = low
+            }
+            m = front_menu_rows(m, gp$value[!gp$token], after = length(custom) + nrow(add))
+        }
         m
     })
     observe(t2_guarded("analysis choices", {
@@ -1120,8 +1189,10 @@ server = function(input, output, session) {
         b = bundle()
         vars = c(b$mygenesplus, tte_names(b))
         cur = isolate(.t2_one(input$analysis_var, vars, ""))
-        update_selectize_ranked(session, 'analysis_var', t2_menu(vars, lower = c(b$names_lower, tolower(tte_names(b)))),
-                                if (nzchar(cur)) cur else vars[1])
+        sv = select_picks()$vars
+        m = front_menu_rows(t2_menu(vars, lower = c(b$names_lower, tolower(tte_names(b)))), sv)
+        update_selectize_ranked(session, 'analysis_var', m,
+                                if (nzchar(cur)) cur else if (length(sv)) sv[1] else vars[1])
     }))
     ## the number of groups, only for a continuous grouping variable
     output$analysis_quant_ui = renderUI({

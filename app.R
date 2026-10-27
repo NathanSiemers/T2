@@ -52,9 +52,9 @@ gg_label = function(label, gg = NULL) {
 }
 ## one of the fixed style menus (see T2_STYLE in plot_style.R). `prefix` and
 ## `default` give the Publish tab its own copy with print-scale defaults.
-style_select = function(id, prefix = "", default = NULL) {
+style_select = function(id, prefix = "", default = NULL, note = "") {
     st = T2_STYLE[[id]]
-    inline(selectInput(paste0(prefix, id), gg_label(st$label, st$gg), choices = st$choices,
+    inline(selectInput(paste0(prefix, id), gg_label(paste0(st$label, note), st$gg), choices = st$choices,
                        selected = if (is.null(default)) st$default else default))
 }
 ## the search box over every other ggplot setting
@@ -94,16 +94,58 @@ tweak_widgets = function(input, prefix = "", defaults = list()) {
     })
 }
 
+## ONE appearance panel for the Plot and Publish tabs (ANALYSIS-SPEC section 10): the same ids as ever.
+## It sits below the tab bar content; a figure preset writes these widgets when chosen.
+appearance_panel_ui = function() {
+    div(class = "t2-appearance",
+        tags$hr(),
+        h4('Plot appearance'),
+        tags$p(class = "text-muted", "(shared between the Plot and Publish tabs; a figure preset writes these)"),
+        helpText("Sizes are real ggplot values (font sizes in points). A size of 0 removes that item. ",
+                 "The green line under each name is what ggplot calls the setting."),
+        style_select('point_size'),
+        style_select('alpha'),
+        style_select('title_size'),
+        style_select('subtitle_size'),
+        tags$br(),
+        style_select('axis_title_size'),
+        style_select('axis_text_size'),
+        style_select('strip_size'),
+        style_select('legend_size'),
+        tags$br(),
+        inline( selectInput('scales', gg_label('Multi-graph scales', 'facet_wrap(scales = )'),
+                            choices = T2_CONTROLS$scales$choices, selected = T2_CONTROLS$scales$default) ),
+        style_select('ncols'),
+        inline( selectInput('smooth', gg_label('Fit line', 'geom_smooth(method = "lm")'),
+                            choices = T2_CONTROLS$smooth$choices, selected = T2_CONTROLS$smooth$default) ),
+        style_select('plot_height', note = " (screen only)"),
+        tags$br(),
+        inline(checkboxInput("show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
+        inline(checkboxInput("allComplete", "Show only results with complete information", value = TRUE)),
+        tags$br(),
+        ## survival (Kaplan-Meier) options - used when X is a time-to-event variable of the data set
+        inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = T2_CONTROLS$km_groups$choices,
+                               selected = T2_CONTROLS$km_groups$default) ),
+        inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = T2_CONTROLS$surv_max_days$default,
+                             min = min(T2_CONTROLS$surv_max_days$choices), step = 30) ),
+        h4('More ggplot settings'),
+        helpText("Search every other ggplot setting: all theme elements (axis text angle, legend position, ",
+                 "grid lines, backgrounds, spacing ...) and the drawing settings of points, boxplots and the fit line. ",
+                 "Each one you pick appears below with its current default; choose from the menu, or type your own number or #hex colour."),
+        tweak_picker(),
+        div(class = "t2-tweaks", uiOutput('tweak_inputs')),
+        actionButton("plot_btn2", "Plot")
+    )
+}
+
 ## the Publish tab: a figure of a given physical size and resolution
 publish_tab_ui = function() {
     pr = T2_FIG_PRESETS[[T2_FIG_DEFAULT_PRESET]]
-    sty = function(id) style_select(id, "pub_", pr$style[[id]])
     tagList(
         tags$br(),
         helpText("A figure for a paper or a slide: choose its real size and resolution, adjust until the ",
                  "preview reads well, then press ", tags$b("Plot"), " to download the file. The preview is the figure itself, ",
-                 "drawn at the size you asked for. These settings are separate from the Appearance tab: ",
-                 "sizes that suit the screen do not suit a 3.5 inch figure."),
+                 "drawn at the size you asked for. The appearance panel below is shared with the Plot tab; choosing a preset writes it."),
         fluidRow(
             column(4,
                 selectInput('pub_preset', 'Start from', width = '100%',
@@ -118,11 +160,6 @@ publish_tab_ui = function() {
                 inline(selectInput('pub_format', 'File format', choices = T2_FIG_FORMATS, selected = "png", width = '200px')),
                 inline(selectInput('pub_family', gg_label('Font', 'theme(text = element_text(family = ))'),
                                    choices = T2_FIG_FAMILIES, width = '300px')),
-                h5("Sizes at final print size"),
-                div(class = "t2-pub-style",
-                    sty('title_size'), sty('subtitle_size'), sty('axis_title_size'), sty('axis_text_size'),
-                    sty('strip_size'), sty('legend_size'), sty('point_size'), sty('alpha'), sty('ncols')),
-                inline(checkboxInput("pub_show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
                 ## a switch per text element of the figure (all on by default)
                 div(class = "t2-pub-text", tags$b("Text on the figure: "),
                     inline(checkboxInput("pub_show_title", "Title", value = TRUE)),
@@ -138,10 +175,7 @@ publish_tab_ui = function() {
                     tags$code(id = "t2_citation", T2_CITATION),
                     tags$a(href = "#", class = "t2-copy",
                            onclick = "navigator.clipboard.writeText(document.getElementById('t2_citation').innerText); this.innerText = 'copied'; return false;",
-                           "copy")),
-                h5("More ggplot settings"),
-                tweak_picker("pub_"),
-                div(class = "t2-tweaks", uiOutput('pub_tweak_inputs'))
+                           "copy"))
             ),
             column(8,
                 inline(downloadButton('pub_download', 'Plot: download figure')),
@@ -331,7 +365,7 @@ ui = fluidPage(
             div(class = "t2-filter-status", textOutput('filter_status')),
             ## "Not-detected values": shown only when the values answer of this plot offers more than "missing"
             uiOutput('fill_ui'),
-            ## the plot area is rebuilt at the chosen Plot height (Appearance tab)
+            ## the plot area is rebuilt at the chosen Plot height (appearance panel)
             fluidRow( column(12, align="center", uiOutput('main_plot_ui')) ),
             h4("Data Summary"),
             verbatimTextOutput('plot_summary'),
@@ -363,44 +397,6 @@ ui = fluidPage(
             tableOutput('analysis_screen_table'),
             selectInput('analysis_screen_pick', 'Open in the comparison above: pick, then press Compare', choices = NULL)
         ),
-        ## ---- (d) plot appearance ----
-        tabPanel("Appearance", value = "appearance",
-            h4('Fiddly Options'),
-            helpText("Sizes are real ggplot values (font sizes in points). A size of 0 removes that item. ",
-                     "The green line under each name is what ggplot calls the setting."),
-            style_select('point_size'),
-            style_select('alpha'),
-            style_select('title_size'),
-            style_select('subtitle_size'),
-            tags$br(),
-            style_select('axis_title_size'),
-            style_select('axis_text_size'),
-            style_select('strip_size'),
-            style_select('legend_size'),
-            tags$br(),
-            inline( selectInput('scales', gg_label('Multi-graph scales', 'facet_wrap(scales = )'),
-                                choices = T2_CONTROLS$scales$choices, selected = T2_CONTROLS$scales$default) ),
-            style_select('ncols'),
-            inline( selectInput('smooth', gg_label('Fit line', 'geom_smooth(method = "lm")'),
-                                choices = T2_CONTROLS$smooth$choices, selected = T2_CONTROLS$smooth$default) ),
-            style_select('plot_height'),
-            tags$br(),
-            inline(checkboxInput("show_legend", gg_label("Show legend", "legend.position"), value = TRUE)),
-            inline(checkboxInput("allComplete", "Show only results with complete information", value = TRUE)),
-            tags$br(),
-            ## survival (Kaplan-Meier) options — used when X is a time-to-event variable of the data set
-            inline( selectizeInput('km_groups', 'Survival: # groups (Y)', choices = T2_CONTROLS$km_groups$choices,
-                                   selected = T2_CONTROLS$km_groups$default) ),
-            inline( numericInput('surv_max_days', 'Survival: max follow-up (days)', value = T2_CONTROLS$surv_max_days$default,
-                                 min = min(T2_CONTROLS$surv_max_days$choices), step = 30) ),
-            h4('More ggplot settings'),
-            helpText("Search every other ggplot setting: all theme elements (axis text angle, legend position, ",
-                     "grid lines, backgrounds, spacing ...) and the drawing settings of points, boxplots and the fit line. ",
-                     "Each one you pick appears below with its current default; choose from the menu, or type your own number or #hex colour."),
-            tweak_picker(),
-            div(class = "t2-tweaks", uiOutput('tweak_inputs')),
-            actionButton("plot_btn2", "Plot")
-        ),
         ## ---- (e) publication-quality figure export ----
         tabPanel("Publish", value = "publish", publish_tab_ui()),
         ## ---- (f) what this is ----
@@ -422,16 +418,17 @@ ui = fluidPage(
                 tags$li(tags$b("Select"), ": choose the data set, the variables to plot (X, Y, color, size, ",
                         "one graph per category) and the cohort(s); then press Plot."),
                 tags$li(tags$b("Plot"), ": the resulting graph, a summary of the samples behind it, ",
-                        "and a download of the plotted table."),
+                        "and a download of the plotted table. The appearance panel below it sets point size, transparency, ",
+                        "label sizes, multi-graph layout, fit line and survival-plot options, and searches every ",
+                        "other ggplot setting; changes redraw the plot."),
                 tags$li(tags$b("Filter"), ": interactive histograms and sliders/checkboxes for every selected ",
                         "variable (and any others you add) to fine-tune which samples are plotted."),
                 tags$li(tags$b("Analysis"), ": compare groups (a filter's Selected vs Excluded, a variable cut into ",
                         "equal-count groups, or a category) on one variable with a statistical test, or screen all ",
                         "clinical variables with Benjamini-Hochberg correction; the table downloads as CSV."),
-                tags$li(tags$b("Appearance"), ": point size, transparency, label sizes, multi-graph layout, ",
-                        "fit line and survival-plot options, and a search over every other ggplot setting."),
                 tags$li(tags$b("Publish"), ": the current plot as a figure of a chosen physical size and ",
-                        "resolution (PNG, TIFF or PDF), with a live preview.")
+                        "resolution (PNG, TIFF or PDF), with a live preview; it shares the appearance panel with the Plot tab, ",
+                        "and choosing a figure preset writes that panel.")
             ),
             tags$p(tags$b("Citing T2: "), T2_CITATION),
             h5( paste( 'PI:', a.PI ) ),
@@ -450,6 +447,8 @@ ui = fluidPage(
             verbatimTextOutput('print1')
         )
     ),
+    ## the shared appearance panel: below the tab content on the Plot and Publish tabs (its inputs stay bound while hidden)
+    conditionalPanel("input.tabs == 'plot' || input.tabs == 'publish'", appearance_panel_ui()),
     div(class = "t2-footer", "For research use by biomedical scientists only; not medical advice. Sources: About tab.")
 )
 
@@ -788,7 +787,15 @@ server = function(input, output, session) {
     fill_choice = reactiveVal("na")
     fill_state = reactiveVal(NULL)       # t2_fill_of() of the last plot's data (NULL: no plot yet / a new source)
     fill_bump = reactiveVal(0)           # a changed choice draws the plot again, like pressing Plot
-    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump()))
+    ## a changed appearance setting redraws the current plot (debounced; never before a first Plot press)
+    style_bump = reactiveVal(0)
+    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump(), style_bump()))
+    style_state = reactive(list(sanitize_t2_style(input), sanitize_t2_tweaks(input), input$scales, input$smooth,
+                                input$show_legend, input$allComplete, input$km_groups, input$surv_max_days))
+    style_state_d = debounce(style_state, 800)
+    observeEvent(style_state_d(), {
+        if (isolate(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump())) > 0) style_bump(style_bump() + 1)
+    }, ignoreInit = TRUE)
     ## the plot's height on the page is, like every Appearance setting, taken at
     ## the moment Plot is pressed
     plot_height = reactiveVal(t2_style_default('plot_height'))
@@ -904,9 +911,9 @@ server = function(input, output, session) {
         updateNumericInput(session, 'pub_height', value = pr$height)
         updateSelectInput(session, 'pub_units', selected = pr$units)
         updateSelectInput(session, 'pub_dpi', selected = pr$dpi)
-        for (id in names(pr$style)) updateSelectInput(session, paste0('pub_', id), selected = pr$style[[id]])
+        ## the style menus are the SHARED ones (plot_height is screen-only: no preset carries it)
+        for (id in setdiff(names(pr$style), "plot_height")) updateSelectInput(session, id, selected = pr$style[[id]])
     }, ignoreInit = TRUE)
-    output$pub_tweak_inputs = renderUI(tweak_widgets(input, "pub_", pub_preset()$gg))
 
     pub_fig = reactive(sanitize_t2_figure(input))
     ## everything that decides what is drawn (not how large the file is)
@@ -918,11 +925,9 @@ server = function(input, output, session) {
         if (length(inp$x) == 0 || length(inp$y) == 0) return(NULL)
         fig = pub_fig()
         pr = T2_FIG_PRESETS[[fig$preset]]
-        st = sanitize_t2_style(input, "pub_", pr$style)
-        st$plot_height = NULL
-        inp[names(st)] = st
-        ## the preset's own defaults for unlisted settings, then the user's picks
-        gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input, "pub_"))
+        ## (inp already carries the shared appearance styles)
+        ## the preset's own defaults for unlisted settings (publish-only base), then the shared tweaks
+        gg = utils::modifyList(pr$gg, sanitize_t2_tweaks(input))
         fs = filter_state(b)
         samp = sanitize_t2_samples(input, b)
         list(b = b, inp = inp, ctx = t2_plot_ctx(b, keep = fs$keep, rules = samp$rules, fill = fill_choice()), gg = gg,

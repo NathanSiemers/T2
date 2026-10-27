@@ -80,5 +80,23 @@ testServer(shiny::shinyAppDir("."), {
   ## ---- switch back to TCGA ----
   session$setInputs(dataset = "TCGA")
   ok(bundle()$name == "TCGA", "bundle switched back to TCGA")
+  ## ---- PUBLISH-UNIFY step 3: one shared appearance state ----
+  session$setInputs(tabs = "publish", x = "cohort", y = "CD8A", color = "sample_type", title_size = 20, pub_preset = "slide")
+  s_pub <- pub_spec()
+  ok(!is.null(s_pub) && identical(s_pub$inp$title_size, 20), "pub_spec carries the SHARED title_size (unified style)")
+  ok(identical(pub_preset()$style$title_size, 24) && !is.null(pub_spec()$gg$smooth.linewidth),
+     "the preset's gg stays the publish-only base under the shared tweaks")
+  ## the preset observer writes the shared (unprefixed) ids: it must run clean for a style-carrying preset
+  r_pre <- tryCatch({ session$setInputs(pub_preset = "nature2"); session$flushReact(); "" }, error = function(e) conditionMessage(e))
+  ok(identical(r_pre, ""), paste("choosing a preset runs the shared-id writer without error", r_pre))
+  ## live restyle: a style change after a plot redraws, debounced; none before the first Plot press
+  session$setInputs(tabs = "plot", plot_btn = 20)
+  invisible(plot_result()); session$flushReact()
+  k0 <- plot_clicks(); b0 <- style_bump()
+  session$setInputs(title_size = 12)
+  session$elapse(1000); session$flushReact()
+  ok(style_bump() == b0 + 1 && plot_clicks() == k0 + 1, "a style change after a plot bumps plot_clicks (debounced redraw)")
+  b1 <- style_bump(); session$elapse(2000); session$flushReact()
+  ok(style_bump() == b1, "with no further change there is no further redraw (no loop)")
 })
 finish("test_app_server")

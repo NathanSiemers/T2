@@ -177,9 +177,11 @@ auto. The screen stays nonparametric-only. Swift model port = its own round 2.
     original demote wording on user override.
 14. iOS Select-tab cut universe == web plotted-complete-rows rule (group n's pinned).
 15. Quanta coloring parity (UI-REWORK): web and iOS y-cut group labels/sizes identical over
-    the same universe; probe_quanta (probe x group, first token's k) web-only unless iOS has
-    a multi-probe plot mode. The PERMANENT interaction suite (test_app_interactions.R) runs
-    on every future UI round.
+    the same universe (SelectCut.yColoring pins). probe_quanta (probe x group, first token's
+    k) is WEB-ONLY: iOS has a multi-probe mode (yIndividually) but no color-menu entry to
+    carry the combined dummy, so a multi-probe y-cut demotes there with the original wording
+    (follow-on if iOS ever grows a color menu). The PERMANENT interaction suite
+    (test_app_interactions.R) runs on every future UI round.
 
 ## 8. Cross-platform fixture
 

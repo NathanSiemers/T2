@@ -273,6 +273,33 @@ shot("9b_quantize_disclosure_k3")
 app$run_js("Shiny.setInputValue('quant_chip_color', '0')"); settle(2000)
 app$run_js(sprintf("Shiny.setInputValue('color', %s)", jsonlite::toJSON(c0, auto_unbox = TRUE))); settle(1500)
 
+## ---- UI-REWORK C5/C6: Plot button on top, cohort on its own row, auto-replot ----
+ok(js("(document.querySelector('#plot_btn').compareDocumentPosition(document.querySelector('#dataset')) & 4) === 4"),
+   "the Plot button precedes the dataset picker in the document")
+ok(js("!!document.querySelector('.t2-cohort #cohort')"), "the cohort picker sits in its own row container")
+ok(js("document.querySelector('.t2-cohort').getBoundingClientRect().top > document.querySelector('.t2-qp:has(#facet)').getBoundingClientRect().top"),
+   "the cohort row is below the facet picker")
+ok(js("getComputedStyle(document.querySelector('.t2-cohort .selectize-input > input')).order === '-1'"),
+   "the typing line renders first; selections wrap below it")
+ftop <- js("document.querySelector('.t2-qp:has(#facet)').getBoundingClientRect().top")
+app$run_js("var s = $('#cohort')[0].selectize; s.addOption({value:'all', label:'all'}); s.addItem('all');"); settle(1500)
+ok(js("document.querySelectorAll('.t2-cohort .selectize-input .item .remove').length") >= 1,
+   "a selected cohort gets a remove button")
+ok(abs(js("document.querySelector('.t2-qp:has(#facet)').getBoundingClientRect().top") - ftop) < 1,
+   "cohort growth does not move the pickers above")
+shot("10_cohort_row")
+## auto-replot: after the first Plot press, a changed Select input redraws without a press
+app$set_inputs(tabs = "plot"); settle(500)
+ar0 <- js("document.querySelector('#main_plot img').src")
+yprev <- app$get_value(input = "y")
+ynew <- if (identical(yprev, "MKI67")) "CD8A" else "MKI67"
+app$run_js(sprintf("Shiny.setInputValue('y', '%s')", ynew)); settle(3500)
+ar1 <- js("document.querySelector('#main_plot img').src")
+ok(nzchar(ar0) && nzchar(ar1) && !identical(ar0, ar1), "changing Y redraws the plot with no Plot press")
+shot("11_auto_replot")
+app$run_js(sprintf("Shiny.setInputValue('y', %s)", jsonlite::toJSON(yprev, auto_unbox = TRUE))); settle(3000)
+app$set_inputs(tabs = "select"); settle(500)
+
 logs <- app$get_logs()
 errs <- logs[logs$level == "error" | grepl("Error", logs$message), ]
 ok(nrow(errs) == 0, "no errors in the browser console or R log")

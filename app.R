@@ -333,6 +333,10 @@ ui = fluidPage(
         .t2-quant-disc > summary:hover { opacity:1; }
         .t2-quant-count { font-size:75%; color:#18bc9c; font-weight:600; margin-left:1px; }
         .t2-quant-pop { position:absolute; left:0; top:100%; z-index:1000; background:#fff; border:1px solid #dce4ec; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,.18); padding:6px 10px; white-space:nowrap; }
+        .t2-cohort .selectize-control { min-width: 340px; max-width: 720px; }
+        .t2-cohort .selectize-input { display: flex; flex-wrap: wrap; align-items: center; }
+        .t2-cohort .selectize-input > input { order: -1; flex: 1 1 100%; min-height: 20px; }
+        .t2-cohort .selectize-input > .item { order: 1; margin: 2px 4px 2px 0; }
         .t2-analysis-note { font-size: 90%; color: #555; margin: 6px 0; }
         .t2-fill .form-group { margin-bottom: 0; }
         .t2-fill label.control-label { font-weight: 600; margin-right: 8px; }
@@ -344,6 +348,9 @@ ui = fluidPage(
         ## ---- (a) what to plot + the coarse sample filters ----
         tabPanel("Select", value = "select",
             tags$br(),
+            ## the Plot button leads the panel so it is never scrolled out of reach;
+            ## after a first press, Select changes replot automatically (data_bump below)
+            div(actionButton("plot_btn", "Plot"), tags$hr(style = "margin: 8px 0")),
             inline( selectizeInput('dataset', 'Data set', choices = NULL ) ),
             tags$br(),
             inline( quant_picker(selectizeInput('x', 'Gene (X)', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ), 'x') ),
@@ -353,13 +360,17 @@ ui = fluidPage(
             uiOutput('x_survival_hint'),
             inline( quant_picker(selectizeInput('color', 'color', choices = NULL, options = list(render = T2_QUANT_RENDER)), 'color') ),
             inline( quant_picker(selectizeInput('size', 'size', choices = NULL, options = list(render = T2_QUANT_RENDER) ), 'size') ),
-            inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE )),
             inline( quant_picker(selectizeInput('facet', 'Graph for each:', choices = NULL, multiple = TRUE, options = list(render = T2_QUANT_RENDER) ), 'facet') ),
             inline(HTML(nbsp(5))),
             inline(checkboxInput("coordflip", "Flip X and Y", value = FALSE)),
             inline(checkboxInput("waterfall", "Waterfall", value = FALSE)),
             inline(checkboxInput("waterfall_flip", "Flip waterfall", value = FALSE)),
             tags$br(),
+            ## the cohort picker gets its own row: its selections wrap BELOW the typing
+            ## line (flex order in CSS), so growth never shifts the pickers above
+            div(class = "t2-cohort",
+                inline( selectizeInput('cohort', 'Cohort', choices = NULL, multiple = TRUE,
+                                       options = list(plugins = list('remove_button')) ))),
             ## the ready-made sample subsets of the chosen data source (t2_presets.R)
             uiOutput('preset_group_ui', inline = TRUE),
             uiOutput('preset_excl_ui', inline = TRUE),
@@ -371,7 +382,7 @@ ui = fluidPage(
             inline(
                 radioButtons('pcortype', 'Remove influence on:',
                              choices = T2_CONTROLS$pcortype$choices, selected = T2_CONTROLS$pcortype$default, inline = TRUE  ) ),
-            actionButton("plot_btn", "Plot")
+            tags$br()
         ),
         ## ---- (b) the result; every Plot button lands here ----
         tabPanel("Plot", value = "plot",
@@ -844,12 +855,28 @@ server = function(input, output, session) {
     fill_bump = reactiveVal(0)           # a changed choice draws the plot again, like pressing Plot
     ## a changed appearance setting redraws the current plot (debounced; never before a first Plot press)
     style_bump = reactiveVal(0)
-    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump(), style_bump()))
+    ## a changed Select input replots too (debounced; never before a first Plot press)
+    data_bump = reactiveVal(0)
+    plot_clicks = reactive(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump(), style_bump(),
+                               data_bump()))
     style_state = reactive(list(sanitize_t2_style(input), sanitize_t2_tweaks(input), input$scales, input$smooth,
                                 input$show_legend, input$allComplete, input$km_groups, input$surv_max_days))
     style_state_d = debounce(style_state, 800)
     observeEvent(style_state_d(), {
         if (isolate(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump())) > 0) style_bump(style_bump() + 1)
+    }, ignoreInit = TRUE)
+    ## the sanitized data inputs; the first emission after a dataset switch is skipped so a
+    ## half-repopulated Select never plots (the settled emission a debounce later does)
+    data_key_seen = NULL
+    data_state = reactive({ b = bundle()
+        list(key = b$key, inp = sanitize_t2_input(input, b), rules = sanitize_t2_samples(input, b)$rules) })
+    data_state_d = debounce(data_state, 1000)
+    observeEvent(data_state_d(), {
+        ds = data_state_d()
+        key_change = !identical(ds$key, data_key_seen); data_key_seen <<- ds$key
+        if (key_change) return(invisible(NULL))
+        if (isolate(sum(input$plot_btn, input$plot_btn2, input$plot_btn3, fill_bump())) > 0)
+            data_bump(data_bump() + 1)
     }, ignoreInit = TRUE)
     ## the plot's height on the page is, like every Appearance setting, taken at
     ## the moment Plot is pressed

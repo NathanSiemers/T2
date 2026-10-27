@@ -191,6 +191,28 @@ ok(alive(), "junk k / flag / screen-pick values and repeated Compare + Screen cl
 app$set_inputs(tabs = "select"); settle(500)
 
 ## ---------------------------------------------------------------------------
+## 6d. PUBLISH-UNIFY: t2q:: tokens are now accepted in every selector role and
+##     pub_what picks the published figure. Hostile tokens in the new roles and
+##     junk pub_what / chip values must sanitize away, never kill the session.
+## ---------------------------------------------------------------------------
+cat("-- 6d. quantize tokens in all roles, pub_what, chips\n")
+for (slot in c("x", "y", "size", "condition")) {
+  for (v in list("t2q::99::CD8A", "t2q::3::nope", "t2q::2::cohort", strrep("t2q::4::Z", 500), list("t2q::3::CD8A", "t2q::bad::x")))
+    setv(slot, v)
+  settle(300)
+  if (!alive()) { ok(FALSE, paste("session died on a hostile token in", slot)); break }
+}
+ok(alive(), "hostile t2q tokens in x / y / size / condition are sanitized away")
+setv("x", "cohort"); setv("y", "CD8A")
+for (v in list("analysis", "plot", "nonsense", list("plot", "analysis"), 42, list(), "'; DROP TABLE x;--"))
+  setv("pub_what", v)
+app$set_inputs(tabs = "publish"); settle(1500)
+for (v in list(99, -1, "junk", list(2, 3))) { setv("quant_chip_x", v); setv("quant_chip_y", v) }
+settle(800)
+ok(alive(), "junk pub_what and chip values do not end the session")
+app$set_inputs(tabs = "select"); settle(500)
+
+## ---------------------------------------------------------------------------
 ## 7. The whole storm left no uncaught R error and the app still plots normally.
 ## ---------------------------------------------------------------------------
 cat("-- 7. recovery\n")

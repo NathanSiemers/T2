@@ -14,7 +14,7 @@ struct AboutView: View {
         NavigationStack {
             List {
                 Section {
-                    Text("For scientists in biomedical research. T2 gives no medical advice and is not for diagnosis or treatment decisions.")
+                    Text("For scientists in biomedical research. T2 is a viewer for published, de-identified data from public research programs; it gives no medical advice and is not for diagnosis or treatment decisions.")
                         .font(.callout)
                     NavigationLink {
                         SourcesView()
@@ -22,6 +22,12 @@ struct AboutView: View {
                         Label("Sources and citations", systemImage: "books.vertical")
                     }
                     .accessibilityIdentifier("sources")
+                    NavigationLink {
+                        ConsentView()
+                    } label: {
+                        Label("Data sharing and informed consent", systemImage: "checkmark.shield")
+                    }
+                    .accessibilityIdentifier("consent")
                 } header: {
                     Text("Research use only")
                 }

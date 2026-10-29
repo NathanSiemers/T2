@@ -156,3 +156,76 @@ log-rank, Cox, Pearson, Spearman, Kruskal–Wallis). Under the statistics of eve
 therefore one tap from the plot and from About, and the notice points to them from the first
 launch. Please let us know if anything further is needed.
 
+
+## Second rejection (2026-10-22) and build 3 (2026-10-28)
+
+Build 2 was rejected 2026-10-22 under 5.1.3(iv) ("conducting health-related human subject
+research" — consent disclosures, IRB approval) and 5.1.1(ix) (organization account). Both rest
+on a misreading: T2 enrolls nobody, asks nothing and stores nothing about the user; it draws
+plots of public, de-identified consortium data consented and IRB-approved at their source.
+What was done at once (2026-10-22): the clarification was posted in the Resolution Center
+thread of submission 635f739b (with the policy URLs below appended), and the primary category
+was changed MEDICAL → EDUCATION (secondary REFERENCE). Apple never answered; a Resolution
+Center reply does not re-enter the review queue, so on 2026-10-28 Nathan decided: build 3 with
+the consent documentation in the app, and resubmit. (The full assessment and the reply as sent
+are in this file on the `round-20261020` branch, PR #14.)
+
+### What build 3 changes in the app (branch `consent-links-20261028` off main)
+
+- About gains **"Data sharing and informed consent"** (`ConsentView.swift`), right under
+  "Sources and citations": a plain-words introduction (open-access tier, de-identified,
+  consented and IRB-overseen at the source, nothing collected from the user) and these
+  policies, each a tappable row (all URLs returned 200 on 2026-10-28):
+  - NCI/NHGRI "TCGA Human Subjects Protection and Data Access Policies" (PDF):
+    https://www.cancer.gov/ccg/research/structural-genomics/tcga/history/policies/tcga-human-subjects-data-policies.pdf
+  - TCGA ethics and policies overview:
+    https://www.cancer.gov/ccg/research/genome-sequencing/tcga/history/ethics-policies
+  - NIH Genomic Data Sharing Policy, NOT-OD-14-124:
+    https://grants.nih.gov/grants/guide/notice-files/NOT-OD-14-124.html
+  - NCI Genomic Data Commons, data access policies:
+    https://gdc.cancer.gov/access-data/data-access-policies
+  - NCI Proteomic Data Commons (CPTAC), open access:
+    https://datacommons.cancer.gov/repository/proteomic-data-commons
+  - GTEx: NHGRI sample informed consent (PDF):
+    https://www.genome.gov/Pages/PolicyEthics/InformedConsent/5_GTEx_ENCODE_Sample_Consent.pdf
+  - TARGET, using the data:
+    https://www.cancer.gov/ccg/research/genome-sequencing/target/using-target-data
+- The first-launch notice and the About header drop the "research tool" phrasing: "a
+  reference tool for scientists … published, de-identified data from public research
+  programs … conducts no research and collects nothing about you", and the notice points to
+  the new consent screen. The notice title "For research use" is unchanged (UI-test pinned).
+- UI test 01 opens the consent screen and checks the introduction and a policy row.
+- `CURRENT_PROJECT_VERSION = 3` (marketing version stays **1.0**).
+
+### Review-notes paragraph for build 3 (prepend to the version's App Review notes)
+
+Build 3 addresses guideline 5.1.3(iv) directly in the app. About now contains a "Data
+sharing and informed consent" screen that links the informed-consent and data-sharing
+policies of every program whose data the app shows: the NCI/NHGRI TCGA Human Subjects
+Protection and Data Access Policies, the TCGA ethics and policies overview, the NIH Genomic
+Data Sharing Policy (NOT-OD-14-124), the data-access policies of the NCI Genomic and
+Proteomic Data Commons, the GTEx informed consent, and the TARGET data-use page. The
+first-launch notice and the About screen state that the app is a reference tool showing
+published, de-identified open-access data, that it conducts no research, and that it
+collects nothing about the user. The app's category is now Education (secondary Reference).
+Our Resolution Center reply of October 22 has the full clarification; we remain happy to
+adjust wording or meet with App Review.
+
+### Build 3 steps (after the simulator runs pass)
+
+1. Upload: Nathan unlocks the keychain in HIS terminal
+   (`security unlock-keychain ~/Library/Keychains/login.keychain-db`), then
+   `~/Claude/T2Mobile/ios/testflight.sh`; wait until `asc.py` shows the new build VALID.
+2. Attach: `asc.py patchrel` the new build onto version 1.0 (`20c097c4-ef8e-4c30-8519-f7f3894dfc4b`)
+   — it replaces the rejected build 2 on the version.
+3. Notes: `asc.py patch appStoreReviewDetails 20a521bc-6abe-48cf-89ac-dcaed654b071` with the
+   paragraph above PREPENDED to the existing notes (4000-char limit: trim the oldest part if needed).
+4. Resubmit the SAME submission (never cancel — the Resolution Center thread dies with it):
+   `asc.py patch reviewSubmissions 635f739b-cb12-4e66-bacd-9f1f07d428e9 '{"submitted": true}'`;
+   verify with `get` (state WAITING_FOR_REVIEW). If the API refuses because the rejected
+   submission cannot be resubmitted, add the version as a new item first
+   (`post reviewSubmissionItems`) or, as a last resort, use the "Resubmit to App Review"
+   button in the ASC web UI — still without canceling.
+5. Tag `v1.0-build3-submitted` on the commit built; record in NOTES.md Status and the
+   memory. (The auto-mode classifier may refuse ASC writes to Claude; then Nathan runs
+   steps 2-4, each is one line.)

@@ -197,6 +197,22 @@ are in this file on the `round-20261020` branch, PR #14.)
 - UI test 01 opens the consent screen and checks the introduction and a policy row.
 - `CURRENT_PROJECT_VERSION = 3` (marketing version stays **1.0**).
 
+### Resolution Center reply for the build 3 resubmission (draft for Nathan; 2,270 characters, limit 4,000)
+
+Thank you again for the review. We have resubmitted version 1.0 with a new build that addresses guideline 5.1.3(iv) directly in the app, alongside the clarification we posted earlier in this thread.
+
+What changed in the app:
+
+- The About screen now contains "Data sharing and informed consent", one tap from the app's main screen. It explains that every data set in the app comes from the open-access tier of a public research program - de-identified data collected under informed consent and institutional review board oversight at the source - and links the governing documents: the NCI/NHGRI "TCGA Human Subjects Protection and Data Access Policies", the TCGA ethics and policies overview, the NIH Genomic Data Sharing Policy (NOT-OD-14-124), the data-access policies of the NCI Genomic Data Commons and Proteomic Data Commons (CPTAC), the GTEx informed consent, and the TARGET data-use page.
+
+- The first-launch notice and the About screen now state plainly that T2 is a reference tool for scientists that shows published, de-identified data from public research programs, that it conducts no research and collects nothing about the user, and that it gives no medical advice and must not be used for diagnosis or treatment decisions.
+
+To restate the substance of our earlier reply: T2 does not conduct human-subject research. It has no participants - it enrolls nobody, asks nothing, and stores nothing about the user; there is no account and no health input of any kind. It draws plots of published, de-identified data that TCGA, CPTAC, GTEx and TARGET released for public reuse under the policies above; the controlled-access tiers of those programs are not in the app. There is no participant from whom consent could be obtained and no study to approve; the consents and approvals that do exist - those of the source programs - are now documented inside the app itself.
+
+On guideline 5.1.1(ix): the app provides no regulated service, is not used in healthcare delivery, and requires no sensitive user information. We have also changed the app's primary category to Education (secondary: Reference), which describes it accurately.
+
+We hope this resolves both issues, and we will gladly adjust any wording - or meet with App Review - if anything further is needed.
+
 ### Review-notes paragraph for build 3 (prepend to the version's App Review notes)
 
 Build 3 addresses guideline 5.1.3(iv) directly in the app. About now contains a "Data

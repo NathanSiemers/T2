@@ -115,6 +115,35 @@ suite had passed against the live service (7+7). Tag `v1.0-build2-submitted` = 1
 submission), so the reply was put at the top of the version's App Review notes (`asc.py patch
 appStoreReviewDetails 20a521bc-…`, 2026-10-20 13:20, 200; Nathan's original notes kept below it).
 Never upload while this is pending.
+**Build 2 REJECTED again 2026-10-22** (5.1.3(iv) "health-related human subject research": consent
+disclosures, IRB approval; 5.1.1(ix) organization account). Assessment: the reviewer took the Medical
+category plus "research tool" for an app that performs research on its users; it enrolls nobody and
+collects nothing. Nathan posted the clarification in the Resolution Center thread of submission 635f739b
+on 2026-10-22 (text and policy URLs in `docs/APPSTORE.md`, "Build 3"), and the primary category was
+changed MEDICAL → EDUCATION (secondary REFERENCE, `asc.py patchrel appInfos 84fcf192-…`). Apple did not
+answer; a reply does NOT re-enter the review queue, so the submission sat in UNRESOLVED_ISSUES
+(verified read-only 2026-10-28).
+**Build 3 (consent links), 2026-10-28, branch `consent-links-20261028` off main:** the 5.1.3(iv)
+documentation goes INTO the app. About gains "Data sharing and informed consent" (`ConsentView.swift`:
+the NCI/NHGRI TCGA Human Subjects Protection and Data Access Policies, the TCGA ethics overview, the
+NIH Genomic Data Sharing Policy NOT-OD-14-124, the GDC and PDC data-access policies, the GTEx informed
+consent, TARGET — the URLs of the Resolution Center reply, all checked 200 on 2026-10-28); the
+first-launch notice and the About header now say "reference tool … published, de-identified data …
+conducts no research and collects nothing about you"; UI test 01 covers the new screen;
+`CURRENT_PROJECT_VERSION = 3`. Marketing version stays 1.0: the new build goes onto the SAME version
+record (20c097c4-…) with `patchrel`, the review notes get the build-3 paragraph, and the SAME
+submission 635f739b is resubmitted (`{"submitted": true}` — never cancel, the thread dies with it).
+The exact steps are in `docs/APPSTORE.md`, "Build 3".
+**Build 3 SUBMITTED 2026-10-29 12:26 PDT** (the SAME submission 635f739b, thread alive: state
+WAITING_FOR_REVIEW, item READY_FOR_REVIEW, version 1.0 WAITING_FOR_REVIEW, build 3 id 1e994751 VALID).
+Nathan uploaded (testflight.sh, 11:00), Claude attached the build (`patchrel appStoreVersions` 200,
+manual mode) and prepended the review notes (3,413/4,000 chars); the API's `{"submitted": true}` was
+refused 409 for ~45 min ("version not ready", items locked), and the working path was the ASC web UI:
+Nathan pasted the edited reply in the Resolution Center thread, clicked "Update Review" on the version
+page, then the submit button on the submission page. Lesson: after a rejection, resubmission of the
+same submission goes through the UI's Update Review; the API cannot add/remove items of an
+UNRESOLVED_ISSUES submission. Tag `v1.0-build3-submitted` = f3b8eba (ios/ identical to the tested
+81d33eb). Never upload while this is pending; freeze holds.
 
 **State at the end of 2026-10-11 (all of it in `main`, head 3d17d29; written for a session
 that starts cold).** The production switch is complete and verified:

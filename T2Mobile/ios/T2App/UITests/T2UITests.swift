@@ -248,6 +248,15 @@ final class T2UITests: XCTestCase {
         shot("04f-sources-methods")
         app.navigationBars.buttons.element(boundBy: 0).tap()      // back to About
         XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 10))
+        // Data sharing and informed consent: the programs' policies behind the data
+        scrollTo("consent").tap()
+        XCTAssertTrue(app.navigationBars["Data sharing and consent"].waitForExistence(timeout: 10), "the consent screen did not open")
+        XCTAssertTrue(element("consent-intro").waitForExistence(timeout: 10), "no consent introduction")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS[c] 'Genomic Data Sharing'")).firstMatch
+            .waitForExistence(timeout: 10), "no policy row on the consent screen")
+        shot("04h-consent")
+        app.navigationBars.buttons.element(boundBy: 0).tap()      // back to About
+        XCTAssertTrue(app.staticTexts["About T2"].waitForExistence(timeout: 10))
         app.buttons["Done"].tap()
     }
 

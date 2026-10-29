@@ -22,7 +22,7 @@ struct ResearchNoticeView: View {
             Text("For research use")
                 .font(.title.bold())
                 .accessibilityIdentifier("notice-title")
-            Text("T2 Cancer Genomics is a research tool for scientists in biomedical research. It shows public research data and statistics computed from them. It gives no medical advice and must not be used for diagnosis or treatment decisions. The sources of every data set and of every statistical method are listed under About \u{203A} Sources and citations.")
+            Text("T2 Cancer Genomics is a reference tool for scientists in biomedical research. It shows published, de-identified data from public research programs, and statistics computed from them; it conducts no research and collects nothing about you. It gives no medical advice and must not be used for diagnosis or treatment decisions. The sources of every data set and method are under About \u{203A} Sources and citations; the programs' informed-consent and data-sharing policies are under About \u{203A} Data sharing and informed consent.")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .accessibilityIdentifier("notice-text")

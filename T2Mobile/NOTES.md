@@ -134,6 +134,16 @@ conducts no research and collects nothing about you"; UI test 01 covers the new 
 record (20c097c4-…) with `patchrel`, the review notes get the build-3 paragraph, and the SAME
 submission 635f739b is resubmitted (`{"submitted": true}` — never cancel, the thread dies with it).
 The exact steps are in `docs/APPSTORE.md`, "Build 3".
+**Build 3 SUBMITTED 2026-10-29 12:26 PDT** (the SAME submission 635f739b, thread alive: state
+WAITING_FOR_REVIEW, item READY_FOR_REVIEW, version 1.0 WAITING_FOR_REVIEW, build 3 id 1e994751 VALID).
+Nathan uploaded (testflight.sh, 11:00), Claude attached the build (`patchrel appStoreVersions` 200,
+manual mode) and prepended the review notes (3,413/4,000 chars); the API's `{"submitted": true}` was
+refused 409 for ~45 min ("version not ready", items locked), and the working path was the ASC web UI:
+Nathan pasted the edited reply in the Resolution Center thread, clicked "Update Review" on the version
+page, then the submit button on the submission page. Lesson: after a rejection, resubmission of the
+same submission goes through the UI's Update Review; the API cannot add/remove items of an
+UNRESOLVED_ISSUES submission. Tag `v1.0-build3-submitted` = f3b8eba (ios/ identical to the tested
+81d33eb). Never upload while this is pending; freeze holds.
 
 **State at the end of 2026-10-11 (all of it in `main`, head 3d17d29; written for a session
 that starts cold).** The production switch is complete and verified:

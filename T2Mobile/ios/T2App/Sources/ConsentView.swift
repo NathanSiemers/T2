@@ -11,7 +11,7 @@ struct ConsentView: View {
                     .font(.callout)
                     .accessibilityIdentifier("consent-intro")
             }
-            Section("The policies") {
+            Section {
                 ReferenceRow(title: "TCGA Human Subjects Protection and Data Access Policies",
                              note: "The NCI and NHGRI policy defining the open-access tier of de-identified TCGA data that T2 uses (PDF).",
                              url: "https://www.cancer.gov/ccg/research/structural-genomics/tcga/history/policies/tcga-human-subjects-data-policies.pdf")
@@ -33,6 +33,8 @@ struct ConsentView: View {
                 ReferenceRow(title: "TARGET: using the data",
                              note: "The TARGET program's data at the Genomic Data Commons, under the same policies.",
                              url: "https://www.cancer.gov/ccg/research/genome-sequencing/target/using-target-data")
+            } header: {
+                Text("The policies")
             } footer: {
                 Text("The controlled-access tiers of these programs, which require case-by-case approval by an NIH data access committee, are not in T2.")
             }

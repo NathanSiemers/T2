@@ -213,6 +213,25 @@ On guideline 5.1.1(ix): the app provides no regulated service, is not used in he
 
 We hope this resolves both issues, and we will gladly adjust any wording - or meet with App Review - if anything further is needed.
 
+### Resolution Center reply, final text (Nathan's edit, 2026-10-29; 2,230 characters)
+
+The draft above was shortened and reworded by Nathan on 2026-10-29 (typos fixed, the "no participant" point put in plain
+words). This is the text to post with the build 3 resubmission; the same text is in `20261029.nathan.appstore.response.md`.
+
+Thank you for the review. We have modified the app to address both points, and we have also clarified what the app is: a scientific education and reference tool, now listed in the proper category.
+
+What changed in the app:
+
+- The About screen now contains "Data sharing and informed consent", one tap from the app's main screen. It explains that every data set in the app comes from the open-access tier of a public research program - de-identified data collected under informed consent and institutional review board oversight at the source - and links the governing documents: the NCI/NHGRI "TCGA Human Subjects Protection and Data Access Policies", the TCGA ethics and policies overview, the NIH Genomic Data Sharing Policy (NOT-OD-14-124), the data-access policies of the NCI Genomic Data Commons and Proteomic Data Commons (CPTAC), the GTEx informed consent, and the TARGET data-use page.
+
+- The first-launch notice and the About screen now state plainly that T2 is a reference tool for scientists that shows published, de-identified data from public research programs, that it conducts no research and collects nothing about the user, and that it gives no medical advice and must not be used for diagnosis or treatment decisions.
+
+To restate the substance of our earlier reply: T2 does not conduct human-subject research. We are not asking anyone to participate in a study. The app enrolls nobody, asks the user nothing, and stores nothing about the user; there is no account and no health input of any kind. It draws plots of published, de-identified data that TCGA, CPTAC, GTEx and TARGET released for public reuse under the policies above; the controlled-access tiers of those programs are not in the app. The informed consent and IRB approval that apply to these data are those of the source programs, and the app now documents them.
+
+On guideline 5.1.1(ix): the app provides no regulated service, is not used in healthcare delivery, and requires no sensitive user information. We have also changed the app's primary category to Education (secondary: Reference), which describes it accurately.
+
+We hope this resolves both issues. We will gladly adjust any wording, or meet with App Review, if anything further is needed.
+
 ### Review-notes paragraph for build 3 (prepend to the version's App Review notes)
 
 Build 3 addresses guideline 5.1.3(iv) directly in the app. About now contains a "Data
@@ -245,3 +264,18 @@ adjust wording or meet with App Review.
 5. Tag `v1.0-build3-submitted` on the commit built; record in NOTES.md Status and the
    memory. (The auto-mode classifier may refuse ASC writes to Claude; then Nathan runs
    steps 2-4, each is one line.)
+
+## Deferred listing/app items (Nathan, 2026-10-29 — AFTER the pending review, nothing touches ASC while WAITING_FOR_REVIEW)
+
+1. **Description wording**: the listing description still leads with the two named collections
+   ("TCGA Pan-Cancer Atlas" / "combined TCGA, TARGET and GTEx"); with CPTAC and more datasets in,
+   it should say **"TCGA and other genomic databases"** (matches the website blurb change in the
+   Path A playbook). Metadata-only: editable on the version once the review resolves.
+2. **Once-only de-identification agreement pop-up** (consider for a future build): the user must
+   agree before first use. Nathan's draft text, verbatim: "You agree that you will not use any of
+   these resources to try to indentify any individual in these published studies" [sic — fix the
+   typo when used]. It is his recollection of the standard disclaimer TCGA-hosting sites require.
+   Before building it, check the canonical wording on other TCGA-hosting sites and in the NIH/NCI
+   documents (the GDC data-access policy's "not attempt to identify" clause,
+   https://gdc.cancer.gov/access-data/data-access-policies, and the NIH GDS Policy) and reuse
+   their language. Would also strengthen any future 5.1.3 conversation.
